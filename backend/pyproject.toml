@@ -8,6 +8,7 @@ authors = [
 ]
 requires-python = ">=3.11"
 dependencies = [
+    "alembic>=1.20.0",
     "anthropic>=1.5.0",
     "fastapi>=0.141.1",
     "pdfplumber>=0.11.10",
@@ -35,4 +36,8 @@ dev = [
 
 [tool.ruff]
 line-length = 100
+
+[tool.ruff.lint]
+# B008: FastAPI's Depends() is idiomatic in argument defaults, not a bug.
+ignore = ["B008"]
 
