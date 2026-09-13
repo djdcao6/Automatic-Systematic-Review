@@ -1,9 +1,22 @@
 import csv
 import io
+import re
 
 from asr_backend import models
 
-CSV_HEADER = ["title", "abstract", "authors", "year", "source", "decision"]
+CSV_HEADER = ["title", "abstract", "authors", "year", "source", "screening_decision", "reason"]
+
+_SLUG_NON_ALNUM = re.compile(r"[^a-z0-9]+")
+
+
+def slugify(value: str) -> str:
+    slug = _SLUG_NON_ALNUM.sub("-", value.lower()).strip("-")
+    return slug or "review-project"
+
+
+def build_export_filename(review_project: models.ReviewProject) -> str:
+    id_suffix = str(review_project.id).split("-")[0]
+    return f"{slugify(review_project.name)}-{id_suffix}.csv"
 
 
 def build_citations_csv(citations: list[models.Citation]) -> str:
@@ -19,6 +32,7 @@ def build_citations_csv(citations: list[models.Citation]) -> str:
                 citation.year or "",
                 citation.source or "",
                 citation.decision_label,
+                citation.screening_reason,
             ]
         )
     return buffer.getvalue()

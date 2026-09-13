@@ -174,10 +174,9 @@ def export_review_project(
 ) -> Response:
     citations = crud.list_citations(db, project.id)
     csv_content = export.build_citations_csv(citations)
+    filename = export.build_export_filename(project)
     return Response(
         content=csv_content,
         media_type="text/csv",
-        headers={
-            "Content-Disposition": f'attachment; filename="review-project-{project.id}.csv"'
-        },
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

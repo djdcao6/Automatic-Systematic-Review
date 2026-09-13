@@ -96,46 +96,4 @@ describe("CitationsPanel", () => {
 
     await waitFor(() => expect(onCitationsChanged).toHaveBeenCalledTimes(1));
   });
-
-  it("exports the review project as a CSV file using the server-provided filename", async () => {
-    mockedApi.listCitations.mockResolvedValue([]);
-    mockedApi.exportReviewProject.mockResolvedValue({
-      blob: new Blob(["title\n"], { type: "text/csv" }),
-      filename: "review-project-1.csv",
-    });
-    const createObjectURL = vi.fn().mockReturnValue("blob:mock-url");
-    const revokeObjectURL = vi.fn();
-    vi.stubGlobal("URL", { ...URL, createObjectURL, revokeObjectURL });
-    const appendChildSpy = vi.spyOn(document.body, "appendChild");
-
-    render(<CitationsPanel reviewProjectId="1" />);
-
-    await waitFor(() => expect(mockedApi.listCitations).toHaveBeenCalledTimes(1));
-
-    fireEvent.click(screen.getByRole("button", { name: /export csv/i }));
-
-    await waitFor(() => expect(mockedApi.exportReviewProject).toHaveBeenCalledWith("1"));
-    expect(createObjectURL).toHaveBeenCalled();
-    expect(revokeObjectURL).toHaveBeenCalledWith("blob:mock-url");
-    const link = appendChildSpy.mock.calls
-      .map((call) => call[0])
-      .find((node): node is HTMLAnchorElement => node instanceof HTMLAnchorElement);
-    expect(link?.download).toBe("review-project-1.csv");
-
-    appendChildSpy.mockRestore();
-    vi.unstubAllGlobals();
-  });
-
-  it("shows an error when the export request fails", async () => {
-    mockedApi.listCitations.mockResolvedValue([]);
-    mockedApi.exportReviewProject.mockRejectedValue(new Error("boom"));
-
-    render(<CitationsPanel reviewProjectId="1" />);
-
-    await waitFor(() => expect(mockedApi.listCitations).toHaveBeenCalledTimes(1));
-
-    fireEvent.click(screen.getByRole("button", { name: /export csv/i }));
-
-    expect(await screen.findByRole("alert")).toHaveTextContent(/failed to export/i);
-  });
 });

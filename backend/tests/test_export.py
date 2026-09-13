@@ -49,10 +49,12 @@ def test_export_includes_screened_and_unscreened_citations(client):
     assert screened_row["authors"] == "Jane Doe; John Smith"
     assert screened_row["year"] == "2020"
     assert screened_row["source"] == "PubMed"
-    assert screened_row["decision"] == "include"
+    assert screened_row["screening_decision"] == "include"
+    assert screened_row["reason"] == "Meets criteria"
 
     unscreened_row = next(row for row in rows if row["title"] == "Unscreened Study")
-    assert unscreened_row["decision"] == "unscreened"
+    assert unscreened_row["screening_decision"] == "unscreened"
+    assert unscreened_row["reason"] == ""
 
 
 def test_export_empty_review_project(client):
@@ -70,3 +72,12 @@ def test_export_for_missing_review_project(client):
     )
 
     assert response.status_code == 404
+
+
+def test_export_filename_slugifies_project_name_and_appends_id_suffix(client):
+    project_id = create_project(client, name="COPD & Metformin Review!!")
+
+    response = client.get(f"/review-projects/{project_id}/export")
+
+    disposition = response.headers["content-disposition"]
+    assert f'filename="copd-metformin-review-{project_id[:8]}.csv"' in disposition

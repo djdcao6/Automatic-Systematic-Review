@@ -81,6 +81,12 @@ class Citation(Base):
     def decision_label(self) -> str:
         return self.screening_decision.decision if self.screening_decision else "unscreened"
 
+    @property
+    def screening_reason(self) -> str:
+        if self.screening_decision is None:
+            return ""
+        return self.screening_decision.reason or ""
+
 
 class AISuggestion(Base):
     __tablename__ = "ai_suggestions"

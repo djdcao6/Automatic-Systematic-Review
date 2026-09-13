@@ -3,7 +3,13 @@
 import { useEffect, useState, type FormEvent } from "react";
 
 import { CitationsPanel } from "@/components/CitationsPanel";
-import { getReviewProject, saveCriteria, type CriteriaInput, type ReviewProjectDetail } from "@/lib/api";
+import {
+  exportReviewProject,
+  getReviewProject,
+  saveCriteria,
+  type CriteriaInput,
+  type ReviewProjectDetail,
+} from "@/lib/api";
 
 function toLines(value: string): string[] {
   return value
@@ -87,6 +93,24 @@ export default function ReviewProjectDetailPage({
     }
   }
 
+  async function handleExport() {
+    if (!id) return;
+    try {
+      const { blob, filename } = await exportReviewProject(id);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setError(null);
+    } catch {
+      setError("Failed to export review project.");
+    }
+  }
+
   if (!project) {
     return error ? <p role="alert">{error}</p> : <p>Loading...</p>;
   }
@@ -95,6 +119,9 @@ export default function ReviewProjectDetailPage({
     <main>
       <h1>{project.name}</h1>
       <p>{project.citations_needing_decision} citation(s) still need a decision</p>
+      <button type="button" onClick={handleExport}>
+        Export CSV
+      </button>
       {error && <p role="alert">{error}</p>}
       <form onSubmit={handleSubmit}>
         <label htmlFor="population">Population</label>
