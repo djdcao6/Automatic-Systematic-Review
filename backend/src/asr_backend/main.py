@@ -4,7 +4,8 @@ from fastapi import Depends, FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
-from asr_backend import citation_import, crud, models, schemas
+from asr_backend import citation_import, crud, models, schemas, screening
+from asr_backend.ai_suggestion import AISuggester, get_ai_suggester
 from asr_backend.db import get_db
 from asr_backend.settings import settings
 
@@ -64,6 +65,11 @@ def save_criteria(
     project: models.ReviewProject = Depends(get_review_project_or_404),
     db: Session = Depends(get_db),
 ) -> models.Criteria:
+    if project.criteria_locked:
+        raise HTTPException(
+            status_code=409,
+            detail="Criteria are locked after the first Screening Decision",
+        )
     return crud.upsert_criteria(db, project, payload)
 
 
@@ -107,3 +113,54 @@ def list_citations(
     db: Session = Depends(get_db),
 ) -> list[models.Citation]:
     return crud.list_citations(db, project.id)
+
+
+def get_citation_or_404(
+    citation_id: uuid.UUID,
+    project: models.ReviewProject = Depends(get_review_project_or_404),
+    db: Session = Depends(get_db),
+) -> models.Citation:
+    citation = crud.get_citation(db, project.id, citation_id)
+    if citation is None:
+        raise HTTPException(status_code=404, detail="Citation not found")
+    return citation
+
+
+@app.get(
+    "/review-projects/{review_project_id}/citations/{citation_id}",
+    response_model=schemas.CitationDetailRead,
+)
+async def get_citation_detail(
+    citation: models.Citation = Depends(get_citation_or_404),
+    db: Session = Depends(get_db),
+    suggester: AISuggester = Depends(get_ai_suggester),
+) -> schemas.CitationDetailRead:
+    suggestion, unavailable_reason = await screening.get_or_generate_suggestion(
+        db, citation, suggester
+    )
+    decision = crud.get_screening_decision(db, citation.id)
+    return schemas.CitationDetailRead(
+        id=citation.id,
+        title=citation.title,
+        abstract=citation.abstract,
+        authors=citation.authors,
+        year=citation.year,
+        source=citation.source,
+        needs_abstract=citation.needs_abstract,
+        suggestion=suggestion,
+        suggestion_unavailable_reason=unavailable_reason,
+        screening_decision=decision,
+    )
+
+
+@app.post(
+    "/review-projects/{review_project_id}/citations/{citation_id}/decision",
+    response_model=schemas.ScreeningDecisionRead,
+)
+def record_screening_decision(
+    payload: schemas.ScreeningDecisionCreate,
+    citation: models.Citation = Depends(get_citation_or_404),
+    project: models.ReviewProject = Depends(get_review_project_or_404),
+    db: Session = Depends(get_db),
+) -> models.ScreeningDecision:
+    return crud.upsert_screening_decision(db, project, citation.id, payload)

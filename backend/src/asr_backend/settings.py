@@ -7,6 +7,8 @@ class Settings(BaseSettings):
     database_url: str
     test_database_url: str
     frontend_origin: str = "http://localhost:3000"
+    anthropic_api_key: str
+    anthropic_model: str = "claude-haiku-4-5"
 
 
 settings = Settings()

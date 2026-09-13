@@ -1,5 +1,6 @@
 import uuid
 
+from sqlalchemy import func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -81,4 +82,78 @@ def list_citations(db: Session, review_project_id: uuid.UUID) -> list[models.Cit
         .filter(models.Citation.review_project_id == review_project_id)
         .order_by(models.Citation.created_at)
         .all()
+    )
+
+
+def get_citation(
+    db: Session, review_project_id: uuid.UUID, citation_id: uuid.UUID
+) -> models.Citation | None:
+    return (
+        db.query(models.Citation)
+        .filter(
+            models.Citation.id == citation_id,
+            models.Citation.review_project_id == review_project_id,
+        )
+        .one_or_none()
+    )
+
+
+def get_ai_suggestion(db: Session, citation_id: uuid.UUID) -> models.AISuggestion | None:
+    return (
+        db.query(models.AISuggestion)
+        .filter(models.AISuggestion.citation_id == citation_id)
+        .one_or_none()
+    )
+
+
+def create_ai_suggestion(
+    db: Session, citation_id: uuid.UUID, decision: str, reason: str
+) -> models.AISuggestion:
+    suggestion = models.AISuggestion(citation_id=citation_id, decision=decision, reason=reason)
+    db.add(suggestion)
+    db.commit()
+    db.refresh(suggestion)
+    return suggestion
+
+
+def get_screening_decision(
+    db: Session, citation_id: uuid.UUID
+) -> models.ScreeningDecision | None:
+    return (
+        db.query(models.ScreeningDecision)
+        .filter(models.ScreeningDecision.citation_id == citation_id)
+        .one_or_none()
+    )
+
+
+def upsert_screening_decision(
+    db: Session,
+    review_project: models.ReviewProject,
+    citation_id: uuid.UUID,
+    payload: schemas.ScreeningDecisionCreate,
+) -> models.ScreeningDecision:
+    values = {
+        "citation_id": citation_id,
+        "decision": payload.decision,
+        "reason": payload.reason,
+    }
+    stmt = pg_insert(models.ScreeningDecision).values(**values)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=[models.ScreeningDecision.citation_id],
+        set_={
+            "decision": stmt.excluded.decision,
+            "reason": stmt.excluded.reason,
+            "updated_at": func.now(),
+        },
+    )
+    # Same atomic INSERT ... ON CONFLICT DO UPDATE pattern as upsert_criteria,
+    # since a Screening Decision is editable and this races the same way.
+    db.execute(stmt)
+    if not review_project.criteria_locked:
+        review_project.criteria_locked = True
+    db.commit()
+    return (
+        db.query(models.ScreeningDecision)
+        .filter(models.ScreeningDecision.citation_id == citation_id)
+        .one()
     )

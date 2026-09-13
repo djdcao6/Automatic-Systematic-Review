@@ -70,4 +70,30 @@ describe("CitationsPanel", () => {
     expect(await screen.findByText("New Citation")).toBeInTheDocument();
     expect(mockedApi.uploadCitations).toHaveBeenCalledWith("1", file);
   });
+
+  it("notifies the parent after a successful upload so counts can refresh", async () => {
+    mockedApi.listCitations.mockResolvedValueOnce([]).mockResolvedValueOnce([
+      {
+        id: "1",
+        title: "New Citation",
+        abstract: "Abstract",
+        authors: [],
+        year: 2022,
+        source: null,
+        needs_abstract: false,
+      },
+    ]);
+    const onCitationsChanged = vi.fn();
+
+    render(<CitationsPanel reviewProjectId="1" onCitationsChanged={onCitationsChanged} />);
+
+    await waitFor(() => expect(mockedApi.listCitations).toHaveBeenCalledTimes(1));
+
+    const file = new File(["title\nA\n"], "citations.csv", { type: "text/csv" });
+    fireEvent.change(screen.getByLabelText(/upload ris or csv file/i), {
+      target: { files: [file] },
+    });
+
+    await waitFor(() => expect(onCitationsChanged).toHaveBeenCalledTimes(1));
+  });
 });

@@ -25,6 +25,10 @@ class ReviewProject(Base):
         back_populates="review_project", cascade="all, delete-orphan"
     )
 
+    @property
+    def citations_needing_decision(self) -> int:
+        return sum(1 for citation in self.citations if citation.screening_decision is None)
+
 
 class Criteria(Base):
     __tablename__ = "criteria"
@@ -62,7 +66,50 @@ class Citation(Base):
     )
 
     review_project: Mapped[ReviewProject] = relationship(back_populates="citations")
+    ai_suggestion: Mapped["AISuggestion | None"] = relationship(
+        back_populates="citation", uselist=False, cascade="all, delete-orphan"
+    )
+    screening_decision: Mapped["ScreeningDecision | None"] = relationship(
+        back_populates="citation", uselist=False, cascade="all, delete-orphan"
+    )
 
     @property
     def needs_abstract(self) -> bool:
         return self.abstract is None
+
+
+class AISuggestion(Base):
+    __tablename__ = "ai_suggestions"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    citation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("citations.id"), unique=True, nullable=False
+    )
+    decision: Mapped[str] = mapped_column(String, nullable=False)
+    reason: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+
+    citation: Mapped[Citation] = relationship(back_populates="ai_suggestion")
+
+
+class ScreeningDecision(Base):
+    __tablename__ = "screening_decisions"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    citation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("citations.id"), unique=True, nullable=False
+    )
+    decision: Mapped[str] = mapped_column(String, nullable=False)
+    reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+    citation: Mapped[Citation] = relationship(back_populates="screening_decision")

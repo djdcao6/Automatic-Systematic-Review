@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
@@ -47,6 +48,7 @@ class ReviewProjectRead(BaseModel):
 
 class ReviewProjectDetailRead(ReviewProjectRead):
     criteria: CriteriaRead | None = None
+    citations_needing_decision: int
 
 
 class CitationRead(BaseModel):
@@ -69,3 +71,30 @@ class CitationUploadSkipped(BaseModel):
 class CitationUploadResult(BaseModel):
     created: int
     skipped: list[CitationUploadSkipped]
+
+
+class SuggestionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    decision: Literal["include", "exclude", "maybe"]
+    reason: str
+
+
+class ScreeningDecisionCreate(BaseModel):
+    decision: Literal["include", "exclude", "maybe"]
+    reason: str | None = None
+
+
+class ScreeningDecisionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    decision: Literal["include", "exclude", "maybe"]
+    reason: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class CitationDetailRead(CitationRead):
+    suggestion: SuggestionRead | None = None
+    suggestion_unavailable_reason: str | None = None
+    screening_decision: ScreeningDecisionRead | None = None

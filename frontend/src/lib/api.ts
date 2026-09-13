@@ -16,6 +16,7 @@ export type Criteria = {
 
 export type ReviewProjectDetail = ReviewProject & {
   criteria: Criteria | null;
+  citations_needing_decision: number;
 };
 
 export type CriteriaInput = {
@@ -40,6 +41,31 @@ export type Citation = {
 export type CitationUploadResult = {
   created: number;
   skipped: { row: number; reason: string }[];
+};
+
+export type Decision = "include" | "exclude" | "maybe";
+
+export type Suggestion = {
+  decision: Decision;
+  reason: string;
+};
+
+export type ScreeningDecision = {
+  decision: Decision;
+  reason: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CitationDetail = Citation & {
+  suggestion: Suggestion | null;
+  suggestion_unavailable_reason: string | null;
+  screening_decision: ScreeningDecision | null;
+};
+
+export type ScreeningDecisionInput = {
+  decision: Decision;
+  reason: string | null;
 };
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -104,6 +130,38 @@ export async function uploadCitations(
   });
   if (!response.ok) {
     throw new Error("Failed to upload citations");
+  }
+  return response.json();
+}
+
+export async function getCitation(
+  reviewProjectId: string,
+  citationId: string
+): Promise<CitationDetail> {
+  const response = await fetch(
+    `${API_URL}/review-projects/${reviewProjectId}/citations/${citationId}`
+  );
+  if (!response.ok) {
+    throw new Error("Failed to load citation");
+  }
+  return response.json();
+}
+
+export async function recordScreeningDecision(
+  reviewProjectId: string,
+  citationId: string,
+  payload: ScreeningDecisionInput
+): Promise<ScreeningDecision> {
+  const response = await fetch(
+    `${API_URL}/review-projects/${reviewProjectId}/citations/${citationId}/decision`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }
+  );
+  if (!response.ok) {
+    throw new Error("Failed to record screening decision");
   }
   return response.json();
 }

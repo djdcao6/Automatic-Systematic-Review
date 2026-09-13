@@ -54,6 +54,18 @@ export default function ReviewProjectDetailPage({
       .catch(() => setError("Failed to load review project."));
   }, [id]);
 
+  // Refreshes the live counters (e.g. citations_needing_decision) after a
+  // Citations upload, without disturbing whatever the Criteria form currently
+  // holds.
+  async function refreshProjectCounts() {
+    if (!id) return;
+    try {
+      setProject(await getReviewProject(id));
+    } catch {
+      // Best-effort refresh; the citations list itself already updated.
+    }
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!id) return;
@@ -82,6 +94,7 @@ export default function ReviewProjectDetailPage({
   return (
     <main>
       <h1>{project.name}</h1>
+      <p>{project.citations_needing_decision} citation(s) still need a decision</p>
       {error && <p role="alert">{error}</p>}
       <form onSubmit={handleSubmit}>
         <label htmlFor="population">Population</label>
@@ -125,7 +138,7 @@ export default function ReviewProjectDetailPage({
         <button type="submit">Save Criteria</button>
       </form>
 
-      <CitationsPanel reviewProjectId={project.id} />
+      <CitationsPanel reviewProjectId={project.id} onCitationsChanged={refreshProjectCounts} />
     </main>
   );
 }

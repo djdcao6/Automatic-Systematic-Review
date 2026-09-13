@@ -1,10 +1,17 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState, type ChangeEvent } from "react";
 
 import { listCitations, uploadCitations, type Citation } from "@/lib/api";
 
-export function CitationsPanel({ reviewProjectId }: { reviewProjectId: string }) {
+export function CitationsPanel({
+  reviewProjectId,
+  onCitationsChanged,
+}: {
+  reviewProjectId: string;
+  onCitationsChanged?: () => void;
+}) {
   const [citations, setCitations] = useState<Citation[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -22,6 +29,7 @@ export function CitationsPanel({ reviewProjectId }: { reviewProjectId: string })
       await uploadCitations(reviewProjectId, file);
       setCitations(await listCitations(reviewProjectId));
       setError(null);
+      onCitationsChanged?.();
     } catch {
       setError("Failed to upload citations.");
     } finally {
@@ -38,7 +46,9 @@ export function CitationsPanel({ reviewProjectId }: { reviewProjectId: string })
       <ul>
         {citations.map((citation) => (
           <li key={citation.id}>
-            {citation.title}
+            <Link href={`/review-projects/${reviewProjectId}/citations/${citation.id}`}>
+              {citation.title}
+            </Link>
             {citation.needs_abstract && <span> (needs abstract)</span>}
           </li>
         ))}

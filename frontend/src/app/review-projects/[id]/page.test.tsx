@@ -14,6 +14,7 @@ const baseProject = {
   name: "My Review",
   criteria_locked: false,
   created_at: "2026-01-01T00:00:00Z",
+  citations_needing_decision: 0,
 };
 
 function renderPage() {
@@ -90,5 +91,38 @@ describe("ReviewProjectDetailPage", () => {
         notes: "Adult populations only.",
       })
     );
+  });
+
+  it("refreshes the live undecided count after uploading a citation", async () => {
+    mockedApi.getReviewProject
+      .mockResolvedValueOnce({ ...baseProject, criteria: null, citations_needing_decision: 0 })
+      .mockResolvedValueOnce({ ...baseProject, criteria: null, citations_needing_decision: 1 });
+    mockedApi.listCitations
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          id: "c1",
+          title: "New Citation",
+          abstract: "Abstract",
+          authors: [],
+          year: 2022,
+          source: null,
+          needs_abstract: false,
+        },
+      ]);
+    mockedApi.uploadCitations.mockResolvedValue({ created: 1, skipped: [] });
+
+    renderPage();
+
+    expect(await screen.findByText(/0 citation\(s\) still need a decision/i)).toBeInTheDocument();
+
+    const file = new File(["title\nA\n"], "citations.csv", { type: "text/csv" });
+    fireEvent.change(screen.getByLabelText(/upload ris or csv file/i), {
+      target: { files: [file] },
+    });
+
+    expect(
+      await screen.findByText(/1 citation\(s\) still need a decision/i)
+    ).toBeInTheDocument();
   });
 });
