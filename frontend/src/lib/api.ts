@@ -27,6 +27,21 @@ export type CriteriaInput = {
   notes: string | null;
 };
 
+export type Citation = {
+  id: string;
+  title: string;
+  abstract: string | null;
+  authors: string[];
+  year: number | null;
+  source: string | null;
+  needs_abstract: boolean;
+};
+
+export type CitationUploadResult = {
+  created: number;
+  skipped: { row: number; reason: string }[];
+};
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 export async function listReviewProjects(): Promise<ReviewProject[]> {
@@ -65,6 +80,30 @@ export async function saveCriteria(id: string, payload: CriteriaInput): Promise<
   });
   if (!response.ok) {
     throw new Error("Failed to save criteria");
+  }
+  return response.json();
+}
+
+export async function listCitations(reviewProjectId: string): Promise<Citation[]> {
+  const response = await fetch(`${API_URL}/review-projects/${reviewProjectId}/citations`);
+  if (!response.ok) {
+    throw new Error("Failed to load citations");
+  }
+  return response.json();
+}
+
+export async function uploadCitations(
+  reviewProjectId: string,
+  file: File
+): Promise<CitationUploadResult> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const response = await fetch(`${API_URL}/review-projects/${reviewProjectId}/citations`, {
+    method: "POST",
+    body: formData,
+  });
+  if (!response.ok) {
+    throw new Error("Failed to upload citations");
   }
   return response.json();
 }

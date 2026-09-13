@@ -1,7 +1,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -20,6 +20,9 @@ class ReviewProject(Base):
 
     criteria: Mapped["Criteria | None"] = relationship(
         back_populates="review_project", uselist=False, cascade="all, delete-orphan"
+    )
+    citations: Mapped[list["Citation"]] = relationship(
+        back_populates="review_project", cascade="all, delete-orphan"
     )
 
 
@@ -40,3 +43,26 @@ class Criteria(Base):
     notes: Mapped[str | None] = mapped_column(String, nullable=True)
 
     review_project: Mapped[ReviewProject] = relationship(back_populates="criteria")
+
+
+class Citation(Base):
+    __tablename__ = "citations"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    review_project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("review_projects.id"), nullable=False
+    )
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    abstract: Mapped[str | None] = mapped_column(String, nullable=True)
+    authors: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, default=list)
+    year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+
+    review_project: Mapped[ReviewProject] = relationship(back_populates="citations")
+
+    @property
+    def needs_abstract(self) -> bool:
+        return self.abstract is None

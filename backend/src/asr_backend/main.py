@@ -1,10 +1,10 @@
 import uuid
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
-from asr_backend import crud, models, schemas
+from asr_backend import citation_import, crud, models, schemas
 from asr_backend.db import get_db
 from asr_backend.settings import settings
 
@@ -65,3 +65,45 @@ def save_criteria(
     db: Session = Depends(get_db),
 ) -> models.Criteria:
     return crud.upsert_criteria(db, project, payload)
+
+
+@app.post(
+    "/review-projects/{review_project_id}/citations",
+    response_model=schemas.CitationUploadResult,
+    status_code=201,
+)
+async def upload_citations(
+    file: UploadFile,
+    project: models.ReviewProject = Depends(get_review_project_or_404),
+    db: Session = Depends(get_db),
+) -> schemas.CitationUploadResult:
+    raw = await file.read()
+    try:
+        content = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise HTTPException(status_code=422, detail="File must be UTF-8 encoded") from exc
+
+    try:
+        parsed = citation_import.parse_upload(file.filename or "", content)
+    except citation_import.UnsupportedFileType as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    citations = crud.create_citations(db, project.id, parsed.citations)
+    return schemas.CitationUploadResult(
+        created=len(citations),
+        skipped=[
+            schemas.CitationUploadSkipped(row=row, reason=reason)
+            for row, reason in parsed.skipped
+        ],
+    )
+
+
+@app.get(
+    "/review-projects/{review_project_id}/citations",
+    response_model=list[schemas.CitationRead],
+)
+def list_citations(
+    project: models.ReviewProject = Depends(get_review_project_or_404),
+    db: Session = Depends(get_db),
+) -> list[models.Citation]:
+    return crud.list_citations(db, project.id)

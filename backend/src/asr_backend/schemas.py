@@ -47,3 +47,25 @@ class ReviewProjectRead(BaseModel):
 
 class ReviewProjectDetailRead(ReviewProjectRead):
     criteria: CriteriaRead | None = None
+
+
+class CitationRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    title: str
+    abstract: str | None
+    authors: list[str]
+    year: int | None
+    source: str | None
+    needs_abstract: bool
+
+
+class CitationUploadSkipped(BaseModel):
+    row: int
+    reason: str
+
+
+class CitationUploadResult(BaseModel):
+    created: int
+    skipped: list[CitationUploadSkipped]

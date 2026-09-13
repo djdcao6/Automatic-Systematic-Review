@@ -4,6 +4,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from asr_backend import models, schemas
+from asr_backend.citation_import import ParsedCitation
 
 
 def get_review_project(db: Session, review_project_id: uuid.UUID) -> models.ReviewProject | None:
@@ -53,3 +54,31 @@ def create_review_project(
 
 def list_review_projects(db: Session) -> list[models.ReviewProject]:
     return list(db.query(models.ReviewProject).order_by(models.ReviewProject.created_at).all())
+
+
+def create_citations(
+    db: Session, review_project_id: uuid.UUID, parsed_citations: list[ParsedCitation]
+) -> list[models.Citation]:
+    citations = [
+        models.Citation(
+            review_project_id=review_project_id,
+            title=parsed.title,
+            abstract=parsed.abstract,
+            authors=parsed.authors,
+            year=parsed.year,
+            source=parsed.source,
+        )
+        for parsed in parsed_citations
+    ]
+    db.add_all(citations)
+    db.commit()
+    return citations
+
+
+def list_citations(db: Session, review_project_id: uuid.UUID) -> list[models.Citation]:
+    return list(
+        db.query(models.Citation)
+        .filter(models.Citation.review_project_id == review_project_id)
+        .order_by(models.Citation.created_at)
+        .all()
+    )

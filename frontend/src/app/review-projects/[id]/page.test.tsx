@@ -30,6 +30,7 @@ describe("ReviewProjectDetailPage", () => {
       exclusion_rules: [],
       notes: null,
     });
+    mockedApi.listCitations.mockResolvedValue([]);
   });
 
   it("shows previously saved criteria", async () => {

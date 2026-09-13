@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 
+import { CitationsPanel } from "@/components/CitationsPanel";
 import { getReviewProject, saveCriteria, type CriteriaInput, type ReviewProjectDetail } from "@/lib/api";
 
 function toLines(value: string): string[] {
@@ -123,6 +124,8 @@ export default function ReviewProjectDetailPage({
 
         <button type="submit">Save Criteria</button>
       </form>
+
+      <CitationsPanel reviewProjectId={project.id} />
     </main>
   );
 }
