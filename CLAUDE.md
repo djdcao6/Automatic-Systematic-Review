@@ -1,3 +1,7 @@
+## Info
+
+See @README.md for what this project does.
+
 ## Tech stack
 
 - Backend: FastAPI (Python) — paper ingestion, screening/extraction endpoints, calls the Anthropic API for AI screening/extraction, PDF text extraction via PyMuPDF/pdfplumber.
@@ -15,6 +19,16 @@ Frontend (run from `frontend/`, uses `npm`):
 - Dev server: `npm run dev`
 - Run tests: `npm run test`
 - Lint: `npm run lint`
+
+## Code Style
+
+- Frontend has no business API routes — the FastAPI backend is the single source
+  of truth for data access; the frontend calls it over HTTP.
+- Frontend: reusable UI in `src/components/`, shared logic in `src/lib/`.
+  Page/layout files use Next.js's required default export; everything else uses
+  named exports.
+- Backend: request/response shapes defined as Pydantic models; route handlers
+  stay thin and delegate logic to plain functions/modules, not inline in the route.
 
 ## Agent skills
 
