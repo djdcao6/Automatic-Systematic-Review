@@ -2,9 +2,10 @@ import uuid
 
 from fastapi import Depends, FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
-from asr_backend import citation_import, crud, models, schemas, screening
+from asr_backend import citation_import, crud, export, models, schemas, screening
 from asr_backend.ai_suggestion import AISuggester, get_ai_suggester
 from asr_backend.db import get_db
 from asr_backend.settings import settings
@@ -164,3 +165,19 @@ def record_screening_decision(
     db: Session = Depends(get_db),
 ) -> models.ScreeningDecision:
     return crud.upsert_screening_decision(db, project, citation.id, payload)
+
+
+@app.get("/review-projects/{review_project_id}/export")
+def export_review_project(
+    project: models.ReviewProject = Depends(get_review_project_or_404),
+    db: Session = Depends(get_db),
+) -> Response:
+    citations = crud.list_citations(db, project.id)
+    csv_content = export.build_citations_csv(citations)
+    return Response(
+        content=csv_content,
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": f'attachment; filename="review-project-{project.id}.csv"'
+        },
+    )

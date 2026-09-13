@@ -147,6 +147,24 @@ export async function getCitation(
   return response.json();
 }
 
+export type ExportedFile = {
+  blob: Blob;
+  filename: string;
+};
+
+export async function exportReviewProject(reviewProjectId: string): Promise<ExportedFile> {
+  const response = await fetch(`${API_URL}/review-projects/${reviewProjectId}/export`);
+  if (!response.ok) {
+    throw new Error("Failed to export review project");
+  }
+  const disposition = response.headers.get("Content-Disposition") ?? "";
+  const filenameMatch = disposition.match(/filename="([^"]+)"/);
+  return {
+    blob: await response.blob(),
+    filename: filenameMatch ? filenameMatch[1] : "citations.csv",
+  };
+}
+
 export async function recordScreeningDecision(
   reviewProjectId: string,
   citationId: string,
