@@ -2,6 +2,8 @@
 
 import { type FormEvent, useEffect, useState } from "react";
 
+import Link from "next/link";
+
 import { createReviewProject, listReviewProjects, type ReviewProject } from "@/lib/api";
 
 export default function Home() {
@@ -45,7 +47,9 @@ export default function Home() {
       </form>
       <ul>
         {projects.map((project) => (
-          <li key={project.id}>{project.name}</li>
+          <li key={project.id}>
+            <Link href={`/review-projects/${project.id}`}>{project.name}</Link>
+          </li>
         ))}
       </ul>
     </main>

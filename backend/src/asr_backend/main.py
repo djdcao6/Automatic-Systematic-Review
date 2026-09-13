@@ -1,4 +1,6 @@
-from fastapi import Depends, FastAPI
+import uuid
+
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
@@ -35,3 +37,31 @@ def create_review_project(
 @app.get("/review-projects", response_model=list[schemas.ReviewProjectRead])
 def list_review_projects(db: Session = Depends(get_db)) -> list[models.ReviewProject]:
     return crud.list_review_projects(db)
+
+
+def get_review_project_or_404(
+    review_project_id: uuid.UUID, db: Session = Depends(get_db)
+) -> models.ReviewProject:
+    project = crud.get_review_project(db, review_project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Review project not found")
+    return project
+
+
+@app.get("/review-projects/{review_project_id}", response_model=schemas.ReviewProjectDetailRead)
+def get_review_project(
+    project: models.ReviewProject = Depends(get_review_project_or_404),
+) -> models.ReviewProject:
+    return project
+
+
+@app.put(
+    "/review-projects/{review_project_id}/criteria",
+    response_model=schemas.CriteriaRead,
+)
+def save_criteria(
+    payload: schemas.CriteriaUpdate,
+    project: models.ReviewProject = Depends(get_review_project_or_404),
+    db: Session = Depends(get_db),
+) -> models.Criteria:
+    return crud.upsert_criteria(db, project, payload)
