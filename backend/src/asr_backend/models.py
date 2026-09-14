@@ -1,7 +1,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -105,6 +105,9 @@ class Citation(Base):
         back_populates="citation", uselist=False, cascade="all, delete-orphan"
     )
     full_text_decision: Mapped["FullTextDecision | None"] = relationship(
+        back_populates="citation", uselist=False, cascade="all, delete-orphan"
+    )
+    full_text_suggestion: Mapped["FullTextSuggestion | None"] = relationship(
         back_populates="citation", uselist=False, cascade="all, delete-orphan"
     )
 
@@ -229,3 +232,52 @@ class FullTextDecision(Base):
     )
 
     citation: Mapped[Citation] = relationship(back_populates="full_text_decision")
+
+
+class FullTextSuggestion(Base):
+    __tablename__ = "full_text_suggestions"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    citation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("citations.id"), unique=True, nullable=False
+    )
+    decision: Mapped[str] = mapped_column(String, nullable=False)
+    reason: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+
+    citation: Mapped[Citation] = relationship(back_populates="full_text_suggestion")
+    extraction_values: Mapped[list["FullTextSuggestionValue"]] = relationship(
+        back_populates="full_text_suggestion",
+        cascade="all, delete-orphan",
+        order_by="FullTextSuggestionValue.created_at",
+    )
+
+
+class FullTextSuggestionValue(Base):
+    __tablename__ = "full_text_suggestion_values"
+    __table_args__ = (
+        UniqueConstraint("full_text_suggestion_id", "extraction_field_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    full_text_suggestion_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("full_text_suggestions.id"), nullable=False
+    )
+    extraction_field_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("extraction_fields.id"), nullable=False
+    )
+    value: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+
+    full_text_suggestion: Mapped[FullTextSuggestion] = relationship(
+        back_populates="extraction_values"
+    )
+    extraction_field: Mapped["ExtractionField"] = relationship()
+
+    @property
+    def name(self) -> str:
+        return self.extraction_field.name

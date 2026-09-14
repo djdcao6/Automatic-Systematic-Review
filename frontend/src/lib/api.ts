@@ -87,6 +87,18 @@ export type FullTextDecision = {
   updated_at: string;
 };
 
+export type ExtractionValueSuggestion = {
+  extraction_field_id: string;
+  name: string;
+  value: string;
+};
+
+export type FullTextSuggestion = {
+  decision: Decision;
+  reason: string;
+  extraction_values: ExtractionValueSuggestion[];
+};
+
 export type CitationDetail = Citation & {
   suggestion: Suggestion | null;
   suggestion_unavailable_reason: string | null;
@@ -94,6 +106,8 @@ export type CitationDetail = Citation & {
   screening_resolved: boolean;
   full_text: FullText | null;
   full_text_decision: FullTextDecision | null;
+  full_text_suggestion: FullTextSuggestion | null;
+  full_text_suggestion_unavailable_reason: string | null;
 };
 
 export type ScreeningDecisionInput = {

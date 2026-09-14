@@ -146,6 +146,22 @@ class FullTextDecisionRead(BaseModel):
     updated_at: datetime
 
 
+class ExtractionValueSuggestionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    extraction_field_id: uuid.UUID
+    name: str
+    value: str
+
+
+class FullTextSuggestionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    decision: Literal["include", "exclude", "maybe"]
+    reason: str
+    extraction_values: list[ExtractionValueSuggestionRead]
+
+
 class CitationDetailRead(CitationRead):
     suggestion: SuggestionRead | None = None
     suggestion_unavailable_reason: str | None = None
@@ -153,3 +169,5 @@ class CitationDetailRead(CitationRead):
     screening_resolved: bool
     full_text: FullTextRead | None = None
     full_text_decision: FullTextDecisionRead | None = None
+    full_text_suggestion: FullTextSuggestionRead | None = None
+    full_text_suggestion_unavailable_reason: str | None = None

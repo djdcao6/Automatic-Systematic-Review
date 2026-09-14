@@ -19,6 +19,8 @@ const baseCitation = {
   needs_abstract: false,
   screening_resolved: false,
   full_text_decision: null,
+  full_text_suggestion: null,
+  full_text_suggestion_unavailable_reason: null,
 };
 
 function renderPage() {
@@ -379,6 +381,74 @@ describe("CitationScreeningPage", () => {
 
     expect(group.getByLabelText("exclude")).toBeChecked();
     expect(await group.findByLabelText(/reason/i)).toHaveValue("Wrong population");
+  });
+
+  it("does not show a Full-Text Suggestion section when there is no Full Text yet", async () => {
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+      screening_decision: null,
+      full_text: null,
+    });
+
+    renderPage();
+
+    await screen.findByText(/no full text uploaded yet/i);
+    expect(screen.queryByText("Full-Text Suggestion")).not.toBeInTheDocument();
+  });
+
+  it("shows the Full-Text Suggestion decision, reason, and extraction field values", async () => {
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+      screening_decision: null,
+      full_text: {
+        original_filename: "paper.pdf",
+        parse_status: "parsed",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+      full_text_suggestion: {
+        decision: "include",
+        reason: "Meets all criteria.",
+        extraction_values: [
+          { extraction_field_id: "f1", name: "Sample size", value: "120 participants" },
+        ],
+      },
+      full_text_suggestion_unavailable_reason: null,
+    });
+
+    renderPage();
+
+    expect(
+      await screen.findByText(/include:\s*meets all criteria/i)
+    ).toBeInTheDocument();
+    expect(screen.getByText(/sample size:\s*120 participants/i)).toBeInTheDocument();
+  });
+
+  it("shows why no Full-Text Suggestion is available when the PDF could not be parsed", async () => {
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+      screening_decision: null,
+      full_text: {
+        original_filename: "scanned.pdf",
+        parse_status: "parse_failed",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+      full_text_suggestion: null,
+      full_text_suggestion_unavailable_reason: "parse_failed",
+    });
+
+    renderPage();
+
+    expect(
+      await screen.findByText(/could not be parsed, so no full-text suggestion/i)
+    ).toBeInTheDocument();
   });
 
   it("shows an error when recording a Full-Text Decision fails", async () => {

@@ -304,3 +304,54 @@ def upsert_full_text_decision(
         .filter(models.FullTextDecision.citation_id == citation_id)
         .one()
     )
+
+
+def get_full_text_suggestion(
+    db: Session, citation_id: uuid.UUID
+) -> models.FullTextSuggestion | None:
+    return (
+        db.query(models.FullTextSuggestion)
+        .filter(models.FullTextSuggestion.citation_id == citation_id)
+        .one_or_none()
+    )
+
+
+def create_full_text_suggestion(
+    db: Session,
+    citation_id: uuid.UUID,
+    *,
+    decision: str,
+    reason: str,
+    extraction_values: dict[str, str],
+    active_fields: list[models.ExtractionField],
+) -> models.FullTextSuggestion:
+    suggestion = models.FullTextSuggestion(
+        citation_id=citation_id, decision=decision, reason=reason
+    )
+    db.add(suggestion)
+    db.flush()
+
+    field_by_name = {field.name: field for field in active_fields}
+    for name, value in extraction_values.items():
+        field = field_by_name.get(name)
+        if field is None:
+            continue
+        db.add(
+            models.FullTextSuggestionValue(
+                full_text_suggestion_id=suggestion.id,
+                extraction_field_id=field.id,
+                value=value,
+            )
+        )
+
+    db.commit()
+    db.refresh(suggestion)
+    return suggestion
+
+
+def delete_full_text_suggestion(db: Session, citation_id: uuid.UUID) -> None:
+    """Invalidates a Citation's Full-Text Suggestion, e.g. when its PDF is replaced."""
+    suggestion = get_full_text_suggestion(db, citation_id)
+    if suggestion is not None:
+        db.delete(suggestion)
+        db.commit()

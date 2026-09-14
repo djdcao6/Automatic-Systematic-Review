@@ -23,6 +23,14 @@ const UNAVAILABLE_MESSAGES: Record<string, string> = {
     "Generating an AI Suggestion failed. You can still record a decision manually.",
 };
 
+const FULL_TEXT_SUGGESTION_UNAVAILABLE_MESSAGES: Record<string, string> = {
+  no_full_text: "Upload a Full Text to get a Full-Text Suggestion.",
+  parse_failed:
+    "This Full Text could not be parsed, so no Full-Text Suggestion could be generated.",
+  generation_failed:
+    "Generating a Full-Text Suggestion failed. You can still record a decision manually.",
+};
+
 function blankOrValue(value: string): string | null {
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
@@ -144,6 +152,12 @@ export default function CitationScreeningPage({
       "No AI Suggestion is available for this citation.")
     : null;
 
+  const fullTextSuggestionUnavailableMessage = citation.full_text_suggestion_unavailable_reason
+    ? (FULL_TEXT_SUGGESTION_UNAVAILABLE_MESSAGES[
+        citation.full_text_suggestion_unavailable_reason
+      ] ?? "No Full-Text Suggestion is available for this citation.")
+    : null;
+
   return (
     <main>
       {reviewProjectId && (
@@ -201,6 +215,30 @@ export default function CitationScreeningPage({
         />
         {fullTextError && <p role="alert">{fullTextError}</p>}
       </section>
+
+      {citation.full_text && (
+        <section>
+          <h2>Full-Text Suggestion</h2>
+          {citation.full_text_suggestion ? (
+            <>
+              <p>
+                {citation.full_text_suggestion.decision}: {citation.full_text_suggestion.reason}
+              </p>
+              {citation.full_text_suggestion.extraction_values.length > 0 && (
+                <ul>
+                  {citation.full_text_suggestion.extraction_values.map((extractionValue) => (
+                    <li key={extractionValue.extraction_field_id}>
+                      {extractionValue.name}: {extractionValue.value}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          ) : (
+            <p>{fullTextSuggestionUnavailableMessage}</p>
+          )}
+        </section>
+      )}
 
       {citation.full_text && (
         <section>

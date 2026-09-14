@@ -5,7 +5,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session
 
-from asr_backend import citation_import, crud, export, full_text, models, schemas, screening
+from asr_backend import (
+    citation_import,
+    crud,
+    export,
+    full_text,
+    full_text_suggestion,
+    models,
+    schemas,
+    screening,
+)
 from asr_backend.ai_suggestion import AISuggester, get_ai_suggester
 from asr_backend.db import get_db
 from asr_backend.settings import settings
@@ -200,6 +209,9 @@ async def get_citation_detail(
     decision = crud.get_screening_decision(db, citation.id)
     existing_full_text = crud.get_full_text(db, citation.id)
     full_text_decision = crud.get_full_text_decision(db, citation.id)
+    ft_suggestion, ft_unavailable_reason = await full_text_suggestion.get_or_generate_full_text_suggestion(
+        db, citation, existing_full_text, suggester
+    )
     return schemas.CitationDetailRead(
         id=citation.id,
         title=citation.title,
@@ -214,6 +226,8 @@ async def get_citation_detail(
         screening_resolved=citation.screening_resolved,
         full_text=existing_full_text,
         full_text_decision=full_text_decision,
+        full_text_suggestion=ft_suggestion,
+        full_text_suggestion_unavailable_reason=ft_unavailable_reason,
     )
 
 
@@ -246,7 +260,7 @@ async def upload_full_text(
     raw = await file.read()
     parsed_text, parse_status = full_text.extract_text(raw)
     file_path = full_text.save_pdf(citation.id, raw)
-    return crud.upsert_full_text(
+    result = crud.upsert_full_text(
         db,
         citation.id,
         original_filename=file.filename or "full-text.pdf",
@@ -254,6 +268,10 @@ async def upload_full_text(
         parsed_text=parsed_text,
         parse_status=parse_status,
     )
+    # A new PDF is new source content, so any prior Full-Text Suggestion is
+    # stale; clearing it here lets the next citation detail view regenerate.
+    crud.delete_full_text_suggestion(db, citation.id)
+    return result
 
 
 @app.post(
