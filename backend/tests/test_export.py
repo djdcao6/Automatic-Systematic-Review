@@ -1,6 +1,8 @@
 import csv
 import io
 
+import pymupdf
+
 from asr_backend import export
 from asr_backend.ai_suggestion import SuggestionResult, get_ai_suggester
 from asr_backend.main import app
@@ -140,6 +142,128 @@ def test_export_shows_ai_suggestion_and_final_decision_when_they_disagree(client
     assert row["reason"] == "Reviewer disagrees"
     assert row["ai_suggestion_decision"] == "include"
     assert row["ai_suggestion_reason"] == "Looks relevant."
+
+
+def make_pdf(text: str = "Sample paper text") -> bytes:
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.insert_text((72, 72), text)
+    return doc.tobytes()
+
+
+def attach_full_text(client, project_id: str, citation_id: str) -> None:
+    client.post(
+        f"/review-projects/{project_id}/citations/{citation_id}/full-text",
+        files={"file": ("paper.pdf", io.BytesIO(make_pdf()), "application/pdf")},
+    )
+
+
+def record_full_text_decision(
+    client, project_id: str, citation_id: str, decision: str, reason: str | None = None
+) -> None:
+    client.post(
+        f"/review-projects/{project_id}/citations/{citation_id}/full-text-decision",
+        json={"decision": decision, "reason": reason},
+    )
+
+
+def create_extraction_field(client, project_id: str, name: str = "Sample size") -> dict:
+    return client.post(
+        f"/review-projects/{project_id}/extraction-fields",
+        json={"name": name, "description": None},
+    ).json()
+
+
+def archive_extraction_field(client, project_id: str, field_id: str) -> None:
+    client.post(f"/review-projects/{project_id}/extraction-fields/{field_id}/archive")
+
+
+def record_extraction_value(client, project_id: str, citation_id: str, field_id: str, value: str) -> None:
+    client.post(
+        f"/review-projects/{project_id}/citations/{citation_id}"
+        f"/extraction-fields/{field_id}/value",
+        json={"value": value},
+    )
+
+
+def test_export_includes_full_text_decision_and_reason_when_recorded(client):
+    project_id = create_project(client)
+    upload_csv(client, project_id, CSV_HEADER + "Study,An abstract,Author,2020,PubMed\n")
+    citation_id = client.get(f"/review-projects/{project_id}/citations").json()[0]["id"]
+    attach_full_text(client, project_id, citation_id)
+    record_full_text_decision(
+        client, project_id, citation_id, "exclude", "Wrong study design on closer read"
+    )
+
+    response = client.get(f"/review-projects/{project_id}/export")
+
+    row = parse_export(response)[0]
+    assert row["full_text_decision"] == "exclude"
+    assert row["full_text_reason"] == "Wrong study design on closer read"
+
+
+def test_export_full_text_reason_empty_when_decision_recorded_without_reason(client):
+    project_id = create_project(client)
+    upload_csv(client, project_id, CSV_HEADER + "Study,An abstract,Author,2020,PubMed\n")
+    citation_id = client.get(f"/review-projects/{project_id}/citations").json()[0]["id"]
+    attach_full_text(client, project_id, citation_id)
+    record_full_text_decision(client, project_id, citation_id, "include")
+
+    response = client.get(f"/review-projects/{project_id}/export")
+
+    row = parse_export(response)[0]
+    assert row["full_text_decision"] == "include"
+    assert row["full_text_reason"] == ""
+
+
+def test_export_full_text_decision_columns_empty_when_no_decision_recorded(client):
+    project_id = create_project(client)
+    upload_csv(client, project_id, CSV_HEADER + "Study,An abstract,Author,2020,PubMed\n")
+
+    response = client.get(f"/review-projects/{project_id}/export")
+
+    row = parse_export(response)[0]
+    assert row["full_text_decision"] == ""
+    assert row["full_text_reason"] == ""
+
+
+def test_export_includes_column_per_active_extraction_field_with_recorded_value(client):
+    project_id = create_project(client)
+    field = create_extraction_field(client, project_id, name="Sample size")
+    upload_csv(client, project_id, CSV_HEADER + "Study,An abstract,Author,2020,PubMed\n")
+    citation_id = client.get(f"/review-projects/{project_id}/citations").json()[0]["id"]
+    record_extraction_value(client, project_id, citation_id, field["id"], "142 patients")
+
+    response = client.get(f"/review-projects/{project_id}/export")
+
+    lines = response.text.splitlines()
+    assert lines[0] == ",".join([*export.CSV_HEADER, "Sample size"])
+    row = parse_export(response)[0]
+    assert row["Sample size"] == "142 patients"
+
+
+def test_export_extraction_field_column_empty_when_no_value_recorded(client):
+    project_id = create_project(client)
+    create_extraction_field(client, project_id, name="Sample size")
+    upload_csv(client, project_id, CSV_HEADER + "Study,An abstract,Author,2020,PubMed\n")
+
+    response = client.get(f"/review-projects/{project_id}/export")
+
+    row = parse_export(response)[0]
+    assert row["Sample size"] == ""
+
+
+def test_export_omits_archived_extraction_fields_from_columns(client):
+    project_id = create_project(client)
+    field = create_extraction_field(client, project_id, name="Sample size")
+    archive_extraction_field(client, project_id, field["id"])
+    upload_csv(client, project_id, CSV_HEADER + "Study,An abstract,Author,2020,PubMed\n")
+
+    response = client.get(f"/review-projects/{project_id}/export")
+
+    lines = response.text.splitlines()
+    assert lines[0] == ",".join(export.CSV_HEADER)
+    assert "Sample size" not in lines[0]
 
 
 def test_export_empty_review_project(client):

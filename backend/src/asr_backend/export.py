@@ -14,6 +14,8 @@ CSV_HEADER = [
     "reason",
     "ai_suggestion_decision",
     "ai_suggestion_reason",
+    "full_text_decision",
+    "full_text_reason",
 ]
 
 _SLUG_NON_ALNUM = re.compile(r"[^a-z0-9]+")
@@ -34,8 +36,9 @@ def build_export_csv(
 ) -> str:
     buffer = io.StringIO()
     _write_criteria_header(buffer, review_project.criteria)
+    extraction_fields = review_project.active_extraction_fields
     writer = csv.writer(buffer)
-    writer.writerow(CSV_HEADER)
+    writer.writerow([*CSV_HEADER, *(field.name for field in extraction_fields)])
     for citation in citations:
         writer.writerow(
             [
@@ -48,6 +51,9 @@ def build_export_csv(
                 citation.screening_reason,
                 citation.ai_suggestion_decision_label,
                 citation.ai_suggestion_reason_label,
+                citation.full_text_decision_label,
+                citation.full_text_reason_label,
+                *(citation.extraction_value_for(field.id) for field in extraction_fields),
             ]
         )
     return buffer.getvalue()

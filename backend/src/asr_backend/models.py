@@ -161,6 +161,22 @@ class Citation(Base):
     def ai_suggestion_reason_label(self) -> str:
         return self.ai_suggestion.reason if self.ai_suggestion else _AI_SUGGESTION_UNAVAILABLE
 
+    @property
+    def full_text_decision_label(self) -> str:
+        return self.full_text_decision.decision if self.full_text_decision else ""
+
+    @property
+    def full_text_reason_label(self) -> str:
+        if self.full_text_decision is None:
+            return ""
+        return self.full_text_decision.reason or ""
+
+    def extraction_value_for(self, extraction_field_id: uuid.UUID) -> str:
+        for extraction_value in self.extraction_values:
+            if extraction_value.extraction_field_id == extraction_field_id:
+                return extraction_value.value
+        return ""
+
 
 class AISuggestion(Base):
     __tablename__ = "ai_suggestions"
