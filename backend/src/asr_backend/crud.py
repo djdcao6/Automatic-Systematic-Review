@@ -357,3 +357,49 @@ def delete_full_text_suggestion(db: Session, citation_id: uuid.UUID) -> None:
     if suggestion is not None:
         db.delete(suggestion)
         db.commit()
+
+
+def get_extraction_values(db: Session, citation_id: uuid.UUID) -> list[models.ExtractionValue]:
+    return list(
+        db.query(models.ExtractionValue)
+        .filter(models.ExtractionValue.citation_id == citation_id)
+        .order_by(models.ExtractionValue.created_at)
+        .all()
+    )
+
+
+def upsert_extraction_value(
+    db: Session,
+    citation_id: uuid.UUID,
+    extraction_field_id: uuid.UUID,
+    payload: schemas.ExtractionValueCreate,
+) -> models.ExtractionValue:
+    values = {
+        "citation_id": citation_id,
+        "extraction_field_id": extraction_field_id,
+        "value": payload.value,
+    }
+    stmt = pg_insert(models.ExtractionValue).values(**values)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=[
+            models.ExtractionValue.citation_id,
+            models.ExtractionValue.extraction_field_id,
+        ],
+        set_={
+            "value": stmt.excluded.value,
+            "updated_at": func.now(),
+        },
+    )
+    # Same atomic INSERT ... ON CONFLICT DO UPDATE pattern as
+    # upsert_screening_decision, since an Extraction Value is editable and
+    # this races the same way.
+    db.execute(stmt)
+    db.commit()
+    return (
+        db.query(models.ExtractionValue)
+        .filter(
+            models.ExtractionValue.citation_id == citation_id,
+            models.ExtractionValue.extraction_field_id == extraction_field_id,
+        )
+        .one()
+    )

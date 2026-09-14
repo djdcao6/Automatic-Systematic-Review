@@ -99,6 +99,14 @@ export type FullTextSuggestion = {
   extraction_values: ExtractionValueSuggestion[];
 };
 
+export type ExtractionValue = {
+  extraction_field_id: string;
+  name: string;
+  value: string;
+  created_at: string;
+  updated_at: string;
+};
+
 export type CitationDetail = Citation & {
   suggestion: Suggestion | null;
   suggestion_unavailable_reason: string | null;
@@ -108,6 +116,8 @@ export type CitationDetail = Citation & {
   full_text_decision: FullTextDecision | null;
   full_text_suggestion: FullTextSuggestion | null;
   full_text_suggestion_unavailable_reason: string | null;
+  extraction_fields: ExtractionField[];
+  extraction_values: ExtractionValue[];
 };
 
 export type ScreeningDecisionInput = {
@@ -118,6 +128,10 @@ export type ScreeningDecisionInput = {
 export type FullTextDecisionInput = {
   decision: Decision;
   reason: string | null;
+};
+
+export type ExtractionValueInput = {
+  value: string;
 };
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -333,6 +347,27 @@ export async function recordFullTextDecision(
   );
   if (!response.ok) {
     throw new Error("Failed to record full-text decision");
+  }
+  return response.json();
+}
+
+export async function recordExtractionValue(
+  reviewProjectId: string,
+  citationId: string,
+  extractionFieldId: string,
+  payload: ExtractionValueInput
+): Promise<ExtractionValue> {
+  const response = await fetch(
+    `${API_URL}/review-projects/${reviewProjectId}/citations/${citationId}` +
+      `/extraction-fields/${extractionFieldId}/value`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }
+  );
+  if (!response.ok) {
+    throw new Error("Failed to record extraction value");
   }
   return response.json();
 }

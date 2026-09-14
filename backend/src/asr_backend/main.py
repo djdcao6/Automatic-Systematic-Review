@@ -212,6 +212,7 @@ async def get_citation_detail(
     ft_suggestion, ft_unavailable_reason = await full_text_suggestion.get_or_generate_full_text_suggestion(
         db, citation, existing_full_text, suggester
     )
+    extraction_values = crud.get_extraction_values(db, citation.id)
     return schemas.CitationDetailRead(
         id=citation.id,
         title=citation.title,
@@ -228,6 +229,8 @@ async def get_citation_detail(
         full_text_decision=full_text_decision,
         full_text_suggestion=ft_suggestion,
         full_text_suggestion_unavailable_reason=ft_unavailable_reason,
+        extraction_fields=citation.review_project.active_extraction_fields,
+        extraction_values=extraction_values,
     )
 
 
@@ -289,6 +292,25 @@ def record_full_text_decision(
             detail="Citation has no Full Text to record a Full-Text Decision against",
         )
     return crud.upsert_full_text_decision(db, citation.id, payload)
+
+
+@app.post(
+    "/review-projects/{review_project_id}/citations/{citation_id}"
+    "/extraction-fields/{extraction_field_id}/value",
+    response_model=schemas.ExtractionValueRead,
+)
+def record_extraction_value(
+    payload: schemas.ExtractionValueCreate,
+    citation: models.Citation = Depends(get_citation_or_404),
+    field: models.ExtractionField = Depends(get_extraction_field_or_404),
+    db: Session = Depends(get_db),
+) -> models.ExtractionValue:
+    if field.archived:
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot record an Extraction Value for an archived Extraction Field",
+        )
+    return crud.upsert_extraction_value(db, citation.id, field.id, payload)
 
 
 @app.get("/review-projects/{review_project_id}/citations/{citation_id}/full-text/file")

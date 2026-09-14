@@ -36,6 +36,10 @@ class ReviewProject(Base):
     def citations_needing_decision(self) -> int:
         return sum(1 for citation in self.citations if citation.screening_decision is None)
 
+    @property
+    def active_extraction_fields(self) -> list["ExtractionField"]:
+        return [field for field in self.extraction_fields if not field.archived]
+
 
 class Criteria(Base):
     __tablename__ = "criteria"
@@ -109,6 +113,11 @@ class Citation(Base):
     )
     full_text_suggestion: Mapped["FullTextSuggestion | None"] = relationship(
         back_populates="citation", uselist=False, cascade="all, delete-orphan"
+    )
+    extraction_values: Mapped[list["ExtractionValue"]] = relationship(
+        back_populates="citation",
+        cascade="all, delete-orphan",
+        order_by="ExtractionValue.created_at",
     )
 
     @property
@@ -276,6 +285,40 @@ class FullTextSuggestionValue(Base):
     full_text_suggestion: Mapped[FullTextSuggestion] = relationship(
         back_populates="extraction_values"
     )
+    extraction_field: Mapped["ExtractionField"] = relationship()
+
+    @property
+    def name(self) -> str:
+        return self.extraction_field.name
+
+
+class ExtractionValue(Base):
+    """A Reviewer's recorded value for one Citation x Extraction Field pair.
+
+    Kept separate from FullTextSuggestionValue (the AI-proposed value) so a
+    confirmed value is stored distinctly even when it matches the proposal,
+    mirroring how AISuggestion and ScreeningDecision stay separate in v1.
+    """
+
+    __tablename__ = "extraction_values"
+    __table_args__ = (UniqueConstraint("citation_id", "extraction_field_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    citation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("citations.id"), nullable=False)
+    extraction_field_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("extraction_fields.id"), nullable=False
+    )
+    value: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+    citation: Mapped[Citation] = relationship(back_populates="extraction_values")
     extraction_field: Mapped["ExtractionField"] = relationship()
 
     @property

@@ -7,6 +7,7 @@ import {
   fullTextFileUrl,
   getCitation,
   getReviewProject,
+  recordExtractionValue,
   recordFullTextDecision,
   recordScreeningDecision,
   uploadFullText,
@@ -55,6 +56,9 @@ export default function CitationScreeningPage({
   const [ftReason, setFtReason] = useState("");
   const [ftError, setFtError] = useState<string | null>(null);
   const [ftSaved, setFtSaved] = useState(false);
+  const [extractionInputs, setExtractionInputs] = useState<Record<string, string>>({});
+  const [extractionErrors, setExtractionErrors] = useState<Record<string, string>>({});
+  const [extractionSavedFieldId, setExtractionSavedFieldId] = useState<string | null>(null);
 
   useEffect(() => {
     params.then((resolved) => {
@@ -82,6 +86,22 @@ export default function CitationScreeningPage({
           setFtDecision(data.full_text_suggestion.decision);
           setFtReason(data.full_text_suggestion.reason);
         }
+
+        const suggestedByField = new Map(
+          (data.full_text_suggestion?.extraction_values ?? []).map((value) => [
+            value.extraction_field_id,
+            value.value,
+          ])
+        );
+        const recordedByField = new Map(
+          data.extraction_values.map((value) => [value.extraction_field_id, value.value])
+        );
+        const initialInputs: Record<string, string> = {};
+        for (const field of data.extraction_fields) {
+          initialInputs[field.id] =
+            recordedByField.get(field.id) ?? suggestedByField.get(field.id) ?? "";
+        }
+        setExtractionInputs(initialInputs);
       })
       .catch(() => setError("Failed to load citation."));
   }, [reviewProjectId, citationId]);
@@ -126,6 +146,32 @@ export default function CitationScreeningPage({
       setFtError(null);
     } catch {
       setFtError("Failed to save full-text decision.");
+    }
+  }
+
+  async function handleSaveExtractionValue(fieldId: string) {
+    if (!reviewProjectId || !citationId) return;
+    const value = extractionInputs[fieldId] ?? "";
+
+    try {
+      const updated = await recordExtractionValue(reviewProjectId, citationId, fieldId, {
+        value,
+      });
+      setCitation((current) => {
+        if (!current) return current;
+        const others = current.extraction_values.filter(
+          (existing) => existing.extraction_field_id !== fieldId
+        );
+        return { ...current, extraction_values: [...others, updated] };
+      });
+      setExtractionErrors((current) => ({ ...current, [fieldId]: "" }));
+      setExtractionSavedFieldId(fieldId);
+    } catch {
+      setExtractionErrors((current) => ({
+        ...current,
+        [fieldId]: "Failed to save extraction value.",
+      }));
+      setExtractionSavedFieldId(null);
     }
   }
 
@@ -240,6 +286,34 @@ export default function CitationScreeningPage({
           ) : (
             <p>{fullTextSuggestionUnavailableMessage}</p>
           )}
+        </section>
+      )}
+
+      {citation.extraction_fields.length > 0 && (
+        <section>
+          <h2>Extraction Values</h2>
+          {citation.extraction_fields.map((field) => (
+            <div key={field.id}>
+              <label htmlFor={`extraction-value-${field.id}`}>{field.name}</label>
+              <input
+                id={`extraction-value-${field.id}`}
+                value={extractionInputs[field.id] ?? ""}
+                onChange={(event) =>
+                  setExtractionInputs((current) => ({
+                    ...current,
+                    [field.id]: event.target.value,
+                  }))
+                }
+              />
+              <button type="button" onClick={() => handleSaveExtractionValue(field.id)}>
+                Save
+              </button>
+              {extractionErrors[field.id] && (
+                <p role="alert">{extractionErrors[field.id]}</p>
+              )}
+              {extractionSavedFieldId === field.id && <p>Extraction value saved.</p>}
+            </div>
+          ))}
         </section>
       )}
 

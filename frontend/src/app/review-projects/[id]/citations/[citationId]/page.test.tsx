@@ -21,6 +21,8 @@ const baseCitation = {
   full_text_decision: null,
   full_text_suggestion: null,
   full_text_suggestion_unavailable_reason: null,
+  extraction_fields: [],
+  extraction_values: [],
 };
 
 function renderPage() {
@@ -498,5 +500,278 @@ describe("CitationScreeningPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /save full-text decision/i }));
 
     expect(await screen.findByText(/failed to save full-text decision/i)).toBeInTheDocument();
+  });
+
+  it("does not show an Extraction Values section when there are no extraction fields", async () => {
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+      screening_decision: null,
+      full_text: null,
+    });
+
+    renderPage();
+
+    await screen.findByText(/no full text uploaded yet/i);
+    expect(screen.queryByText("Extraction Values")).not.toBeInTheDocument();
+  });
+
+  it("pre-fills the extraction values form from the Full-Text Suggestion", async () => {
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+      screening_decision: null,
+      full_text: {
+        original_filename: "paper.pdf",
+        parse_status: "parsed",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+      full_text_suggestion: {
+        decision: "include",
+        reason: "Meets all criteria.",
+        extraction_values: [
+          { extraction_field_id: "f1", name: "Sample size", value: "120 participants" },
+        ],
+      },
+      extraction_fields: [
+        {
+          id: "f1",
+          name: "Sample size",
+          description: null,
+          archived: false,
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z",
+        },
+      ],
+    });
+
+    renderPage();
+
+    expect(await screen.findByLabelText("Sample size")).toHaveValue("120 participants");
+  });
+
+  it("pre-fills the extraction values form from a previously recorded value over the suggestion", async () => {
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+      screening_decision: null,
+      full_text: null,
+      full_text_suggestion: {
+        decision: "include",
+        reason: "Meets all criteria.",
+        extraction_values: [
+          { extraction_field_id: "f1", name: "Sample size", value: "120 participants" },
+        ],
+      },
+      extraction_fields: [
+        {
+          id: "f1",
+          name: "Sample size",
+          description: null,
+          archived: false,
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z",
+        },
+      ],
+      extraction_values: [
+        {
+          extraction_field_id: "f1",
+          name: "Sample size",
+          value: "Confirmed at 118 participants",
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z",
+        },
+      ],
+    });
+
+    renderPage();
+
+    expect(await screen.findByLabelText("Sample size")).toHaveValue(
+      "Confirmed at 118 participants"
+    );
+  });
+
+  it("allows manual entry of an extraction value when no AI proposal is available", async () => {
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+      screening_decision: null,
+      full_text: {
+        original_filename: "scanned.pdf",
+        parse_status: "parse_failed",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+      full_text_suggestion: null,
+      full_text_suggestion_unavailable_reason: "parse_failed",
+      extraction_fields: [
+        {
+          id: "f1",
+          name: "Sample size",
+          description: null,
+          archived: false,
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z",
+        },
+      ],
+    });
+    mockedApi.recordExtractionValue.mockResolvedValue({
+      extraction_field_id: "f1",
+      name: "Sample size",
+      value: "Entered by hand",
+      created_at: "2026-01-02T00:00:00Z",
+      updated_at: "2026-01-02T00:00:00Z",
+    });
+
+    renderPage();
+
+    const input = await screen.findByLabelText("Sample size");
+    expect(input).toHaveValue("");
+    fireEvent.change(input, { target: { value: "Entered by hand" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(mockedApi.recordExtractionValue).toHaveBeenCalledWith("1", "c1", "f1", {
+        value: "Entered by hand",
+      })
+    );
+    expect(await screen.findByText(/extraction value saved/i)).toBeInTheDocument();
+  });
+
+  it("confirms an AI-proposed extraction value as-is, recording it separately", async () => {
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+      screening_decision: null,
+      full_text: {
+        original_filename: "paper.pdf",
+        parse_status: "parsed",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+      full_text_suggestion: {
+        decision: "include",
+        reason: "Meets all criteria.",
+        extraction_values: [
+          { extraction_field_id: "f1", name: "Sample size", value: "120 participants" },
+        ],
+      },
+      extraction_fields: [
+        {
+          id: "f1",
+          name: "Sample size",
+          description: null,
+          archived: false,
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z",
+        },
+      ],
+    });
+    mockedApi.recordExtractionValue.mockResolvedValue({
+      extraction_field_id: "f1",
+      name: "Sample size",
+      value: "120 participants",
+      created_at: "2026-01-02T00:00:00Z",
+      updated_at: "2026-01-02T00:00:00Z",
+    });
+
+    renderPage();
+
+    await screen.findByLabelText("Sample size");
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(mockedApi.recordExtractionValue).toHaveBeenCalledWith("1", "c1", "f1", {
+        value: "120 participants",
+      })
+    );
+  });
+
+  it("overrides an AI-proposed extraction value by editing it before saving", async () => {
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+      screening_decision: null,
+      full_text: {
+        original_filename: "paper.pdf",
+        parse_status: "parsed",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+      full_text_suggestion: {
+        decision: "include",
+        reason: "Meets all criteria.",
+        extraction_values: [
+          { extraction_field_id: "f1", name: "Sample size", value: "120 participants" },
+        ],
+      },
+      extraction_fields: [
+        {
+          id: "f1",
+          name: "Sample size",
+          description: null,
+          archived: false,
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z",
+        },
+      ],
+    });
+    mockedApi.recordExtractionValue.mockResolvedValue({
+      extraction_field_id: "f1",
+      name: "Sample size",
+      value: "118 participants (corrected)",
+      created_at: "2026-01-02T00:00:00Z",
+      updated_at: "2026-01-02T00:00:00Z",
+    });
+
+    renderPage();
+
+    const input = await screen.findByLabelText("Sample size");
+    expect(input).toHaveValue("120 participants");
+    fireEvent.change(input, { target: { value: "118 participants (corrected)" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(mockedApi.recordExtractionValue).toHaveBeenCalledWith("1", "c1", "f1", {
+        value: "118 participants (corrected)",
+      })
+    );
+    expect(await screen.findByText(/extraction value saved/i)).toBeInTheDocument();
+  });
+
+  it("shows an error when recording an extraction value fails", async () => {
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+      screening_decision: null,
+      full_text: null,
+      extraction_fields: [
+        {
+          id: "f1",
+          name: "Sample size",
+          description: null,
+          archived: false,
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z",
+        },
+      ],
+    });
+    mockedApi.recordExtractionValue.mockRejectedValue(new Error("nope"));
+
+    renderPage();
+
+    const input = await screen.findByLabelText("Sample size");
+    fireEvent.change(input, { target: { value: "80 participants" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByText(/failed to save extraction value/i)).toBeInTheDocument();
   });
 });

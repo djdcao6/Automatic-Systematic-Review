@@ -34,7 +34,7 @@ async def get_or_generate_full_text_suggestion(
 
     review_project = citation.review_project
     criteria = review_project.criteria
-    active_fields = [field for field in review_project.extraction_fields if not field.archived]
+    active_fields = review_project.active_extraction_fields
 
     try:
         result = await suggester.suggest_full_text_decision(

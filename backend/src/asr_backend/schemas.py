@@ -162,6 +162,25 @@ class FullTextSuggestionRead(BaseModel):
     extraction_values: list[ExtractionValueSuggestionRead]
 
 
+class ExtractionValueCreate(BaseModel):
+    value: str
+
+    @field_validator("value")
+    @classmethod
+    def value_must_not_be_blank(cls, value: str) -> str:
+        return _require_non_blank(value)
+
+
+class ExtractionValueRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    extraction_field_id: uuid.UUID
+    name: str
+    value: str
+    created_at: datetime
+    updated_at: datetime
+
+
 class CitationDetailRead(CitationRead):
     suggestion: SuggestionRead | None = None
     suggestion_unavailable_reason: str | None = None
@@ -171,3 +190,5 @@ class CitationDetailRead(CitationRead):
     full_text_decision: FullTextDecisionRead | None = None
     full_text_suggestion: FullTextSuggestionRead | None = None
     full_text_suggestion_unavailable_reason: str | None = None
+    extraction_fields: list[ExtractionFieldRead] = []
+    extraction_values: list[ExtractionValueRead] = []
