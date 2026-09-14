@@ -7,6 +7,8 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from asr_backend.db import Base
 
+_AI_SUGGESTION_UNAVAILABLE = "not_available"
+
 
 class ReviewProject(Base):
     __tablename__ = "review_projects"
@@ -86,6 +88,14 @@ class Citation(Base):
         if self.screening_decision is None:
             return ""
         return self.screening_decision.reason or ""
+
+    @property
+    def ai_suggestion_decision_label(self) -> str:
+        return self.ai_suggestion.decision if self.ai_suggestion else _AI_SUGGESTION_UNAVAILABLE
+
+    @property
+    def ai_suggestion_reason_label(self) -> str:
+        return self.ai_suggestion.reason if self.ai_suggestion else _AI_SUGGESTION_UNAVAILABLE
 
 
 class AISuggestion(Base):

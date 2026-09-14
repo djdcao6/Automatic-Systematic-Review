@@ -4,7 +4,17 @@ import re
 
 from asr_backend import models
 
-CSV_HEADER = ["title", "abstract", "authors", "year", "source", "screening_decision", "reason"]
+CSV_HEADER = [
+    "title",
+    "abstract",
+    "authors",
+    "year",
+    "source",
+    "screening_decision",
+    "reason",
+    "ai_suggestion_decision",
+    "ai_suggestion_reason",
+]
 
 _SLUG_NON_ALNUM = re.compile(r"[^a-z0-9]+")
 
@@ -33,6 +43,8 @@ def build_citations_csv(citations: list[models.Citation]) -> str:
                 citation.source or "",
                 citation.decision_label,
                 citation.screening_reason,
+                citation.ai_suggestion_decision_label,
+                citation.ai_suggestion_reason_label,
             ]
         )
     return buffer.getvalue()
