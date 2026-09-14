@@ -263,3 +263,44 @@ def upsert_full_text(
     return (
         db.query(models.FullText).filter(models.FullText.citation_id == citation_id).one()
     )
+
+
+def get_full_text_decision(
+    db: Session, citation_id: uuid.UUID
+) -> models.FullTextDecision | None:
+    return (
+        db.query(models.FullTextDecision)
+        .filter(models.FullTextDecision.citation_id == citation_id)
+        .one_or_none()
+    )
+
+
+def upsert_full_text_decision(
+    db: Session,
+    citation_id: uuid.UUID,
+    payload: schemas.FullTextDecisionCreate,
+) -> models.FullTextDecision:
+    values = {
+        "citation_id": citation_id,
+        "decision": payload.decision,
+        "reason": payload.reason,
+    }
+    stmt = pg_insert(models.FullTextDecision).values(**values)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=[models.FullTextDecision.citation_id],
+        set_={
+            "decision": stmt.excluded.decision,
+            "reason": stmt.excluded.reason,
+            "updated_at": func.now(),
+        },
+    )
+    # Same atomic INSERT ... ON CONFLICT DO UPDATE pattern as
+    # upsert_screening_decision, since a Full-Text Decision is editable and
+    # this races the same way.
+    db.execute(stmt)
+    db.commit()
+    return (
+        db.query(models.FullTextDecision)
+        .filter(models.FullTextDecision.citation_id == citation_id)
+        .one()
+    )

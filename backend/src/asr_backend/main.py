@@ -199,6 +199,7 @@ async def get_citation_detail(
     )
     decision = crud.get_screening_decision(db, citation.id)
     existing_full_text = crud.get_full_text(db, citation.id)
+    full_text_decision = crud.get_full_text_decision(db, citation.id)
     return schemas.CitationDetailRead(
         id=citation.id,
         title=citation.title,
@@ -210,7 +211,9 @@ async def get_citation_detail(
         suggestion=suggestion,
         suggestion_unavailable_reason=unavailable_reason,
         screening_decision=decision,
+        screening_resolved=citation.screening_resolved,
         full_text=existing_full_text,
+        full_text_decision=full_text_decision,
     )
 
 
@@ -251,6 +254,23 @@ async def upload_full_text(
         parsed_text=parsed_text,
         parse_status=parse_status,
     )
+
+
+@app.post(
+    "/review-projects/{review_project_id}/citations/{citation_id}/full-text-decision",
+    response_model=schemas.FullTextDecisionRead,
+)
+def record_full_text_decision(
+    payload: schemas.FullTextDecisionCreate,
+    citation: models.Citation = Depends(get_citation_or_404),
+    db: Session = Depends(get_db),
+) -> models.FullTextDecision:
+    if crud.get_full_text(db, citation.id) is None:
+        raise HTTPException(
+            status_code=409,
+            detail="Citation has no Full Text to record a Full-Text Decision against",
+        )
+    return crud.upsert_full_text_decision(db, citation.id, payload)
 
 
 @app.get("/review-projects/{review_project_id}/citations/{citation_id}/full-text/file")

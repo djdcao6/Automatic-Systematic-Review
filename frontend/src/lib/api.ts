@@ -80,14 +80,28 @@ export type FullText = {
   updated_at: string;
 };
 
+export type FullTextDecision = {
+  decision: Decision;
+  reason: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type CitationDetail = Citation & {
   suggestion: Suggestion | null;
   suggestion_unavailable_reason: string | null;
   screening_decision: ScreeningDecision | null;
+  screening_resolved: boolean;
   full_text: FullText | null;
+  full_text_decision: FullTextDecision | null;
 };
 
 export type ScreeningDecisionInput = {
+  decision: Decision;
+  reason: string | null;
+};
+
+export type FullTextDecisionInput = {
   decision: Decision;
   reason: string | null;
 };
@@ -286,6 +300,25 @@ export async function recordScreeningDecision(
   );
   if (!response.ok) {
     throw new Error("Failed to record screening decision");
+  }
+  return response.json();
+}
+
+export async function recordFullTextDecision(
+  reviewProjectId: string,
+  citationId: string,
+  payload: FullTextDecisionInput
+): Promise<FullTextDecision> {
+  const response = await fetch(
+    `${API_URL}/review-projects/${reviewProjectId}/citations/${citationId}/full-text-decision`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }
+  );
+  if (!response.ok) {
+    throw new Error("Failed to record full-text decision");
   }
   return response.json();
 }

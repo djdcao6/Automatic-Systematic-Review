@@ -6,6 +6,8 @@ import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
 import {
   fullTextFileUrl,
   getCitation,
+  getReviewProject,
+  recordFullTextDecision,
   recordScreeningDecision,
   uploadFullText,
   type CitationDetail,
@@ -40,6 +42,11 @@ export default function CitationScreeningPage({
   const [saved, setSaved] = useState(false);
   const [fullTextError, setFullTextError] = useState<string | null>(null);
   const [uploadingFullText, setUploadingFullText] = useState(false);
+  const [exclusionRules, setExclusionRules] = useState<string[]>([]);
+  const [ftDecision, setFtDecision] = useState<Decision>("maybe");
+  const [ftReason, setFtReason] = useState("");
+  const [ftError, setFtError] = useState<string | null>(null);
+  const [ftSaved, setFtSaved] = useState(false);
 
   useEffect(() => {
     params.then((resolved) => {
@@ -60,9 +67,20 @@ export default function CitationScreeningPage({
           setDecision(data.suggestion.decision);
           setReason(data.suggestion.reason);
         }
+        if (data.full_text_decision) {
+          setFtDecision(data.full_text_decision.decision);
+          setFtReason(data.full_text_decision.reason ?? "");
+        }
       })
       .catch(() => setError("Failed to load citation."));
   }, [reviewProjectId, citationId]);
+
+  useEffect(() => {
+    if (!reviewProjectId) return;
+    getReviewProject(reviewProjectId)
+      .then((project) => setExclusionRules(project.criteria?.exclusion_rules ?? []))
+      .catch(() => setExclusionRules([]));
+  }, [reviewProjectId]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -80,6 +98,23 @@ export default function CitationScreeningPage({
       setError(null);
     } catch {
       setError("Failed to save screening decision.");
+    }
+  }
+
+  async function handleFullTextDecisionSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!reviewProjectId || !citationId) return;
+
+    try {
+      const updated = await recordFullTextDecision(reviewProjectId, citationId, {
+        decision: ftDecision,
+        reason: ftDecision === "exclude" ? blankOrValue(ftReason) : null,
+      });
+      setCitation((current) => (current ? { ...current, full_text_decision: updated } : current));
+      setFtSaved(true);
+      setFtError(null);
+    } catch {
+      setFtError("Failed to save full-text decision.");
     }
   }
 
@@ -166,6 +201,50 @@ export default function CitationScreeningPage({
         />
         {fullTextError && <p role="alert">{fullTextError}</p>}
       </section>
+
+      {citation.full_text && (
+        <section>
+          <form onSubmit={handleFullTextDecisionSubmit}>
+            <fieldset>
+              <legend>Full-Text Decision</legend>
+              {DECISIONS.map((option) => (
+                <label key={option}>
+                  <input
+                    type="radio"
+                    name="full-text-decision"
+                    value={option}
+                    checked={ftDecision === option}
+                    onChange={() => setFtDecision(option)}
+                  />
+                  {option}
+                </label>
+              ))}
+
+              {ftDecision === "exclude" && (
+                <>
+                  <label htmlFor="full-text-decision-reason">Reason</label>
+                  <select
+                    id="full-text-decision-reason"
+                    value={ftReason}
+                    onChange={(event) => setFtReason(event.target.value)}
+                  >
+                    <option value="">Select a reason</option>
+                    {exclusionRules.map((rule) => (
+                      <option key={rule} value={rule}>
+                        {rule}
+                      </option>
+                    ))}
+                  </select>
+                </>
+              )}
+            </fieldset>
+
+            <button type="submit">Save Full-Text Decision</button>
+          </form>
+          {ftError && <p role="alert">{ftError}</p>}
+          {ftSaved && <p>Full-text decision saved.</p>}
+        </section>
+      )}
 
       <form onSubmit={handleSubmit}>
         <fieldset>

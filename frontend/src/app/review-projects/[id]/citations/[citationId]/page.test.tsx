@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as api from "@/lib/api";
@@ -17,6 +17,8 @@ const baseCitation = {
   year: 2020,
   source: "PubMed",
   needs_abstract: false,
+  screening_resolved: false,
+  full_text_decision: null,
 };
 
 function renderPage() {
@@ -32,6 +34,21 @@ describe("CitationScreeningPage", () => {
       reason: "Confirmed",
       created_at: "2026-01-01T00:00:00Z",
       updated_at: "2026-01-01T00:00:00Z",
+    });
+    mockedApi.getReviewProject.mockResolvedValue({
+      id: "1",
+      name: "My Review",
+      criteria_locked: false,
+      created_at: "2026-01-01T00:00:00Z",
+      criteria: {
+        population: null,
+        intervention: null,
+        comparison: null,
+        outcome: null,
+        exclusion_rules: ["Wrong population", "Non-English language"],
+        notes: null,
+      },
+      citations_needing_decision: 0,
     });
   });
 
@@ -246,5 +263,144 @@ describe("CitationScreeningPage", () => {
     });
 
     expect(await screen.findByText(/failed to upload full text/i)).toBeInTheDocument();
+  });
+
+  it("does not show a Full-Text Decision form when there is no Full Text yet", async () => {
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+      screening_decision: null,
+      full_text: null,
+    });
+
+    renderPage();
+
+    await screen.findByText(/no full text uploaded yet/i);
+    expect(screen.queryByRole("group", { name: /full-text decision/i })).not.toBeInTheDocument();
+  });
+
+  it("records a Full-Text Decision once a Full Text is attached", async () => {
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+      screening_decision: { decision: "maybe", reason: null, created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z" },
+      full_text: {
+        original_filename: "paper.pdf",
+        parse_status: "parsed",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+    });
+    mockedApi.recordFullTextDecision.mockResolvedValue({
+      decision: "include",
+      reason: null,
+      created_at: "2026-01-02T00:00:00Z",
+      updated_at: "2026-01-02T00:00:00Z",
+    });
+
+    renderPage();
+    const group = within(await screen.findByRole("group", { name: /full-text decision/i }));
+
+    fireEvent.click(group.getByLabelText("include"));
+    fireEvent.click(screen.getByRole("button", { name: /save full-text decision/i }));
+
+    await waitFor(() =>
+      expect(mockedApi.recordFullTextDecision).toHaveBeenCalledWith("1", "c1", {
+        decision: "include",
+        reason: null,
+      })
+    );
+    expect(await screen.findByText(/full-text decision saved/i)).toBeInTheDocument();
+  });
+
+  it("offers a reason picker drawn from the Review Project's exclusion rules when excluding", async () => {
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+      screening_decision: null,
+      full_text: {
+        original_filename: "paper.pdf",
+        parse_status: "parsed",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+    });
+    mockedApi.recordFullTextDecision.mockResolvedValue({
+      decision: "exclude",
+      reason: "Wrong population",
+      created_at: "2026-01-02T00:00:00Z",
+      updated_at: "2026-01-02T00:00:00Z",
+    });
+
+    renderPage();
+    const group = within(await screen.findByRole("group", { name: /full-text decision/i }));
+    fireEvent.click(group.getByLabelText("exclude"));
+
+    const reasonSelect = await group.findByLabelText(/reason/i);
+    expect(within(reasonSelect).getByText("Wrong population")).toBeInTheDocument();
+    expect(within(reasonSelect).getByText("Non-English language")).toBeInTheDocument();
+
+    fireEvent.change(reasonSelect, { target: { value: "Wrong population" } });
+    fireEvent.click(screen.getByRole("button", { name: /save full-text decision/i }));
+
+    await waitFor(() =>
+      expect(mockedApi.recordFullTextDecision).toHaveBeenCalledWith("1", "c1", {
+        decision: "exclude",
+        reason: "Wrong population",
+      })
+    );
+  });
+
+  it("pre-fills the Full-Text Decision form from an existing decision", async () => {
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+      screening_decision: null,
+      full_text: {
+        original_filename: "paper.pdf",
+        parse_status: "parsed",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+      full_text_decision: {
+        decision: "exclude",
+        reason: "Wrong population",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+    });
+
+    renderPage();
+    const group = within(await screen.findByRole("group", { name: /full-text decision/i }));
+
+    expect(group.getByLabelText("exclude")).toBeChecked();
+    expect(await group.findByLabelText(/reason/i)).toHaveValue("Wrong population");
+  });
+
+  it("shows an error when recording a Full-Text Decision fails", async () => {
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+      screening_decision: null,
+      full_text: {
+        original_filename: "paper.pdf",
+        parse_status: "parsed",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+    });
+    mockedApi.recordFullTextDecision.mockRejectedValue(new Error("nope"));
+
+    renderPage();
+    const group = within(await screen.findByRole("group", { name: /full-text decision/i }));
+    fireEvent.click(group.getByLabelText("include"));
+    fireEvent.click(screen.getByRole("button", { name: /save full-text decision/i }));
+
+    expect(await screen.findByText(/failed to save full-text decision/i)).toBeInTheDocument();
   });
 });

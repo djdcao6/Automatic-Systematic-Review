@@ -104,10 +104,27 @@ class Citation(Base):
     full_text: Mapped["FullText | None"] = relationship(
         back_populates="citation", uselist=False, cascade="all, delete-orphan"
     )
+    full_text_decision: Mapped["FullTextDecision | None"] = relationship(
+        back_populates="citation", uselist=False, cascade="all, delete-orphan"
+    )
 
     @property
     def needs_abstract(self) -> bool:
         return self.abstract is None
+
+    @property
+    def screening_resolved(self) -> bool:
+        """Whether the title/abstract stage is settled, per ADR 0003.
+
+        A Maybe Screening Decision stands indefinitely unless a Full-Text
+        Decision is later recorded for the Citation, which resolves it
+        without altering the original Screening Decision record.
+        """
+        if self.screening_decision is None:
+            return False
+        if self.screening_decision.decision != "maybe":
+            return True
+        return self.full_text_decision is not None
 
     @property
     def decision_label(self) -> str:
@@ -186,3 +203,24 @@ class FullText(Base):
     )
 
     citation: Mapped[Citation] = relationship(back_populates="full_text")
+
+
+class FullTextDecision(Base):
+    __tablename__ = "full_text_decisions"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    citation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("citations.id"), unique=True, nullable=False
+    )
+    decision: Mapped[str] = mapped_column(String, nullable=False)
+    reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+    citation: Mapped[Citation] = relationship(back_populates="full_text_decision")
