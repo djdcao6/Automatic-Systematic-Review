@@ -22,7 +22,7 @@ describe("CitationsPanel", () => {
         abstract: "An abstract",
         authors: ["Jane Doe"],
         year: 2020,
-        source: "PubMed",
+        source: ["PubMed"],
         needs_abstract: false,
       },
       {
@@ -31,7 +31,7 @@ describe("CitationsPanel", () => {
         abstract: null,
         authors: [],
         year: null,
-        source: null,
+        source: [],
         needs_abstract: true,
       },
     ]);
@@ -53,7 +53,7 @@ describe("CitationsPanel", () => {
           abstract: "Abstract",
           authors: [],
           year: 2022,
-          source: null,
+          source: [],
           needs_abstract: false,
         },
       ]);
@@ -79,7 +79,7 @@ describe("CitationsPanel", () => {
         abstract: "Abstract",
         authors: [],
         year: 2022,
-        source: null,
+        source: [],
         needs_abstract: false,
       },
     ]);

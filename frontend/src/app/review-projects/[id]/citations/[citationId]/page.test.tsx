@@ -15,7 +15,7 @@ const baseCitation = {
   abstract: "A randomized trial of metformin.",
   authors: ["Doe J"],
   year: 2020,
-  source: "PubMed",
+  source: ["PubMed"],
   needs_abstract: false,
   screening_resolved: false,
   full_text_decision: null,

@@ -3,7 +3,7 @@ import io
 
 import pymupdf
 
-from asr_backend import export
+from asr_backend import export, models
 from asr_backend.ai_suggestion import SuggestionResult, get_ai_suggester
 from asr_backend.main import app
 
@@ -363,3 +363,19 @@ def test_export_omits_criteria_header_block_when_no_criteria_saved(client):
     lines = response.text.splitlines()
     assert lines[0] == ",".join(export.CSV_HEADER)
     assert not any(line.startswith("#") for line in lines)
+
+
+def test_export_joins_multiple_source_values_like_authors():
+    project = models.ReviewProject(name="My Review")
+    citation = models.Citation(
+        title="Study",
+        abstract="An abstract",
+        authors=["Jane Doe"],
+        year=2020,
+        source=["PubMed", "Embase"],
+    )
+
+    csv_text = export.build_export_csv(project, [citation])
+
+    row = next(csv.DictReader(io.StringIO(csv_text)))
+    assert row["source"] == "PubMed; Embase"

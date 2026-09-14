@@ -48,7 +48,7 @@ export type Citation = {
   abstract: string | null;
   authors: string[];
   year: number | null;
-  source: string | null;
+  source: string[];
   needs_abstract: boolean;
 };
 

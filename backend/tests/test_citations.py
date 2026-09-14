@@ -55,8 +55,17 @@ def test_upload_csv_citations(client):
     assert citations[0]["abstract"] == "An abstract"
     assert citations[0]["authors"] == ["Jane Doe", "John Smith"]
     assert citations[0]["year"] == 2020
-    assert citations[0]["source"] == "PubMed"
+    assert citations[0]["source"] == ["PubMed"]
     assert citations[0]["needs_abstract"] is False
+
+
+def test_upload_csv_with_missing_source_is_an_empty_list(client):
+    project_id = create_project(client)
+
+    upload_csv(client, project_id, CSV_HEADER + "Study A,An abstract,Jane Doe,2020,\n")
+
+    citations = client.get(f"/review-projects/{project_id}/citations").json()
+    assert citations[0]["source"] == []
 
 
 def test_upload_csv_with_missing_abstract_flags_not_drops(client):
@@ -125,7 +134,7 @@ def test_upload_ris_citations(client):
     assert citations[0]["abstract"] == "An RIS abstract"
     assert citations[0]["authors"] == ["Doe, Jane", "Smith, John"]
     assert citations[0]["year"] == 2019
-    assert citations[0]["source"] == "PubMed"
+    assert citations[0]["source"] == ["PubMed"]
 
 
 def test_upload_ris_skips_entry_missing_title(client):

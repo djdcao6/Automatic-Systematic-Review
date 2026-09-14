@@ -11,7 +11,8 @@ class ParsedCitation:
     abstract: str | None
     authors: list[str]
     year: int | None
-    source: str | None
+    source: list[str]
+    doi: str | None
 
 
 @dataclass
@@ -29,6 +30,11 @@ def _clean(value: str | None) -> str | None:
         return None
     stripped = value.strip()
     return stripped or None
+
+
+def _clean_as_list(value: str | None) -> list[str]:
+    cleaned = _clean(value)
+    return [cleaned] if cleaned else []
 
 
 def _parse_year(value: str | None) -> int | None:
@@ -51,7 +57,8 @@ def parse_ris(content: str) -> ImportResult:
                 abstract=_clean(entry.get("abstract")),
                 authors=list(entry.get("authors") or []),
                 year=_parse_year(entry.get("year")),
-                source=_clean(entry.get("name_of_database")),
+                source=_clean_as_list(entry.get("name_of_database")),
+                doi=_clean(entry.get("doi")),
             )
         )
     return result
@@ -79,7 +86,8 @@ def parse_csv(content: str) -> ImportResult:
                 abstract=_clean(get(row, "abstract")),
                 authors=authors,
                 year=_parse_year(get(row, "year")),
-                source=_clean(get(row, "source")),
+                source=_clean_as_list(get(row, "source")),
+                doi=_clean(get(row, "doi")),
             )
         )
     return result

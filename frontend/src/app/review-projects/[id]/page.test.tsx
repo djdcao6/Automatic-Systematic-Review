@@ -107,7 +107,7 @@ describe("ReviewProjectDetailPage", () => {
           abstract: "Abstract",
           authors: [],
           year: 2022,
-          source: null,
+          source: [],
           needs_abstract: false,
         },
       ]);

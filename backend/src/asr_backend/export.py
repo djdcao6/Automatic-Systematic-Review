@@ -46,7 +46,7 @@ def build_export_csv(
                 citation.abstract or "",
                 "; ".join(citation.authors),
                 citation.year or "",
-                citation.source or "",
+                "; ".join(citation.source),
                 citation.decision_label,
                 citation.screening_reason,
                 citation.ai_suggestion_decision_label,

@@ -88,7 +88,7 @@ class CitationRead(BaseModel):
     abstract: str | None
     authors: list[str]
     year: int | None
-    source: str | None
+    source: list[str]
     needs_abstract: bool
 
 

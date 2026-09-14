@@ -93,7 +93,8 @@ class Citation(Base):
     abstract: Mapped[str | None] = mapped_column(String, nullable=True)
     authors: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, default=list)
     year: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    source: Mapped[str | None] = mapped_column(String, nullable=True)
+    source: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, default=list)
+    doi: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC)
     )
