@@ -57,6 +57,68 @@ def list_review_projects(db: Session) -> list[models.ReviewProject]:
     return list(db.query(models.ReviewProject).order_by(models.ReviewProject.created_at).all())
 
 
+def create_extraction_field(
+    db: Session, review_project_id: uuid.UUID, payload: schemas.ExtractionFieldCreate
+) -> models.ExtractionField:
+    field = models.ExtractionField(
+        review_project_id=review_project_id,
+        name=payload.name,
+        description=payload.description,
+    )
+    db.add(field)
+    db.commit()
+    db.refresh(field)
+    return field
+
+
+def list_extraction_fields(
+    db: Session, review_project_id: uuid.UUID
+) -> list[models.ExtractionField]:
+    return list(
+        db.query(models.ExtractionField)
+        .filter(
+            models.ExtractionField.review_project_id == review_project_id,
+            models.ExtractionField.archived.is_(False),
+        )
+        .order_by(models.ExtractionField.created_at)
+        .all()
+    )
+
+
+def get_extraction_field(
+    db: Session, review_project_id: uuid.UUID, extraction_field_id: uuid.UUID
+) -> models.ExtractionField | None:
+    return (
+        db.query(models.ExtractionField)
+        .filter(
+            models.ExtractionField.id == extraction_field_id,
+            models.ExtractionField.review_project_id == review_project_id,
+        )
+        .one_or_none()
+    )
+
+
+def update_extraction_field(
+    db: Session,
+    extraction_field: models.ExtractionField,
+    payload: schemas.ExtractionFieldUpdate,
+) -> models.ExtractionField:
+    extraction_field.name = payload.name
+    extraction_field.description = payload.description
+    db.commit()
+    db.refresh(extraction_field)
+    return extraction_field
+
+
+def archive_extraction_field(
+    db: Session, extraction_field: models.ExtractionField
+) -> models.ExtractionField:
+    extraction_field.archived = True
+    db.commit()
+    db.refresh(extraction_field)
+    return extraction_field
+
+
 def create_citations(
     db: Session, review_project_id: uuid.UUID, parsed_citations: list[ParsedCitation]
 ) -> list[models.Citation]:

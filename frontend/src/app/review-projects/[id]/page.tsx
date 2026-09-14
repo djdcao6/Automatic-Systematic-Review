@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 
 import { CitationsPanel } from "@/components/CitationsPanel";
+import { ExtractionFieldsPanel } from "@/components/ExtractionFieldsPanel";
 import {
   exportReviewProject,
   getReviewProject,
@@ -166,6 +167,8 @@ export default function ReviewProjectDetailPage({
       </form>
 
       <CitationsPanel reviewProjectId={project.id} onCitationsChanged={refreshProjectCounts} />
+
+      <ExtractionFieldsPanel reviewProjectId={project.id} />
     </main>
   );
 }

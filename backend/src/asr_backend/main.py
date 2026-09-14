@@ -75,6 +75,64 @@ def save_criteria(
 
 
 @app.post(
+    "/review-projects/{review_project_id}/extraction-fields",
+    response_model=schemas.ExtractionFieldRead,
+    status_code=201,
+)
+def create_extraction_field(
+    payload: schemas.ExtractionFieldCreate,
+    project: models.ReviewProject = Depends(get_review_project_or_404),
+    db: Session = Depends(get_db),
+) -> models.ExtractionField:
+    return crud.create_extraction_field(db, project.id, payload)
+
+
+@app.get(
+    "/review-projects/{review_project_id}/extraction-fields",
+    response_model=list[schemas.ExtractionFieldRead],
+)
+def list_extraction_fields(
+    project: models.ReviewProject = Depends(get_review_project_or_404),
+    db: Session = Depends(get_db),
+) -> list[models.ExtractionField]:
+    return crud.list_extraction_fields(db, project.id)
+
+
+def get_extraction_field_or_404(
+    extraction_field_id: uuid.UUID,
+    project: models.ReviewProject = Depends(get_review_project_or_404),
+    db: Session = Depends(get_db),
+) -> models.ExtractionField:
+    field = crud.get_extraction_field(db, project.id, extraction_field_id)
+    if field is None:
+        raise HTTPException(status_code=404, detail="Extraction field not found")
+    return field
+
+
+@app.put(
+    "/review-projects/{review_project_id}/extraction-fields/{extraction_field_id}",
+    response_model=schemas.ExtractionFieldRead,
+)
+def update_extraction_field(
+    payload: schemas.ExtractionFieldUpdate,
+    field: models.ExtractionField = Depends(get_extraction_field_or_404),
+    db: Session = Depends(get_db),
+) -> models.ExtractionField:
+    return crud.update_extraction_field(db, field, payload)
+
+
+@app.post(
+    "/review-projects/{review_project_id}/extraction-fields/{extraction_field_id}/archive",
+    response_model=schemas.ExtractionFieldRead,
+)
+def archive_extraction_field(
+    field: models.ExtractionField = Depends(get_extraction_field_or_404),
+    db: Session = Depends(get_db),
+) -> models.ExtractionField:
+    return crud.archive_extraction_field(db, field)
+
+
+@app.post(
     "/review-projects/{review_project_id}/citations",
     response_model=schemas.CitationUploadResult,
     status_code=201,

@@ -5,16 +5,20 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, field_validator
 
 
+def _require_non_blank(value: str) -> str:
+    stripped = value.strip()
+    if not stripped:
+        raise ValueError("name must not be blank")
+    return stripped
+
+
 class ReviewProjectCreate(BaseModel):
     name: str
 
     @field_validator("name")
     @classmethod
     def name_must_not_be_blank(cls, value: str) -> str:
-        stripped = value.strip()
-        if not stripped:
-            raise ValueError("name must not be blank")
-        return stripped
+        return _require_non_blank(value)
 
 
 class CriteriaUpdate(BaseModel):
@@ -49,6 +53,31 @@ class ReviewProjectRead(BaseModel):
 class ReviewProjectDetailRead(ReviewProjectRead):
     criteria: CriteriaRead | None = None
     citations_needing_decision: int
+
+
+class ExtractionFieldCreate(BaseModel):
+    name: str
+    description: str | None = None
+
+    @field_validator("name")
+    @classmethod
+    def name_must_not_be_blank(cls, value: str) -> str:
+        return _require_non_blank(value)
+
+
+class ExtractionFieldUpdate(ExtractionFieldCreate):
+    pass
+
+
+class ExtractionFieldRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+    description: str | None
+    archived: bool
+    created_at: datetime
+    updated_at: datetime
 
 
 class CitationRead(BaseModel):

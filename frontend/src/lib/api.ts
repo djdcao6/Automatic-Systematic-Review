@@ -28,6 +28,20 @@ export type CriteriaInput = {
   notes: string | null;
 };
 
+export type ExtractionField = {
+  id: string;
+  name: string;
+  description: string | null;
+  archived: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ExtractionFieldInput = {
+  name: string;
+  description: string | null;
+};
+
 export type Citation = {
   id: string;
   title: string;
@@ -116,6 +130,67 @@ export async function saveCriteria(id: string, payload: CriteriaInput): Promise<
   });
   if (!response.ok) {
     throw new Error("Failed to save criteria");
+  }
+  return response.json();
+}
+
+export async function listExtractionFields(
+  reviewProjectId: string
+): Promise<ExtractionField[]> {
+  const response = await fetch(`${API_URL}/review-projects/${reviewProjectId}/extraction-fields`);
+  if (!response.ok) {
+    throw new Error("Failed to load extraction fields");
+  }
+  return response.json();
+}
+
+export async function createExtractionField(
+  reviewProjectId: string,
+  payload: ExtractionFieldInput
+): Promise<ExtractionField> {
+  const response = await fetch(
+    `${API_URL}/review-projects/${reviewProjectId}/extraction-fields`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }
+  );
+  if (!response.ok) {
+    throw new Error("Failed to create extraction field");
+  }
+  return response.json();
+}
+
+export async function updateExtractionField(
+  reviewProjectId: string,
+  extractionFieldId: string,
+  payload: ExtractionFieldInput
+): Promise<ExtractionField> {
+  const response = await fetch(
+    `${API_URL}/review-projects/${reviewProjectId}/extraction-fields/${extractionFieldId}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }
+  );
+  if (!response.ok) {
+    throw new Error("Failed to update extraction field");
+  }
+  return response.json();
+}
+
+export async function archiveExtractionField(
+  reviewProjectId: string,
+  extractionFieldId: string
+): Promise<ExtractionField> {
+  const response = await fetch(
+    `${API_URL}/review-projects/${reviewProjectId}/extraction-fields/${extractionFieldId}/archive`,
+    { method: "POST" }
+  );
+  if (!response.ok) {
+    throw new Error("Failed to archive extraction field");
   }
   return response.json();
 }

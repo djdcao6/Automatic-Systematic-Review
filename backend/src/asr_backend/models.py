@@ -26,6 +26,11 @@ class ReviewProject(Base):
     citations: Mapped[list["Citation"]] = relationship(
         back_populates="review_project", cascade="all, delete-orphan"
     )
+    extraction_fields: Mapped[list["ExtractionField"]] = relationship(
+        back_populates="review_project",
+        cascade="all, delete-orphan",
+        order_by="ExtractionField.created_at",
+    )
 
     @property
     def citations_needing_decision(self) -> int:
@@ -49,6 +54,28 @@ class Criteria(Base):
     notes: Mapped[str | None] = mapped_column(String, nullable=True)
 
     review_project: Mapped[ReviewProject] = relationship(back_populates="criteria")
+
+
+class ExtractionField(Base):
+    __tablename__ = "extraction_fields"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    review_project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("review_projects.id"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[str | None] = mapped_column(String, nullable=True)
+    archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+    review_project: Mapped[ReviewProject] = relationship(back_populates="extraction_fields")
 
 
 class Citation(Base):

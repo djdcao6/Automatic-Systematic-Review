@@ -32,6 +32,7 @@ describe("ReviewProjectDetailPage", () => {
       notes: null,
     });
     mockedApi.listCitations.mockResolvedValue([]);
+    mockedApi.listExtractionFields.mockResolvedValue([]);
   });
 
   it("shows previously saved criteria", async () => {
