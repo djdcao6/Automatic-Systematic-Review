@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
 
 import {
+  fullTextFileUrl,
   getCitation,
   recordScreeningDecision,
+  uploadFullText,
   type CitationDetail,
   type Decision,
 } from "@/lib/api";
@@ -36,6 +38,8 @@ export default function CitationScreeningPage({
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [fullTextError, setFullTextError] = useState<string | null>(null);
+  const [uploadingFullText, setUploadingFullText] = useState(false);
 
   useEffect(() => {
     params.then((resolved) => {
@@ -79,6 +83,23 @@ export default function CitationScreeningPage({
     }
   }
 
+  async function handleFullTextChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !reviewProjectId || !citationId) return;
+
+    setUploadingFullText(true);
+    setFullTextError(null);
+    try {
+      const updated = await uploadFullText(reviewProjectId, citationId, file);
+      setCitation((current) => (current ? { ...current, full_text: updated } : current));
+    } catch {
+      setFullTextError("Failed to upload Full Text.");
+    } finally {
+      setUploadingFullText(false);
+    }
+  }
+
   if (!citation) {
     return error ? <p role="alert">{error}</p> : <p>Loading...</p>;
   }
@@ -106,6 +127,44 @@ export default function CitationScreeningPage({
         ) : (
           <p>{unavailableMessage}</p>
         )}
+      </section>
+
+      <section>
+        <h2>Full Text</h2>
+        {citation.full_text ? (
+          <>
+            <p>
+              {citation.full_text.original_filename}{" "}
+              {reviewProjectId && citationId && (
+                <a
+                  href={fullTextFileUrl(reviewProjectId, citationId)}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  View / Download
+                </a>
+              )}
+            </p>
+            {citation.full_text.parse_status === "parse_failed" && (
+              <p role="alert">
+                Could not extract text from this PDF. Enter extracted data manually.
+              </p>
+            )}
+          </>
+        ) : (
+          <p>No Full Text uploaded yet.</p>
+        )}
+        <label htmlFor="full-text-upload">
+          {citation.full_text ? "Replace Full Text" : "Upload Full Text"}
+        </label>
+        <input
+          id="full-text-upload"
+          type="file"
+          accept="application/pdf"
+          onChange={handleFullTextChange}
+          disabled={uploadingFullText}
+        />
+        {fullTextError && <p role="alert">{fullTextError}</p>}
       </section>
 
       <form onSubmit={handleSubmit}>

@@ -57,10 +57,20 @@ export type ScreeningDecision = {
   updated_at: string;
 };
 
+export type FullTextParseStatus = "parsed" | "parse_failed";
+
+export type FullText = {
+  original_filename: string;
+  parse_status: FullTextParseStatus;
+  created_at: string;
+  updated_at: string;
+};
+
 export type CitationDetail = Citation & {
   suggestion: Suggestion | null;
   suggestion_unavailable_reason: string | null;
   screening_decision: ScreeningDecision | null;
+  full_text: FullText | null;
 };
 
 export type ScreeningDecisionInput = {
@@ -163,6 +173,27 @@ export async function exportReviewProject(reviewProjectId: string): Promise<Expo
     blob: await response.blob(),
     filename: filenameMatch ? filenameMatch[1] : "citations.csv",
   };
+}
+
+export async function uploadFullText(
+  reviewProjectId: string,
+  citationId: string,
+  file: File
+): Promise<FullText> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const response = await fetch(
+    `${API_URL}/review-projects/${reviewProjectId}/citations/${citationId}/full-text`,
+    { method: "POST", body: formData }
+  );
+  if (!response.ok) {
+    throw new Error("Failed to upload full text");
+  }
+  return response.json();
+}
+
+export function fullTextFileUrl(reviewProjectId: string, citationId: string): string {
+  return `${API_URL}/review-projects/${reviewProjectId}/citations/${citationId}/full-text/file`;
 }
 
 export async function recordScreeningDecision(

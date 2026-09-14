@@ -94,7 +94,17 @@ class ScreeningDecisionRead(BaseModel):
     updated_at: datetime
 
 
+class FullTextRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    original_filename: str
+    parse_status: Literal["parsed", "parse_failed"]
+    created_at: datetime
+    updated_at: datetime
+
+
 class CitationDetailRead(CitationRead):
     suggestion: SuggestionRead | None = None
     suggestion_unavailable_reason: str | None = None
     screening_decision: ScreeningDecisionRead | None = None
+    full_text: FullTextRead | None = None

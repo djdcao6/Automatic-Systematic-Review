@@ -74,6 +74,9 @@ class Citation(Base):
     screening_decision: Mapped["ScreeningDecision | None"] = relationship(
         back_populates="citation", uselist=False, cascade="all, delete-orphan"
     )
+    full_text: Mapped["FullText | None"] = relationship(
+        back_populates="citation", uselist=False, cascade="all, delete-orphan"
+    )
 
     @property
     def needs_abstract(self) -> bool:
@@ -133,3 +136,26 @@ class ScreeningDecision(Base):
     )
 
     citation: Mapped[Citation] = relationship(back_populates="screening_decision")
+
+
+class FullText(Base):
+    __tablename__ = "full_texts"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    citation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("citations.id"), unique=True, nullable=False
+    )
+    original_filename: Mapped[str] = mapped_column(String, nullable=False)
+    file_path: Mapped[str] = mapped_column(String, nullable=False)
+    parsed_text: Mapped[str | None] = mapped_column(String, nullable=True)
+    parse_status: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+    citation: Mapped[Citation] = relationship(back_populates="full_text")

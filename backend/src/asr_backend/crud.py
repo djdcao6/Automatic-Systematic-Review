@@ -157,3 +157,47 @@ def upsert_screening_decision(
         .filter(models.ScreeningDecision.citation_id == citation_id)
         .one()
     )
+
+
+def get_full_text(db: Session, citation_id: uuid.UUID) -> models.FullText | None:
+    return (
+        db.query(models.FullText)
+        .filter(models.FullText.citation_id == citation_id)
+        .one_or_none()
+    )
+
+
+def upsert_full_text(
+    db: Session,
+    citation_id: uuid.UUID,
+    *,
+    original_filename: str,
+    file_path: str,
+    parsed_text: str | None,
+    parse_status: str,
+) -> models.FullText:
+    values = {
+        "citation_id": citation_id,
+        "original_filename": original_filename,
+        "file_path": file_path,
+        "parsed_text": parsed_text,
+        "parse_status": parse_status,
+    }
+    stmt = pg_insert(models.FullText).values(**values)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=[models.FullText.citation_id],
+        set_={
+            "original_filename": stmt.excluded.original_filename,
+            "file_path": stmt.excluded.file_path,
+            "parsed_text": stmt.excluded.parsed_text,
+            "parse_status": stmt.excluded.parse_status,
+            "updated_at": func.now(),
+        },
+    )
+    # Same atomic INSERT ... ON CONFLICT DO UPDATE pattern as upsert_criteria,
+    # since replacing a Full Text races the same way as a fresh upload.
+    db.execute(stmt)
+    db.commit()
+    return (
+        db.query(models.FullText).filter(models.FullText.citation_id == citation_id).one()
+    )

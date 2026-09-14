@@ -18,6 +18,11 @@ def _reset_db():
     yield
 
 
+@pytest.fixture(autouse=True)
+def _full_text_storage(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "full_text_storage_path", str(tmp_path / "full_texts"))
+
+
 @pytest.fixture
 def client():
     def _get_test_db():

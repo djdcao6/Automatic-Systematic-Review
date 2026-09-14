@@ -2,10 +2,10 @@ import uuid
 
 from fastapi import Depends, FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session
 
-from asr_backend import citation_import, crud, export, models, schemas, screening
+from asr_backend import citation_import, crud, export, full_text, models, schemas, screening
 from asr_backend.ai_suggestion import AISuggester, get_ai_suggester
 from asr_backend.db import get_db
 from asr_backend.settings import settings
@@ -140,6 +140,7 @@ async def get_citation_detail(
         db, citation, suggester
     )
     decision = crud.get_screening_decision(db, citation.id)
+    existing_full_text = crud.get_full_text(db, citation.id)
     return schemas.CitationDetailRead(
         id=citation.id,
         title=citation.title,
@@ -151,6 +152,7 @@ async def get_citation_detail(
         suggestion=suggestion,
         suggestion_unavailable_reason=unavailable_reason,
         screening_decision=decision,
+        full_text=existing_full_text,
     )
 
 
@@ -165,6 +167,48 @@ def record_screening_decision(
     db: Session = Depends(get_db),
 ) -> models.ScreeningDecision:
     return crud.upsert_screening_decision(db, project, citation.id, payload)
+
+
+@app.post(
+    "/review-projects/{review_project_id}/citations/{citation_id}/full-text",
+    response_model=schemas.FullTextRead,
+    status_code=201,
+)
+async def upload_full_text(
+    file: UploadFile,
+    citation: models.Citation = Depends(get_citation_or_404),
+    db: Session = Depends(get_db),
+) -> models.FullText:
+    if not full_text.is_pdf_upload(file.filename, file.content_type):
+        raise HTTPException(status_code=422, detail="File must be a PDF")
+
+    raw = await file.read()
+    parsed_text, parse_status = full_text.extract_text(raw)
+    file_path = full_text.save_pdf(citation.id, raw)
+    return crud.upsert_full_text(
+        db,
+        citation.id,
+        original_filename=file.filename or "full-text.pdf",
+        file_path=file_path,
+        parsed_text=parsed_text,
+        parse_status=parse_status,
+    )
+
+
+@app.get("/review-projects/{review_project_id}/citations/{citation_id}/full-text/file")
+def download_full_text(
+    citation: models.Citation = Depends(get_citation_or_404),
+    db: Session = Depends(get_db),
+) -> FileResponse:
+    record = crud.get_full_text(db, citation.id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Full Text not found")
+    return FileResponse(
+        record.file_path,
+        media_type="application/pdf",
+        filename=record.original_filename,
+        content_disposition_type="inline",
+    )
 
 
 @app.get("/review-projects/{review_project_id}/export")

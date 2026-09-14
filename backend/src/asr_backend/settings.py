@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     frontend_origin: str = "http://localhost:3000"
     anthropic_api_key: str
     anthropic_model: str = "claude-haiku-4-5"
+    full_text_storage_path: str = "./storage/full_texts"
 
 
 settings = Settings()

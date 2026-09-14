@@ -41,6 +41,7 @@ describe("CitationScreeningPage", () => {
       suggestion: { decision: "include", reason: "Matches all criteria." },
       suggestion_unavailable_reason: null,
       screening_decision: null,
+      full_text: null,
     });
 
     renderPage();
@@ -57,6 +58,7 @@ describe("CitationScreeningPage", () => {
       suggestion: null,
       suggestion_unavailable_reason: "missing_abstract",
       screening_decision: null,
+      full_text: null,
     });
 
     renderPage();
@@ -70,6 +72,7 @@ describe("CitationScreeningPage", () => {
       suggestion: null,
       suggestion_unavailable_reason: "generation_failed",
       screening_decision: null,
+      full_text: null,
     });
 
     renderPage();
@@ -88,6 +91,7 @@ describe("CitationScreeningPage", () => {
         created_at: "2026-01-01T00:00:00Z",
         updated_at: "2026-01-01T00:00:00Z",
       },
+      full_text: null,
     });
 
     renderPage();
@@ -102,6 +106,7 @@ describe("CitationScreeningPage", () => {
       suggestion: { decision: "include", reason: "Matches all criteria." },
       suggestion_unavailable_reason: null,
       screening_decision: null,
+      full_text: null,
     });
 
     renderPage();
@@ -120,5 +125,126 @@ describe("CitationScreeningPage", () => {
       })
     );
     expect(await screen.findByText(/decision saved/i)).toBeInTheDocument();
+  });
+
+  it("shows an upload control when there is no Full Text yet", async () => {
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+      screening_decision: null,
+      full_text: null,
+    });
+
+    renderPage();
+
+    expect(await screen.findByText(/no full text uploaded yet/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/upload full text/i)).toBeInTheDocument();
+  });
+
+  it("uploads a Full Text and shows it once attached", async () => {
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+      screening_decision: null,
+      full_text: null,
+    });
+    mockedApi.uploadFullText.mockResolvedValue({
+      original_filename: "paper.pdf",
+      parse_status: "parsed",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+
+    renderPage();
+    await screen.findByText(/no full text uploaded yet/i);
+
+    const file = new File(["pdf-bytes"], "paper.pdf", { type: "application/pdf" });
+    fireEvent.change(screen.getByLabelText(/upload full text/i), {
+      target: { files: [file] },
+    });
+
+    await waitFor(() =>
+      expect(mockedApi.uploadFullText).toHaveBeenCalledWith("1", "c1", file)
+    );
+    expect(await screen.findByText("paper.pdf")).toBeInTheDocument();
+    expect(screen.getByLabelText(/replace full text/i)).toBeInTheDocument();
+  });
+
+  it("shows the parse-failed flag for a Full Text with no extractable text", async () => {
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+      screening_decision: null,
+      full_text: {
+        original_filename: "scanned.pdf",
+        parse_status: "parse_failed",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+    });
+
+    renderPage();
+
+    expect(await screen.findByText("scanned.pdf")).toBeInTheDocument();
+    expect(
+      await screen.findByText(/could not extract text from this pdf/i)
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText(/replace full text/i)).toBeInTheDocument();
+  });
+
+  it("replaces an existing Full Text via the same upload control", async () => {
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+      screening_decision: null,
+      full_text: {
+        original_filename: "v1.pdf",
+        parse_status: "parsed",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+    });
+    mockedApi.uploadFullText.mockResolvedValue({
+      original_filename: "v2.pdf",
+      parse_status: "parsed",
+      created_at: "2026-01-02T00:00:00Z",
+      updated_at: "2026-01-02T00:00:00Z",
+    });
+
+    renderPage();
+    await screen.findByText("v1.pdf");
+
+    const file = new File(["pdf-bytes-2"], "v2.pdf", { type: "application/pdf" });
+    fireEvent.change(screen.getByLabelText(/replace full text/i), {
+      target: { files: [file] },
+    });
+
+    expect(await screen.findByText("v2.pdf")).toBeInTheDocument();
+    expect(screen.queryByText("v1.pdf")).not.toBeInTheDocument();
+  });
+
+  it("shows an error when uploading a Full Text fails", async () => {
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+      screening_decision: null,
+      full_text: null,
+    });
+    mockedApi.uploadFullText.mockRejectedValue(new Error("nope"));
+
+    renderPage();
+    await screen.findByText(/no full text uploaded yet/i);
+
+    const file = new File(["pdf-bytes"], "paper.pdf", { type: "application/pdf" });
+    fireEvent.change(screen.getByLabelText(/upload full text/i), {
+      target: { files: [file] },
+    });
+
+    expect(await screen.findByText(/failed to upload full text/i)).toBeInTheDocument();
   });
 });
