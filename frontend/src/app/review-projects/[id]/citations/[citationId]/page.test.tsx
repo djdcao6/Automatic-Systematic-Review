@@ -428,6 +428,32 @@ describe("CitationScreeningPage", () => {
     expect(screen.getByText(/sample size:\s*120 participants/i)).toBeInTheDocument();
   });
 
+  it("pre-fills the Full-Text Decision form from a Full-Text Suggestion when no decision exists yet", async () => {
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+      screening_decision: null,
+      full_text: {
+        original_filename: "paper.pdf",
+        parse_status: "parsed",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+      full_text_decision: null,
+      full_text_suggestion: {
+        decision: "include",
+        reason: "Meets all criteria.",
+        extraction_values: [],
+      },
+    });
+
+    renderPage();
+    const group = within(await screen.findByRole("group", { name: /full-text decision/i }));
+
+    expect(group.getByLabelText("include")).toBeChecked();
+  });
+
   it("shows why no Full-Text Suggestion is available when the PDF could not be parsed", async () => {
     mockedApi.getCitation.mockResolvedValue({
       ...baseCitation,

@@ -331,9 +331,11 @@ def create_full_text_suggestion(
     db.add(suggestion)
     db.flush()
 
-    field_by_name = {field.name: field for field in active_fields}
-    for name, value in extraction_values.items():
-        field = field_by_name.get(name)
+    # Keyed by field id, not name, since Extraction Field names aren't
+    # unique — see the matching note in asr_backend.ai_suggestion.
+    field_by_id = {str(field.id): field for field in active_fields}
+    for field_id, value in extraction_values.items():
+        field = field_by_id.get(field_id)
         if field is None:
             continue
         db.add(

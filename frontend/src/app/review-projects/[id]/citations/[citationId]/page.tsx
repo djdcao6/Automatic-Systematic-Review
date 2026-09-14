@@ -78,6 +78,9 @@ export default function CitationScreeningPage({
         if (data.full_text_decision) {
           setFtDecision(data.full_text_decision.decision);
           setFtReason(data.full_text_decision.reason ?? "");
+        } else if (data.full_text_suggestion) {
+          setFtDecision(data.full_text_suggestion.decision);
+          setFtReason(data.full_text_suggestion.reason);
         }
       })
       .catch(() => setError("Failed to load citation."));

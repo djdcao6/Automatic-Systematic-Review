@@ -109,7 +109,7 @@ def test_full_text_suggestion_includes_active_extraction_field_values(client, ov
     field = create_extraction_field(client, project_id, name="Sample size")
     citation_id = create_citation(client, project_id)
     upload_full_text(client, project_id, citation_id, make_pdf())
-    override_suggester.extraction_values = {"Sample size": "120 participants"}
+    override_suggester.extraction_values = {field["id"]: "120 participants"}
 
     detail = get_detail(client, project_id, citation_id)
 
@@ -121,6 +121,25 @@ def test_full_text_suggestion_includes_active_extraction_field_values(client, ov
             "value": "120 participants",
         }
     ]
+
+
+def test_full_text_suggestion_keeps_values_distinct_for_same_named_fields(
+    client, override_suggester
+):
+    project_id = create_project(client)
+    field_a = create_extraction_field(client, project_id, name="Duration")
+    field_b = create_extraction_field(client, project_id, name="Duration")
+    citation_id = create_citation(client, project_id)
+    upload_full_text(client, project_id, citation_id, make_pdf())
+    override_suggester.extraction_values = {
+        field_a["id"]: "6 months",
+        field_b["id"]: "12 months",
+    }
+
+    detail = get_detail(client, project_id, citation_id)
+
+    values = {v["extraction_field_id"]: v["value"] for v in detail["full_text_suggestion"]["extraction_values"]}
+    assert values == {field_a["id"]: "6 months", field_b["id"]: "12 months"}
 
 
 def test_full_text_suggestion_is_reused_on_second_view(client, override_suggester):

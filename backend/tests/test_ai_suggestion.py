@@ -135,7 +135,7 @@ def _full_text_tool_response(decision: str, reason: str, extraction_values: dict
 def test_suggest_full_text_decision_returns_parsed_result_with_extraction_values():
     client = _FakeClient(
         response=_full_text_tool_response(
-            "include", "Meets all criteria.", {"Sample size": "120 participants"}
+            "include", "Meets all criteria.", {"field-1": "120 participants"}
         )
     )
     suggester = AISuggester(client=client, model="claude-haiku-4-5")
@@ -143,13 +143,13 @@ def test_suggest_full_text_decision_returns_parsed_result_with_extraction_values
     result = asyncio.run(
         suggester.suggest_full_text_decision(
             full_text="This trial enrolled 120 participants...",
-            extraction_fields=[ExtractionFieldSpec(name="Sample size")],
+            extraction_fields=[ExtractionFieldSpec(id="field-1", name="Sample size")],
         )
     )
 
     assert result.decision == "include"
     assert result.reason == "Meets all criteria."
-    assert result.extraction_values == {"Sample size": "120 participants"}
+    assert result.extraction_values == {"field-1": "120 participants"}
 
 
 def test_suggest_full_text_decision_raises_on_api_error():
@@ -188,22 +188,52 @@ def test_suggest_full_text_decision_builds_tool_schema_from_extraction_fields():
         suggester.suggest_full_text_decision(
             full_text="Full text",
             extraction_fields=[
-                ExtractionFieldSpec(name="Sample size", description="Number enrolled"),
-                ExtractionFieldSpec(name="Methodology"),
+                ExtractionFieldSpec(id="field-1", name="Sample size", description="Number enrolled"),
+                ExtractionFieldSpec(id="field-2", name="Methodology"),
             ],
         )
     )
 
     tool = client.messages.last_kwargs["tools"][0]
     properties = tool["input_schema"]["properties"]["extraction_values"]["properties"]
-    assert properties["Sample size"] == {"type": "string", "description": "Number enrolled"}
-    assert properties["Methodology"] == {"type": "string", "description": "Methodology"}
+    assert properties["field-1"] == {
+        "type": "string",
+        "title": "Sample size",
+        "description": "Number enrolled",
+    }
+    assert properties["field-2"] == {
+        "type": "string",
+        "title": "Methodology",
+        "description": "Methodology",
+    }
+
+
+def test_suggest_full_text_decision_keeps_same_named_fields_distinct():
+    """Two active Extraction Fields can share a name; each must still get its own tool property."""
+    client = _FakeClient(response=_full_text_tool_response("maybe", "Unclear.", {}))
+    suggester = AISuggester(client=client, model="claude-haiku-4-5")
+
+    asyncio.run(
+        suggester.suggest_full_text_decision(
+            full_text="Full text",
+            extraction_fields=[
+                ExtractionFieldSpec(id="field-1", name="Duration"),
+                ExtractionFieldSpec(id="field-2", name="Duration"),
+            ],
+        )
+    )
+
+    tool = client.messages.last_kwargs["tools"][0]
+    properties = tool["input_schema"]["properties"]["extraction_values"]["properties"]
+    assert set(properties.keys()) == {"field-1", "field-2"}
 
 
 def test_full_text_user_message_includes_full_text_and_extraction_fields():
     message = _build_full_text_user_message(
         full_text="The study enrolled 50 adults.",
-        extraction_fields=[ExtractionFieldSpec(name="Sample size", description="Number enrolled")],
+        extraction_fields=[
+            ExtractionFieldSpec(id="field-1", name="Sample size", description="Number enrolled")
+        ],
         population="Adults",
         intervention=None,
         comparison=None,

@@ -40,7 +40,9 @@ async def get_or_generate_full_text_suggestion(
         result = await suggester.suggest_full_text_decision(
             full_text=full_text.parsed_text or "",
             extraction_fields=[
-                ExtractionFieldSpec(name=field.name, description=field.description)
+                ExtractionFieldSpec(
+                    id=str(field.id), name=field.name, description=field.description
+                )
                 for field in active_fields
             ],
             population=criteria.population if criteria else None,

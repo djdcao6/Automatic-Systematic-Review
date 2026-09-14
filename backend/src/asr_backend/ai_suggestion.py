@@ -54,6 +54,7 @@ class SuggestionResult(BaseModel):
 
 
 class ExtractionFieldSpec(BaseModel):
+    id: str
     name: str
     description: str | None = None
 
@@ -184,8 +185,16 @@ def _build_user_message(
 
 
 def _build_full_text_tool(extraction_fields: list[ExtractionFieldSpec]) -> dict[str, Any]:
+    # Keyed by field id, not name: Extraction Field names aren't required to
+    # be unique (asr_backend.main's extraction-field routes don't enforce
+    # it), so a name-keyed schema could collapse two fields into one
+    # property and silently drop a proposed value.
     field_properties = {
-        field.name: {"type": "string", "description": field.description or field.name}
+        field.id: {
+            "type": "string",
+            "title": field.name,
+            "description": field.description or field.name,
+        }
         for field in extraction_fields
     }
     return {
