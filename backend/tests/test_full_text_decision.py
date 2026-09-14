@@ -167,6 +167,20 @@ def test_maybe_screening_decision_is_resolved_once_full_text_decision_recorded(c
     assert get_detail(client, project_id, citation_id)["screening_resolved"] is True
 
 
+def test_a_maybe_full_text_decision_does_not_resolve_a_maybe_screening_decision(client):
+    project_id = create_project(client)
+    citation_id = create_citation(client, project_id)
+    record_screening_decision(client, project_id, citation_id, "maybe")
+    attach_full_text(client, project_id, citation_id)
+
+    client.post(
+        f"/review-projects/{project_id}/citations/{citation_id}/full-text-decision",
+        json={"decision": "maybe", "reason": None},
+    )
+
+    assert get_detail(client, project_id, citation_id)["screening_resolved"] is False
+
+
 def test_non_maybe_screening_decision_is_already_resolved(client):
     project_id = create_project(client)
     citation_id = create_citation(client, project_id)

@@ -116,15 +116,20 @@ class Citation(Base):
     def screening_resolved(self) -> bool:
         """Whether the title/abstract stage is settled, per ADR 0003.
 
-        A Maybe Screening Decision stands indefinitely unless a Full-Text
-        Decision is later recorded for the Citation, which resolves it
-        without altering the original Screening Decision record.
+        A Maybe Screening Decision stands indefinitely unless an Include or
+        Exclude Full-Text Decision is later recorded for the Citation, which
+        resolves it without altering the original Screening Decision record.
+        A Maybe Full-Text Decision carries the same ambiguity forward, so it
+        does not resolve anything.
         """
         if self.screening_decision is None:
             return False
         if self.screening_decision.decision != "maybe":
             return True
-        return self.full_text_decision is not None
+        return (
+            self.full_text_decision is not None
+            and self.full_text_decision.decision != "maybe"
+        )
 
     @property
     def decision_label(self) -> str:
