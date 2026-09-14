@@ -1,6 +1,7 @@
 import csv
 import io
 
+from asr_backend import export
 from asr_backend.ai_suggestion import SuggestionResult, get_ai_suggester
 from asr_backend.main import app
 
@@ -165,3 +166,76 @@ def test_export_filename_slugifies_project_name_and_appends_id_suffix(client):
 
     disposition = response.headers["content-disposition"]
     assert f'filename="copd-metformin-review-{project_id[:8]}.csv"' in disposition
+
+
+def save_criteria(client, project_id: str, **fields) -> None:
+    payload = {
+        "population": None,
+        "intervention": None,
+        "comparison": None,
+        "outcome": None,
+        "exclusion_rules": [],
+        "notes": None,
+    }
+    payload.update(fields)
+    response = client.put(f"/review-projects/{project_id}/criteria", json=payload)
+    assert response.status_code == 200
+
+
+def test_export_prepends_criteria_header_block_when_criteria_saved(client):
+    project_id = create_project(client)
+    save_criteria(
+        client,
+        project_id,
+        population="Adults with type 2 diabetes",
+        intervention="Metformin",
+        comparison="Placebo",
+        outcome="HbA1c reduction",
+        exclusion_rules=["Non-English", "Case reports"],
+        notes="Focus on RCTs only",
+    )
+    upload_csv(client, project_id, CSV_HEADER + "Study,An abstract,Author,2020,PubMed\n")
+
+    response = client.get(f"/review-projects/{project_id}/export")
+
+    lines = response.text.splitlines()
+    assert lines[0] == "# Review Project Criteria"
+    assert lines[1] == "# Population: Adults with type 2 diabetes"
+    assert lines[2] == "# Intervention: Metformin"
+    assert lines[3] == "# Comparison: Placebo"
+    assert lines[4] == "# Outcome: HbA1c reduction"
+    assert lines[5] == "# Exclusion Rules: Non-English; Case reports"
+    assert lines[6] == "# Notes: Focus on RCTs only"
+    assert lines[7] == ""
+    assert lines[8] == ",".join(export.CSV_HEADER)
+
+    rows = list(csv.DictReader(io.StringIO("\n".join(lines[8:]))))
+    assert len(rows) == 1
+    assert rows[0]["title"] == "Study"
+
+
+def test_export_criteria_header_block_renders_blank_for_unset_fields(client):
+    project_id = create_project(client)
+    save_criteria(client, project_id, notes="Only notes were filled in")
+
+    response = client.get(f"/review-projects/{project_id}/export")
+
+    lines = response.text.splitlines()
+    assert lines[0] == "# Review Project Criteria"
+    assert lines[1] == "# Population: "
+    assert lines[2] == "# Intervention: "
+    assert lines[3] == "# Comparison: "
+    assert lines[4] == "# Outcome: "
+    assert lines[5] == "# Exclusion Rules: "
+    assert lines[6] == "# Notes: Only notes were filled in"
+    assert lines[7] == ""
+
+
+def test_export_omits_criteria_header_block_when_no_criteria_saved(client):
+    project_id = create_project(client)
+
+    response = client.get(f"/review-projects/{project_id}/export")
+
+    lines = response.text.splitlines()
+    assert lines[0] == ",".join(export.CSV_HEADER)
+    assert not any(line.startswith("#") for line in lines)

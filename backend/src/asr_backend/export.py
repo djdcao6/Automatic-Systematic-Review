@@ -29,8 +29,11 @@ def build_export_filename(review_project: models.ReviewProject) -> str:
     return f"{slugify(review_project.name)}-{id_suffix}.csv"
 
 
-def build_citations_csv(citations: list[models.Citation]) -> str:
+def build_export_csv(
+    review_project: models.ReviewProject, citations: list[models.Citation]
+) -> str:
     buffer = io.StringIO()
+    _write_criteria_header(buffer, review_project.criteria)
     writer = csv.writer(buffer)
     writer.writerow(CSV_HEADER)
     for citation in citations:
@@ -48,3 +51,25 @@ def build_citations_csv(citations: list[models.Citation]) -> str:
             ]
         )
     return buffer.getvalue()
+
+
+def _write_criteria_header(buffer: io.StringIO, criteria: models.Criteria | None) -> None:
+    # A Criteria's PICO/exclusion-rules/notes fields don't fit the
+    # row-per-Citation CSV shape, so they go in a "# "-prefixed block above the
+    # header row instead. This isn't valid CSV on its own — a consumer parsing
+    # the Citation rows must skip these leading lines first — but it keeps the
+    # export a single downloadable file. Nothing is written when a Review
+    # Project has no Criteria saved yet.
+    if criteria is None:
+        return
+    lines = [
+        "# Review Project Criteria",
+        f"# Population: {criteria.population or ''}",
+        f"# Intervention: {criteria.intervention or ''}",
+        f"# Comparison: {criteria.comparison or ''}",
+        f"# Outcome: {criteria.outcome or ''}",
+        f"# Exclusion Rules: {'; '.join(criteria.exclusion_rules)}",
+        f"# Notes: {criteria.notes or ''}",
+        "",
+    ]
+    buffer.write("\r\n".join(lines) + "\r\n")

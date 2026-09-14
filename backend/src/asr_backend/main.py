@@ -173,7 +173,7 @@ def export_review_project(
     db: Session = Depends(get_db),
 ) -> Response:
     citations = crud.list_citations(db, project.id)
-    csv_content = export.build_citations_csv(citations)
+    csv_content = export.build_export_csv(project, citations)
     filename = export.build_export_filename(project)
     return Response(
         content=csv_content,
