@@ -268,7 +268,7 @@ def test_one_sided_transfer_of_extraction_value(client, db_session):
     assert loser_values[0].value == "120 patients"
 
 
-def test_two_sided_conflicting_screening_decision_is_left_unmerged(client, db_session):
+def test_two_sided_conflicting_screening_decision_is_held_as_possible_duplicate(client, db_session):
     project_id = create_project(client)
     upload_csv(client, project_id, CSV_HEADER + row("Study", doi="10.1/x"))
     survivor_id = list_citations(client, project_id)[0]["id"]
@@ -293,3 +293,12 @@ def test_two_sided_conflicting_screening_decision_is_left_unmerged(client, db_se
     loser_after = crud.get_citation(db_session, project.id, loser.id)
     assert loser_after.archived is False
     assert loser_after.screening_decision.decision == "exclude"
+
+    possible_duplicates = client.get(f"/review-projects/{project_id}/possible-duplicates").json()
+    assert len(possible_duplicates) == 1
+    pd = possible_duplicates[0]
+    assert pd["survivor"]["id"] == survivor_id
+    assert pd["loser"]["id"] == str(loser.id)
+    assert pd["conflicting_fields"] == [
+        {"field": "screening_decision", "extraction_field_id": None, "extraction_field_name": None}
+    ]

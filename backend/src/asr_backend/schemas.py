@@ -183,6 +183,49 @@ class ExtractionValueRead(BaseModel):
     updated_at: datetime
 
 
+ConflictFieldName = Literal["screening_decision", "full_text_decision", "full_text", "extraction_value"]
+
+
+class ConflictFieldRead(BaseModel):
+    field: ConflictFieldName
+    extraction_field_id: uuid.UUID | None = None
+    extraction_field_name: str | None = None
+
+
+class PossibleDuplicateCitationRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    title: str
+    abstract: str | None
+    authors: list[str]
+    year: int | None
+    source: list[str]
+    doi: str | None
+    screening_decision: ScreeningDecisionRead | None = None
+    full_text_decision: FullTextDecisionRead | None = None
+    full_text: FullTextRead | None = None
+    extraction_values: list[ExtractionValueRead] = []
+
+
+class PossibleDuplicateRead(BaseModel):
+    id: uuid.UUID
+    survivor: PossibleDuplicateCitationRead
+    loser: PossibleDuplicateCitationRead
+    conflicting_fields: list[ConflictFieldRead]
+    created_at: datetime
+
+
+class ConflictResolutionChoice(BaseModel):
+    field: ConflictFieldName
+    extraction_field_id: uuid.UUID | None = None
+    winner: Literal["survivor", "loser"]
+
+
+class PossibleDuplicateResolve(BaseModel):
+    choices: list[ConflictResolutionChoice]
+
+
 class CitationDetailRead(CitationRead):
     suggestion: SuggestionRead | None = None
     suggestion_unavailable_reason: str | None = None

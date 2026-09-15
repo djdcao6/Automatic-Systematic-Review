@@ -142,6 +142,44 @@ export type ExtractionValueInput = {
   value: string;
 };
 
+export type ConflictFieldName = "screening_decision" | "full_text_decision" | "full_text" | "extraction_value";
+
+export type ConflictField = {
+  field: ConflictFieldName;
+  extraction_field_id: string | null;
+  extraction_field_name: string | null;
+};
+
+export type PossibleDuplicateCitation = {
+  id: string;
+  title: string;
+  abstract: string | null;
+  authors: string[];
+  year: number | null;
+  source: string[];
+  doi: string | null;
+  screening_decision: ScreeningDecision | null;
+  full_text_decision: FullTextDecision | null;
+  full_text: FullText | null;
+  extraction_values: ExtractionValue[];
+};
+
+export type PossibleDuplicate = {
+  id: string;
+  survivor: PossibleDuplicateCitation;
+  loser: PossibleDuplicateCitation;
+  conflicting_fields: ConflictField[];
+  created_at: string;
+};
+
+export type ConflictWinner = "survivor" | "loser";
+
+export type ConflictResolutionChoiceInput = {
+  field: ConflictFieldName;
+  extraction_field_id: string | null;
+  winner: ConflictWinner;
+};
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 export async function listReviewProjects(): Promise<ReviewProject[]> {
@@ -359,6 +397,50 @@ export async function recordFullTextDecision(
     throw new Error("Failed to record full-text decision");
   }
   return response.json();
+}
+
+export async function listPossibleDuplicates(
+  reviewProjectId: string
+): Promise<PossibleDuplicate[]> {
+  const response = await fetch(
+    `${API_URL}/review-projects/${reviewProjectId}/possible-duplicates`
+  );
+  if (!response.ok) {
+    throw new Error("Failed to load possible duplicates");
+  }
+  return response.json();
+}
+
+export async function resolvePossibleDuplicate(
+  reviewProjectId: string,
+  possibleDuplicateId: string,
+  choices: ConflictResolutionChoiceInput[]
+): Promise<Citation> {
+  const response = await fetch(
+    `${API_URL}/review-projects/${reviewProjectId}/possible-duplicates/${possibleDuplicateId}/resolve`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ choices }),
+    }
+  );
+  if (!response.ok) {
+    throw new Error("Failed to resolve possible duplicate");
+  }
+  return response.json();
+}
+
+export async function dismissPossibleDuplicate(
+  reviewProjectId: string,
+  possibleDuplicateId: string
+): Promise<void> {
+  const response = await fetch(
+    `${API_URL}/review-projects/${reviewProjectId}/possible-duplicates/${possibleDuplicateId}/dismiss`,
+    { method: "POST" }
+  );
+  if (!response.ok) {
+    throw new Error("Failed to dismiss possible duplicate");
+  }
 }
 
 export async function recordExtractionValue(

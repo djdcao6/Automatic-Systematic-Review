@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent } from "react";
 
 import { CitationsPanel } from "@/components/CitationsPanel";
 import { ExtractionFieldsPanel } from "@/components/ExtractionFieldsPanel";
+import { PossibleDuplicatesPanel } from "@/components/PossibleDuplicatesPanel";
 import {
   exportReviewProject,
   getReviewProject,
@@ -38,6 +39,7 @@ export default function ReviewProjectDetailPage({
   const [exclusionRules, setExclusionRules] = useState("");
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [citationsRefreshToken, setCitationsRefreshToken] = useState(0);
 
   useEffect(() => {
     params.then((resolved) => setId(resolved.id));
@@ -61,9 +63,10 @@ export default function ReviewProjectDetailPage({
       .catch(() => setError("Failed to load review project."));
   }, [id]);
 
-  // Refreshes the live counters (e.g. citations_needing_decision) after a
-  // Citations upload, without disturbing whatever the Criteria form currently
-  // holds.
+  // Refreshes the live counters (e.g. citations_needing_decision) and the
+  // Citations list after anything that can change which Citations are
+  // active — an upload, or a Possible Duplicate being resolved or dismissed
+  // — without disturbing whatever the Criteria form currently holds.
   async function refreshProjectCounts() {
     if (!id) return;
     try {
@@ -71,6 +74,7 @@ export default function ReviewProjectDetailPage({
     } catch {
       // Best-effort refresh; the citations list itself already updated.
     }
+    setCitationsRefreshToken((token) => token + 1);
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -166,7 +170,13 @@ export default function ReviewProjectDetailPage({
         <button type="submit">Save Criteria</button>
       </form>
 
-      <CitationsPanel reviewProjectId={project.id} onCitationsChanged={refreshProjectCounts} />
+      <CitationsPanel
+        reviewProjectId={project.id}
+        onCitationsChanged={refreshProjectCounts}
+        refreshToken={citationsRefreshToken}
+      />
+
+      <PossibleDuplicatesPanel reviewProjectId={project.id} onChanged={refreshProjectCounts} />
 
       <ExtractionFieldsPanel reviewProjectId={project.id} />
     </main>

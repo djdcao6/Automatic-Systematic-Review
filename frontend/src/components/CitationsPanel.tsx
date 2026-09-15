@@ -8,9 +8,11 @@ import { listCitations, uploadCitations, type Citation } from "@/lib/api";
 export function CitationsPanel({
   reviewProjectId,
   onCitationsChanged,
+  refreshToken,
 }: {
   reviewProjectId: string;
   onCitationsChanged?: () => void;
+  refreshToken?: number;
 }) {
   const [citations, setCitations] = useState<Citation[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -19,7 +21,7 @@ export function CitationsPanel({
     listCitations(reviewProjectId)
       .then(setCitations)
       .catch(() => setError("Failed to load citations."));
-  }, [reviewProjectId]);
+  }, [reviewProjectId, refreshToken]);
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];

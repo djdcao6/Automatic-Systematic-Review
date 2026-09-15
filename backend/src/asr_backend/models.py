@@ -32,6 +32,9 @@ class ReviewProject(Base):
         cascade="all, delete-orphan",
         order_by="ExtractionField.created_at",
     )
+    possible_duplicates: Mapped[list["PossibleDuplicate"]] = relationship(
+        back_populates="review_project", cascade="all, delete-orphan"
+    )
 
     @property
     def citations_needing_decision(self) -> int:
@@ -186,6 +189,37 @@ class Citation(Base):
             if extraction_value.extraction_field_id == extraction_field_id:
                 return extraction_value.value
         return ""
+
+
+class PossibleDuplicate(Base):
+    """A Duplicate match held for manual resolution because of a Reviewer-data conflict.
+
+    `survivor_citation` is always the earlier-created side of the pair — the
+    same Citation #20's automatic merge would have designated — determined
+    once at creation time and never revisited, per ADR 0005.
+    """
+
+    __tablename__ = "possible_duplicates"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    review_project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("review_projects.id"), nullable=False
+    )
+    survivor_citation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("citations.id"), nullable=False
+    )
+    loser_citation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("citations.id"), nullable=False
+    )
+    status: Mapped[str] = mapped_column(String, nullable=False, default="pending")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    review_project: Mapped[ReviewProject] = relationship(back_populates="possible_duplicates")
+    survivor_citation: Mapped[Citation] = relationship(foreign_keys=[survivor_citation_id])
+    loser_citation: Mapped[Citation] = relationship(foreign_keys=[loser_citation_id])
 
 
 class AISuggestion(Base):

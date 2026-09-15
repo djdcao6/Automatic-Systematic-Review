@@ -1,4 +1,5 @@
 import uuid
+from datetime import UTC, datetime
 
 from sqlalchemy import func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -407,3 +408,78 @@ def upsert_extraction_value(
         )
         .one()
     )
+
+
+def create_possible_duplicate(
+    db: Session, review_project_id: uuid.UUID, survivor_id: uuid.UUID, loser_id: uuid.UUID
+) -> models.PossibleDuplicate:
+    possible_duplicate = models.PossibleDuplicate(
+        review_project_id=review_project_id,
+        survivor_citation_id=survivor_id,
+        loser_citation_id=loser_id,
+    )
+    db.add(possible_duplicate)
+    db.commit()
+    db.refresh(possible_duplicate)
+    return possible_duplicate
+
+
+def list_possible_duplicates(
+    db: Session, review_project_id: uuid.UUID, status: str = "pending"
+) -> list[models.PossibleDuplicate]:
+    return list(
+        db.query(models.PossibleDuplicate)
+        .filter(
+            models.PossibleDuplicate.review_project_id == review_project_id,
+            models.PossibleDuplicate.status == status,
+        )
+        .order_by(models.PossibleDuplicate.created_at)
+        .all()
+    )
+
+
+def get_possible_duplicate(
+    db: Session, review_project_id: uuid.UUID, possible_duplicate_id: uuid.UUID
+) -> models.PossibleDuplicate | None:
+    return (
+        db.query(models.PossibleDuplicate)
+        .filter(
+            models.PossibleDuplicate.id == possible_duplicate_id,
+            models.PossibleDuplicate.review_project_id == review_project_id,
+        )
+        .one_or_none()
+    )
+
+
+def set_possible_duplicate_status(
+    db: Session, possible_duplicate: models.PossibleDuplicate, status: str
+) -> models.PossibleDuplicate:
+    possible_duplicate.status = status
+    possible_duplicate.resolved_at = datetime.now(UTC)
+    db.commit()
+    db.refresh(possible_duplicate)
+    return possible_duplicate
+
+
+def held_citation_ids(db: Session, review_project_id: uuid.UUID) -> set[uuid.UUID]:
+    """Citation ids that are one side of an unresolved Possible Duplicate.
+
+    Excluded from matching against new uploads per ticket #21, so a third
+    upload can't auto-merge away one side of a pending hold out from under it.
+    """
+    rows = (
+        db.query(
+            models.PossibleDuplicate.survivor_citation_id,
+            models.PossibleDuplicate.loser_citation_id,
+        )
+        .filter(
+            models.PossibleDuplicate.review_project_id == review_project_id,
+            models.PossibleDuplicate.status == "pending",
+        )
+        .all()
+    )
+    ids: set[uuid.UUID] = set()
+    for survivor_id, loser_id in rows:
+        ids.add(survivor_id)
+        ids.add(loser_id)
+    return ids

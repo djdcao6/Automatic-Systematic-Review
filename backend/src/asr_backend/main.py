@@ -330,6 +330,64 @@ def download_full_text(
     )
 
 
+@app.get(
+    "/review-projects/{review_project_id}/possible-duplicates",
+    response_model=list[schemas.PossibleDuplicateRead],
+)
+def list_possible_duplicates(
+    project: models.ReviewProject = Depends(get_review_project_or_404),
+    db: Session = Depends(get_db),
+) -> list[schemas.PossibleDuplicateRead]:
+    return [
+        duplicates.to_possible_duplicate_read(possible_duplicate)
+        for possible_duplicate in crud.list_possible_duplicates(db, project.id)
+    ]
+
+
+def get_possible_duplicate_or_404(
+    possible_duplicate_id: uuid.UUID,
+    project: models.ReviewProject = Depends(get_review_project_or_404),
+    db: Session = Depends(get_db),
+) -> models.PossibleDuplicate:
+    possible_duplicate = crud.get_possible_duplicate(db, project.id, possible_duplicate_id)
+    if possible_duplicate is None:
+        raise HTTPException(status_code=404, detail="Possible Duplicate not found")
+    return possible_duplicate
+
+
+@app.post(
+    "/review-projects/{review_project_id}/possible-duplicates/{possible_duplicate_id}/resolve",
+    response_model=schemas.CitationRead,
+)
+def resolve_possible_duplicate(
+    payload: schemas.PossibleDuplicateResolve,
+    possible_duplicate: models.PossibleDuplicate = Depends(get_possible_duplicate_or_404),
+    project: models.ReviewProject = Depends(get_review_project_or_404),
+    db: Session = Depends(get_db),
+) -> models.Citation:
+    if possible_duplicate.status != "pending":
+        raise HTTPException(status_code=409, detail="Possible Duplicate is already settled")
+    try:
+        return duplicates.resolve_possible_duplicate(
+            db, project, possible_duplicate, payload.choices
+        )
+    except duplicates.ChoicesMismatchError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post(
+    "/review-projects/{review_project_id}/possible-duplicates/{possible_duplicate_id}/dismiss",
+    status_code=204,
+)
+def dismiss_possible_duplicate(
+    possible_duplicate: models.PossibleDuplicate = Depends(get_possible_duplicate_or_404),
+    db: Session = Depends(get_db),
+) -> None:
+    if possible_duplicate.status != "pending":
+        raise HTTPException(status_code=409, detail="Possible Duplicate is already settled")
+    crud.set_possible_duplicate_status(db, possible_duplicate, "dismissed")
+
+
 @app.get("/review-projects/{review_project_id}/export")
 def export_review_project(
     project: models.ReviewProject = Depends(get_review_project_or_404),
