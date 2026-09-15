@@ -2,6 +2,7 @@ import csv
 import io
 
 import pymupdf
+from conftest import auth_headers_for
 
 from asr_backend import export, models
 from asr_backend.ai_suggestion import SuggestionResult, get_ai_suggester
@@ -366,6 +367,104 @@ def test_export_omits_criteria_header_block_when_no_criteria_saved(authed_client
     lines = response.text.splitlines()
     assert lines[0] == ",".join(export.CSV_HEADER)
     assert not any(line.startswith("#") for line in lines)
+
+
+def _create_dual_project(client, headers, name: str = "Dual Review") -> str:
+    return client.post(
+        "/review-projects",
+        json={"name": name, "merge_mode": "combine", "review_mode": "dual"},
+        headers=headers,
+    ).json()["id"]
+
+
+def _add_co_reviewer(client, owner_headers, project_id: str, email: str = "co-reviewer@example.com"):
+    token = client.post(
+        f"/review-projects/{project_id}/invitations", headers=owner_headers
+    ).json()["token"]
+    access_token = client.post(
+        f"/invitations/{token}/accept-register",
+        json={"email": email, "password": "correcthorse"},
+    ).json()["access_token"]
+    return {"Authorization": f"Bearer {access_token}"}
+
+
+def _upload_citation(client, headers, project_id: str) -> str:
+    client.post(
+        f"/review-projects/{project_id}/citations",
+        files={"file": ("citations.csv", CSV_HEADER + "Study,An abstract,Author,2020,PubMed\n", "text/csv")},
+        headers=headers,
+    )
+    citations = client.get(f"/review-projects/{project_id}/citations", headers=headers).json()
+    return citations[-1]["id"]
+
+
+def _record_decision(client, project_id, citation_id, headers, decision, reason=None) -> None:
+    client.post(
+        f"/review-projects/{project_id}/citations/{citation_id}/decision",
+        json={"decision": decision, "reason": reason},
+        headers=headers,
+    )
+
+
+def _export_rows(client, project_id, headers) -> tuple[list[str], list[list[str]]]:
+    response = client.get(f"/review-projects/{project_id}/export", headers=headers)
+    lines = [line for line in response.text.splitlines() if line and not line.startswith("#")]
+    header, *rows = lines
+    return header.split(","), [row.split(",") for row in rows]
+
+
+def test_export_dual_project_shows_matching_decisions_and_resolved_value_when_no_conflict(client):
+    owner_headers = auth_headers_for(client, "owner@example.com")
+    project_id = _create_dual_project(client, owner_headers)
+    co_reviewer_headers = _add_co_reviewer(client, owner_headers, project_id)
+    citation_id = _upload_citation(client, owner_headers, project_id)
+    _record_decision(client, project_id, citation_id, owner_headers, "include", "Owner's take")
+    _record_decision(client, project_id, citation_id, co_reviewer_headers, "include")
+
+    header, rows = _export_rows(client, project_id, owner_headers)
+
+    assert "owner_decision" in header
+    assert "co_reviewer_decision" in header
+    row = rows[0]
+    assert row[header.index("owner_decision")] == "include"
+    assert row[header.index("co_reviewer_decision")] == "include"
+    assert row[header.index("screening_decision")] == "include"
+
+
+def test_export_dual_project_shows_both_original_decisions_alongside_resolved_conflict(client):
+    owner_headers = auth_headers_for(client, "owner@example.com")
+    project_id = _create_dual_project(client, owner_headers)
+    co_reviewer_headers = _add_co_reviewer(client, owner_headers, project_id)
+    citation_id = _upload_citation(client, owner_headers, project_id)
+    _record_decision(client, project_id, citation_id, owner_headers, "include")
+    _record_decision(client, project_id, citation_id, co_reviewer_headers, "exclude")
+    conflict_id = client.get(
+        f"/review-projects/{project_id}/conflicts", headers=owner_headers
+    ).json()[0]["id"]
+    client.post(
+        f"/review-projects/{project_id}/conflicts/{conflict_id}/resolve",
+        json={"decision": "maybe", "reason": "Needs full text"},
+        headers=owner_headers,
+    )
+
+    header, rows = _export_rows(client, project_id, owner_headers)
+
+    row = rows[0]
+    assert row[header.index("owner_decision")] == "include"
+    assert row[header.index("co_reviewer_decision")] == "exclude"
+    assert row[header.index("screening_decision")] == "maybe"
+
+
+def test_export_solo_project_format_unchanged_by_dual_reviewer_columns(authed_client):
+    project_id = create_project(authed_client)
+    upload_csv(authed_client, project_id, CSV_HEADER + "Study,An abstract,Author,2020,PubMed\n")
+
+    response = authed_client.get(f"/review-projects/{project_id}/export")
+
+    lines = response.text.splitlines()
+    assert lines[0] == ",".join(export.CSV_HEADER)
+    assert "owner_decision" not in lines[0]
+    assert "co_reviewer_decision" not in lines[0]
 
 
 def test_export_joins_multiple_source_values_like_authors():

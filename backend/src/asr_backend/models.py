@@ -183,12 +183,15 @@ class Citation(Base):
         """The Owner's Screening Decision.
 
         Screening Decisions are now one-per-(Citation, Reviewer) (#27), but
-        Possible Duplicate merging, CSV export, and Full-Text resolution
-        still only understand a single decision per Citation — they haven't
-        been adapted yet for Dual mode's independent per-reviewer decisions,
-        which is #28/#30's job. Until then, the Owner's decision stands in as
-        the canonical one, since the Owner always exists (Solo or Dual) and
-        has final say resolving a Conflict once #28 lands.
+        Possible Duplicate merging and Full-Text resolution still only
+        understand a single decision per Citation — they haven't been
+        adapted yet for Dual mode's independent per-reviewer decisions. CSV
+        export was adapted in #30, reading the Owner's and Co-Reviewer's
+        decisions separately via `owner_decision_label`/
+        `co_reviewer_decision_label` rather than through this property.
+        Until the rest catch up, the Owner's decision stands in as the
+        canonical one here, since the Owner always exists (Solo or Dual) and
+        has final say resolving a Conflict (#28).
         """
         if not self.screening_decisions:
             return None
@@ -291,6 +294,42 @@ class Citation(Base):
     @property
     def ai_suggestion_reason_label(self) -> str:
         return self.ai_suggestion.reason if self.ai_suggestion else _AI_SUGGESTION_UNAVAILABLE
+
+    @property
+    def owner_decision_label(self) -> str:
+        """The Owner's own Screening Decision, for a Dual export's per-reviewer column (#30).
+
+        Reads the pairing off a resolved/pending Conflict when one exists,
+        mirroring `conflicts.to_conflict_read` — robust to a Co-Reviewer
+        being removed or replaced after the Conflict formed (#29). Otherwise
+        falls back to the Owner id live on the Review Project, since a
+        Citation without a Conflict was never re-paired.
+        """
+        reviewer_id = (
+            self.conflict.owner_reviewer_id
+            if self.conflict is not None
+            else self.review_project.owner_reviewer_id
+        )
+        decision = self.screening_decision_for(reviewer_id)
+        return decision.decision if decision else ""
+
+    @property
+    def co_reviewer_decision_label(self) -> str:
+        """The Co-Reviewer's own Screening Decision, for a Dual export's per-reviewer column (#30).
+
+        Same Conflict-pairing rationale as `owner_decision_label`. Without a
+        Conflict, falls back to the current Co-Reviewer, or the former one
+        while a Citation sits blocked pending a replacement (#29).
+        """
+        if self.conflict is not None:
+            reviewer_id = self.conflict.co_reviewer_id
+        else:
+            project = self.review_project
+            reviewer_id = project.co_reviewer_id or project.former_co_reviewer_id
+        if reviewer_id is None:
+            return ""
+        decision = self.screening_decision_for(reviewer_id)
+        return decision.decision if decision else ""
 
     @property
     def full_text_decision_label(self) -> str:

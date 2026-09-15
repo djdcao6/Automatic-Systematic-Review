@@ -18,6 +18,16 @@ CSV_HEADER = [
     "full_text_reason",
 ]
 
+# Dual-only columns (#30): `screening_decision` above already carries the
+# final/resolved decision (Owner's own call, or a Conflict's resolution once
+# one lands), so these two add the Owner's and Co-Reviewer's individual
+# decisions alongside it for a PRISMA-style inter-rater audit trail. Appended
+# only for a Dual Review Project's export, so a Solo export stays unchanged.
+DUAL_REVIEWER_HEADER = [
+    "owner_decision",
+    "co_reviewer_decision",
+]
+
 _SLUG_NON_ALNUM = re.compile(r"[^a-z0-9]+")
 
 
@@ -36,26 +46,29 @@ def build_export_csv(
 ) -> str:
     buffer = io.StringIO()
     _write_criteria_header(buffer, review_project.criteria)
+    is_dual = review_project.review_mode == "dual"
     extraction_fields = review_project.active_extraction_fields
     writer = csv.writer(buffer)
-    writer.writerow([*CSV_HEADER, *(field.name for field in extraction_fields)])
+    header = [*CSV_HEADER, *(DUAL_REVIEWER_HEADER if is_dual else [])]
+    writer.writerow([*header, *(field.name for field in extraction_fields)])
     for citation in citations:
-        writer.writerow(
-            [
-                citation.title,
-                citation.abstract or "",
-                "; ".join(citation.authors),
-                citation.year or "",
-                "; ".join(citation.source),
-                citation.decision_label,
-                citation.screening_reason,
-                citation.ai_suggestion_decision_label,
-                citation.ai_suggestion_reason_label,
-                citation.full_text_decision_label,
-                citation.full_text_reason_label,
-                *(citation.extraction_value_for(field.id) for field in extraction_fields),
-            ]
-        )
+        row = [
+            citation.title,
+            citation.abstract or "",
+            "; ".join(citation.authors),
+            citation.year or "",
+            "; ".join(citation.source),
+            citation.decision_label,
+            citation.screening_reason,
+            citation.ai_suggestion_decision_label,
+            citation.ai_suggestion_reason_label,
+            citation.full_text_decision_label,
+            citation.full_text_reason_label,
+        ]
+        if is_dual:
+            row += [citation.owner_decision_label, citation.co_reviewer_decision_label]
+        row += [citation.extraction_value_for(field.id) for field in extraction_fields]
+        writer.writerow(row)
     return buffer.getvalue()
 
 
