@@ -13,8 +13,20 @@ The inclusion/exclusion rules for a Review Project, applied to every Citation in
 _Avoid_: Inclusion criteria, Filters
 
 **Citation**:
-A single title/abstract record uploaded for screening: title, abstract, authors, publication year, and source. May later have a Full Text attached. A Citation missing an abstract stays visible but flagged, since it can't receive an AI Suggestion.
+A single title/abstract record uploaded for screening: title, abstract, authors, publication year, and source(s). May later have a Full Text attached. A Citation missing an abstract stays visible but flagged, since it can't receive an AI Suggestion. A Citation that loses a Duplicate match is archived rather than deleted, pointing to the surviving Citation, so its data isn't lost.
 _Avoid_: Reference, Record, Paper
+
+**Duplicate**:
+Two or more Citations in a Review Project identified as the same underlying paper — matched by DOI when both have one, or by normalized title otherwise — and collapsed into one surviving Citation, archiving the rest. Detected automatically whenever Citations are uploaded, including two rows within the same batch, and across batches from different sources. How much of the archived Citation's bibliographic data folds into the survivor is governed by the Review Project's Merge Mode; Reviewer-entered data always transfers when only one side has it, regardless of mode.
+_Avoid_: Dupe, Duplicate record
+
+**Possible Duplicate**:
+A Duplicate match that can't merge automatically because the two Citations already carry conflicting Reviewer-entered data (Screening Decision, Full-Text Decision, Extraction Values, or Full Text). Held in a dedicated queue until a Reviewer resolves which side's conflicting value is correct. Dismissing a Possible Duplicate as not actually the same paper is permanent, exempting that pair from future automatic matching. Applies the same way regardless of the Review Project's Merge Mode.
+_Avoid_: Duplicate candidate, Conflict
+
+**Merge Mode**:
+A Review Project-level choice, made once at creation and never revisited, for how a Duplicate's bibliographic fields (abstract, authors, year, source) combine into the surviving Citation. **Combine** gap-fills missing fields and merges `source` into the full list of databases the paper was found in. **Keep First** leaves the survivor's bibliographic fields exactly as first uploaded. Neither mode affects Reviewer-entered data, which always transfers one-sided and still escalates to a Possible Duplicate on a genuine conflict.
+_Avoid_: Dedup mode, Merge strategy
 
 **Screening Decision**:
 The three-state outcome — Include, Exclude, or Maybe — that a Reviewer records for a Citation against a Review Project's Criteria at the title/abstract stage, with an optional reason. Editable at any time. A Maybe stands indefinitely unless a Full-Text Decision is later recorded for that Citation, which resolves it.

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from asr_backend import (
     citation_import,
     crud,
+    duplicates,
     export,
     full_text,
     full_text_suggestion,
@@ -162,7 +163,7 @@ async def upload_citations(
     except citation_import.UnsupportedFileType as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    citations = crud.create_citations(db, project.id, parsed.citations)
+    citations = duplicates.import_citations(db, project, parsed.citations)
     return schemas.CitationUploadResult(
         created=len(citations),
         skipped=[

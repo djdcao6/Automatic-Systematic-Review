@@ -142,7 +142,10 @@ def create_citations(
 def list_citations(db: Session, review_project_id: uuid.UUID) -> list[models.Citation]:
     return list(
         db.query(models.Citation)
-        .filter(models.Citation.review_project_id == review_project_id)
+        .filter(
+            models.Citation.review_project_id == review_project_id,
+            models.Citation.archived.is_(False),
+        )
         .order_by(models.Citation.created_at)
         .all()
     )

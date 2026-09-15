@@ -71,6 +71,25 @@ describe("CitationsPanel", () => {
     expect(mockedApi.uploadCitations).toHaveBeenCalledWith("1", file);
   });
 
+  it("renders only the active citations the API returns after a duplicate merge", async () => {
+    mockedApi.listCitations.mockResolvedValue([
+      {
+        id: "1",
+        title: "Surviving Citation",
+        abstract: "An abstract",
+        authors: ["Jane Doe"],
+        year: 2020,
+        source: ["PubMed", "Embase"],
+        needs_abstract: false,
+      },
+    ]);
+
+    render(<CitationsPanel reviewProjectId="1" />);
+
+    expect(await screen.findByText("Surviving Citation")).toBeInTheDocument();
+    expect(screen.getAllByRole("listitem")).toHaveLength(1);
+  });
+
   it("notifies the parent after a successful upload so counts can refresh", async () => {
     mockedApi.listCitations.mockResolvedValueOnce([]).mockResolvedValueOnce([
       {

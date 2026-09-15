@@ -35,7 +35,11 @@ class ReviewProject(Base):
 
     @property
     def citations_needing_decision(self) -> int:
-        return sum(1 for citation in self.citations if citation.screening_decision is None)
+        return sum(
+            1
+            for citation in self.citations
+            if not citation.archived and citation.screening_decision is None
+        )
 
     @property
     def active_extraction_fields(self) -> list["ExtractionField"]:
@@ -96,6 +100,10 @@ class Citation(Base):
     year: Mapped[int | None] = mapped_column(Integer, nullable=True)
     source: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, default=list)
     doi: Mapped[str | None] = mapped_column(String, nullable=True)
+    archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    merged_into_citation_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("citations.id"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC)
     )

@@ -105,7 +105,10 @@ def test_uploading_again_appends_citations(client):
     assert [c["title"] for c in citations] == ["First", "Second"]
 
 
-def test_duplicate_rows_are_each_created_independently(client):
+def test_duplicate_rows_in_same_batch_are_created_then_merged(client):
+    """As of ticket #20, matching title-duplicate rows collapse into one
+    surviving Citation (see test_duplicates.py) rather than staying
+    independent, overturning the "no deduplication" design from #4."""
     project_id = create_project(client)
 
     response = upload_csv(
@@ -118,7 +121,7 @@ def test_duplicate_rows_are_each_created_independently(client):
 
     assert response.json()["created"] == 2
     citations = client.get(f"/review-projects/{project_id}/citations").json()
-    assert len(citations) == 2
+    assert len(citations) == 1
 
 
 def test_upload_ris_citations(client):
