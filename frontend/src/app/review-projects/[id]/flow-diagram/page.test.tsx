@@ -39,6 +39,10 @@ describe("FlowDiagramPage", () => {
       screened: 2,
       excluded: 1,
       pending: 2,
+      full_text_assessed: 0,
+      full_text_excluded_by_reason: {},
+      full_text_included: 0,
+      full_text_pending: 0,
     });
 
     renderPage();
@@ -59,6 +63,10 @@ describe("FlowDiagramPage", () => {
       screened: 1,
       excluded: 0,
       pending: 2,
+      full_text_assessed: 0,
+      full_text_excluded_by_reason: {},
+      full_text_included: 0,
+      full_text_pending: 0,
     });
 
     renderPage();
@@ -76,6 +84,10 @@ describe("FlowDiagramPage", () => {
       screened: 2,
       excluded: 1,
       pending: 2,
+      full_text_assessed: 0,
+      full_text_excluded_by_reason: {},
+      full_text_included: 0,
+      full_text_pending: 0,
     });
 
     renderPage();
@@ -105,6 +117,10 @@ describe("FlowDiagramPage", () => {
       screened: 0,
       excluded: 0,
       pending: 0,
+      full_text_assessed: 0,
+      full_text_excluded_by_reason: {},
+      full_text_included: 0,
+      full_text_pending: 0,
     });
 
     renderPage();
@@ -125,6 +141,10 @@ describe("FlowDiagramPage", () => {
       screened: 0,
       excluded: 0,
       pending: 0,
+      full_text_assessed: 0,
+      full_text_excluded_by_reason: {},
+      full_text_included: 0,
+      full_text_pending: 0,
     });
 
     renderPage();
@@ -140,5 +160,72 @@ describe("FlowDiagramPage", () => {
     renderPage();
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/failed to load prisma flow diagram/i);
+  });
+
+  it("renders full-text assessed, itemized excluded-by-reason, and included counts", async () => {
+    mockedApi.getFlowDiagram.mockResolvedValue({
+      criteria: null,
+      identification_counts: { PubMed: 5 },
+      duplicates_removed: 0,
+      screened: 5,
+      excluded: 0,
+      pending: 0,
+      full_text_assessed: 4,
+      full_text_excluded_by_reason: { "Wrong population": 2, "Not RCT": 1 },
+      full_text_included: 1,
+      full_text_pending: 1,
+    });
+
+    renderPage();
+
+    expect(await screen.findByText(/full-text assessed: 4/i)).toBeInTheDocument();
+    expect(screen.getByText(/wrong population: 2/i)).toBeInTheDocument();
+    expect(screen.getByText(/not rct: 1/i)).toBeInTheDocument();
+    expect(screen.getByText(/included: 1/i)).toBeInTheDocument();
+  });
+
+  it("notes the full-text pending-decision count", async () => {
+    mockedApi.getFlowDiagram.mockResolvedValue({
+      criteria: null,
+      identification_counts: { PubMed: 5 },
+      duplicates_removed: 0,
+      screened: 5,
+      excluded: 0,
+      pending: 0,
+      full_text_assessed: 3,
+      full_text_excluded_by_reason: {},
+      full_text_included: 3,
+      full_text_pending: 2,
+    });
+
+    renderPage();
+
+    expect(
+      await screen.findByText(/2 citation\(s\) still pending a full-text decision/i)
+    ).toBeInTheDocument();
+  });
+
+  it("renders full-text figures in the plain numeric summary table", async () => {
+    mockedApi.getFlowDiagram.mockResolvedValue({
+      criteria: null,
+      identification_counts: { PubMed: 5 },
+      duplicates_removed: 0,
+      screened: 5,
+      excluded: 0,
+      pending: 0,
+      full_text_assessed: 4,
+      full_text_excluded_by_reason: { "Wrong population": 2, "Not RCT": 1 },
+      full_text_included: 1,
+      full_text_pending: 1,
+    });
+
+    renderPage();
+
+    const table = await screen.findByRole("table");
+    expect(table).toHaveTextContent("Full-Text Assessed");
+    expect(table).toHaveTextContent("Full-Text Excluded (Wrong population)");
+    expect(table).toHaveTextContent("Full-Text Excluded (Not RCT)");
+    expect(table).toHaveTextContent("Full-Text Included");
+    expect(table).toHaveTextContent("Full-Text Pending Decision");
   });
 });

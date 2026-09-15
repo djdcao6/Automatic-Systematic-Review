@@ -472,6 +472,10 @@ export type FlowDiagram = {
   screened: number;
   excluded: number;
   pending: number;
+  full_text_assessed: number;
+  full_text_excluded_by_reason: Record<string, number>;
+  full_text_included: number;
+  full_text_pending: number;
 };
 
 export async function getFlowDiagram(reviewProjectId: string): Promise<FlowDiagram> {

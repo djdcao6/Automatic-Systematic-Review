@@ -330,6 +330,10 @@ class FlowDiagramRead(BaseModel):
     screened: int
     excluded: int
     pending: int
+    full_text_assessed: int
+    full_text_excluded_by_reason: dict[str, int]
+    full_text_included: int
+    full_text_pending: int
 
 
 class CitationDetailRead(CitationRead):

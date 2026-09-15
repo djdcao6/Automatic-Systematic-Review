@@ -1,5 +1,7 @@
+import io
 import uuid
 
+import pymupdf
 from conftest import auth_headers_for
 
 from asr_backend import crud, duplicates, schemas
@@ -50,6 +52,51 @@ def _seed_unmatched_citation(db_session, project_id: str, title: str, doi: str |
         [ParsedCitation(title=title, abstract=None, authors=[], year=None, source=[], doi=doi)],
     )
     return citation
+
+
+def _make_pdf(text: str = "Sample paper text") -> bytes:
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.insert_text((72, 72), text)
+    return doc.tobytes()
+
+
+def record_screening_decision(authed_client, project_id: str, citation_id: str, decision: str, reason: str | None = None) -> None:
+    authed_client.post(
+        f"/review-projects/{project_id}/citations/{citation_id}/decision",
+        json={"decision": decision, "reason": reason},
+    )
+
+
+def attach_full_text(authed_client, project_id: str, citation_id: str) -> None:
+    authed_client.post(
+        f"/review-projects/{project_id}/citations/{citation_id}/full-text",
+        files={"file": ("paper.pdf", io.BytesIO(_make_pdf()), "application/pdf")},
+    )
+
+
+def record_full_text_decision(
+    authed_client, project_id: str, citation_id: str, decision: str, reason: str | None = None
+) -> None:
+    response = authed_client.post(
+        f"/review-projects/{project_id}/citations/{citation_id}/full-text-decision",
+        json={"decision": decision, "reason": reason},
+    )
+    assert response.status_code == 200
+
+
+def set_exclusion_rules(authed_client, project_id: str, exclusion_rules: list[str]) -> None:
+    authed_client.put(
+        f"/review-projects/{project_id}/criteria",
+        json={
+            "population": None,
+            "intervention": None,
+            "comparison": None,
+            "outcome": None,
+            "exclusion_rules": exclusion_rules,
+            "notes": None,
+        },
+    )
 
 
 def test_identification_counts_are_per_source_and_precede_deduplication(authed_client):
@@ -331,3 +378,134 @@ def test_flow_diagram_allows_co_reviewer(client):
     )
 
     assert response.status_code == 200
+
+
+def test_full_text_excluded_counts_are_itemized_by_reason(authed_client):
+    project_id = create_project(authed_client)
+    set_exclusion_rules(authed_client, project_id, ["Wrong population", "Not RCT"])
+    upload_csv(
+        authed_client,
+        project_id,
+        CSV_HEADER + row("Study A") + row("Study B") + row("Study C"),
+    )
+    citations = {c["title"]: c["id"] for c in list_citations(authed_client, project_id)}
+    for citation_id in citations.values():
+        record_screening_decision(authed_client, project_id, citation_id, "include")
+        attach_full_text(authed_client, project_id, citation_id)
+    record_full_text_decision(
+        authed_client, project_id, citations["Study A"], "exclude", "Wrong population"
+    )
+    record_full_text_decision(
+        authed_client, project_id, citations["Study B"], "exclude", "Wrong population"
+    )
+    record_full_text_decision(authed_client, project_id, citations["Study C"], "exclude", "Not RCT")
+
+    diagram = get_flow_diagram(authed_client, project_id)
+
+    assert diagram["full_text_excluded_by_reason"] == {"Wrong population": 2, "Not RCT": 1}
+    assert diagram["full_text_assessed"] == 3
+    assert diagram["full_text_included"] == 0
+    assert diagram["full_text_pending"] == 0
+
+
+def test_full_text_funnel_scoped_to_include_and_maybe_screening_decisions(authed_client):
+    project_id = create_project(authed_client)
+    upload_csv(
+        authed_client,
+        project_id,
+        CSV_HEADER + row("Included Study") + row("Maybe Study") + row("Excluded Study"),
+    )
+    citations = {c["title"]: c["id"] for c in list_citations(authed_client, project_id)}
+    record_screening_decision(authed_client, project_id, citations["Included Study"], "include")
+    record_screening_decision(authed_client, project_id, citations["Maybe Study"], "maybe")
+    record_screening_decision(
+        authed_client, project_id, citations["Excluded Study"], "exclude", "Wrong population"
+    )
+
+    diagram = get_flow_diagram(authed_client, project_id)
+
+    # Only the Include and Maybe Citations enter the full-text funnel, both
+    # still pending since neither has a Full-Text Decision recorded yet --
+    # the Excluded Citation never counts here at all.
+    assert diagram["full_text_pending"] == 2
+    assert diagram["full_text_assessed"] == 0
+    assert diagram["full_text_included"] == 0
+    assert diagram["full_text_excluded_by_reason"] == {}
+
+
+def test_full_text_decision_on_excluded_screening_citation_is_excluded_from_every_count(
+    authed_client,
+):
+    project_id = create_project(authed_client)
+    upload_csv(authed_client, project_id, CSV_HEADER + row("Study"))
+    citation_id = list_citations(authed_client, project_id)[0]["id"]
+    attach_full_text(authed_client, project_id, citation_id)
+    record_screening_decision(
+        authed_client, project_id, citation_id, "exclude", "Wrong population"
+    )
+    # A Full-Text Decision recorded despite the title/abstract Exclude.
+    record_full_text_decision(authed_client, project_id, citation_id, "include")
+
+    diagram = get_flow_diagram(authed_client, project_id)
+
+    assert diagram["full_text_assessed"] == 0
+    assert diagram["full_text_included"] == 0
+    assert diagram["full_text_excluded_by_reason"] == {}
+    assert diagram["full_text_pending"] == 0
+
+
+def test_full_text_included_counts_only_include_decisions(authed_client):
+    project_id = create_project(authed_client)
+    upload_csv(authed_client, project_id, CSV_HEADER + row("Study A") + row("Study B"))
+    citations = {c["title"]: c["id"] for c in list_citations(authed_client, project_id)}
+    for citation_id in citations.values():
+        record_screening_decision(authed_client, project_id, citation_id, "include")
+        attach_full_text(authed_client, project_id, citation_id)
+    record_full_text_decision(authed_client, project_id, citations["Study A"], "include")
+    record_full_text_decision(authed_client, project_id, citations["Study B"], "maybe")
+
+    diagram = get_flow_diagram(authed_client, project_id)
+
+    assert diagram["full_text_included"] == 1
+    assert diagram["full_text_assessed"] == 2
+    assert diagram["full_text_excluded_by_reason"] == {}
+    assert diagram["full_text_pending"] == 0
+
+
+def test_full_text_pending_counts_include_maybe_citations_without_a_full_text_decision(
+    authed_client,
+):
+    project_id = create_project(authed_client)
+    upload_csv(
+        authed_client,
+        project_id,
+        CSV_HEADER + row("Decided") + row("No Full Text Yet") + row("Maybe No Decision"),
+    )
+    citations = {c["title"]: c["id"] for c in list_citations(authed_client, project_id)}
+    record_screening_decision(authed_client, project_id, citations["Decided"], "include")
+    attach_full_text(authed_client, project_id, citations["Decided"])
+    record_full_text_decision(authed_client, project_id, citations["Decided"], "include")
+    record_screening_decision(authed_client, project_id, citations["No Full Text Yet"], "include")
+    record_screening_decision(authed_client, project_id, citations["Maybe No Decision"], "maybe")
+
+    diagram = get_flow_diagram(authed_client, project_id)
+
+    assert diagram["full_text_assessed"] == 1
+    assert diagram["full_text_included"] == 1
+    assert diagram["full_text_pending"] == 2
+
+
+def test_full_text_funnel_excludes_citation_with_a_pending_conflict(client):
+    owner_headers = auth_headers_for(client, "owner@example.com")
+    project_id = _create_dual_project(client, owner_headers)
+    co_reviewer_headers = _add_co_reviewer(client, owner_headers, project_id)
+    citation_id = _upload_citation(client, owner_headers, project_id)
+    _record_decision(client, project_id, citation_id, owner_headers, "include")
+    _record_decision(client, project_id, citation_id, co_reviewer_headers, "exclude")
+
+    diagram = client.get(
+        f"/review-projects/{project_id}/flow-diagram", headers=owner_headers
+    ).json()
+
+    assert diagram["full_text_pending"] == 0
+    assert diagram["full_text_assessed"] == 0

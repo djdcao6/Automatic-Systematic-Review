@@ -43,6 +43,13 @@ function totalIdentified(diagram: FlowDiagram): number {
   return Object.values(diagram.identification_counts).reduce((sum, count) => sum + count, 0);
 }
 
+function totalFullTextExcluded(diagram: FlowDiagram): number {
+  return Object.values(diagram.full_text_excluded_by_reason).reduce(
+    (sum, count) => sum + count,
+    0
+  );
+}
+
 function ScreeningFunnelDiagram({ diagram }: { diagram: FlowDiagram }) {
   const sourceEntries = Object.entries(diagram.identification_counts);
 
@@ -74,6 +81,23 @@ function ScreeningFunnelDiagram({ diagram }: { diagram: FlowDiagram }) {
         <p>Records screened: {diagram.screened}</p>
         <p>Records excluded: {diagram.excluded}</p>
         <p>{diagram.pending} citation(s) still pending a Screening Decision</p>
+      </div>
+      <p aria-hidden="true">↓</p>
+      <div>
+        <h3>Full-Text Assessed</h3>
+        <p>Full-text assessed: {diagram.full_text_assessed}</p>
+        <p>Full-text excluded: {totalFullTextExcluded(diagram)}</p>
+        {Object.keys(diagram.full_text_excluded_by_reason).length > 0 ? (
+          <ul>
+            {Object.entries(diagram.full_text_excluded_by_reason).map(([reason, count]) => (
+              <li key={reason}>
+                {reason || "No reason given"}: {count}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        <p>Included: {diagram.full_text_included}</p>
+        <p>{diagram.full_text_pending} citation(s) still pending a Full-Text Decision</p>
       </div>
     </section>
   );
@@ -111,6 +135,28 @@ function SummaryTable({ diagram }: { diagram: FlowDiagram }) {
         <tr>
           <th scope="row">Pending Decision</th>
           <td>{diagram.pending}</td>
+        </tr>
+        <tr>
+          <th scope="row">Full-Text Assessed</th>
+          <td>{diagram.full_text_assessed}</td>
+        </tr>
+        {Object.entries(diagram.full_text_excluded_by_reason).map(([reason, count]) => (
+          <tr key={reason}>
+            <th scope="row">Full-Text Excluded ({reason || "No reason given"})</th>
+            <td>{count}</td>
+          </tr>
+        ))}
+        <tr>
+          <th scope="row">Full-Text Excluded</th>
+          <td>{totalFullTextExcluded(diagram)}</td>
+        </tr>
+        <tr>
+          <th scope="row">Full-Text Included</th>
+          <td>{diagram.full_text_included}</td>
+        </tr>
+        <tr>
+          <th scope="row">Full-Text Pending Decision</th>
+          <td>{diagram.full_text_pending}</td>
         </tr>
       </tbody>
     </table>

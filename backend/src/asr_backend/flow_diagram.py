@@ -72,9 +72,50 @@ def compute_screening_funnel(citations: list[models.Citation]) -> tuple[int, int
     return screened, excluded, pending
 
 
+def compute_full_text_funnel(
+    citations: list[models.Citation],
+) -> tuple[int, dict[str, int], int, int]:
+    """(assessed, excluded_by_reason, included, pending) over the full-text funnel, per #33.
+
+    Scoped strictly to non-archived Citations whose settled title/abstract
+    decision (`_settled_decision`, same Conflict-aware rule the screening
+    funnel uses) is Include or Maybe — this alone is what keeps a Full-Text
+    Decision recorded against an Excluded Citation out of every count here,
+    without needing a separate check: that Citation is never visited.
+
+    `assessed` counts every in-scope Citation with a Full-Text Decision
+    recorded (Include, Exclude, or Maybe alike); `excluded_by_reason` tallies
+    the Exclude ones by reason, drawn from the Review Project's locked
+    `Criteria.exclusion_rules`; `included` counts only the Include ones;
+    `pending` is every in-scope Citation still lacking a Full-Text Decision.
+    """
+    assessed = 0
+    excluded_by_reason: Counter[str] = Counter()
+    included = 0
+    pending = 0
+    for citation in citations:
+        if citation.archived:
+            continue
+        if _settled_decision(citation) not in ("include", "maybe"):
+            continue
+        full_text_decision = citation.full_text_decision
+        if full_text_decision is None:
+            pending += 1
+            continue
+        assessed += 1
+        if full_text_decision.decision == "exclude":
+            excluded_by_reason[full_text_decision.reason or ""] += 1
+        elif full_text_decision.decision == "include":
+            included += 1
+    return assessed, dict(excluded_by_reason), included, pending
+
+
 def build_flow_diagram_read(project: models.ReviewProject) -> schemas.FlowDiagramRead:
     citations = project.citations
     screened, excluded, pending = compute_screening_funnel(citations)
+    full_text_assessed, full_text_excluded_by_reason, full_text_included, full_text_pending = (
+        compute_full_text_funnel(citations)
+    )
     return schemas.FlowDiagramRead(
         criteria=(
             schemas.CriteriaRead.model_validate(project.criteria)
@@ -86,4 +127,8 @@ def build_flow_diagram_read(project: models.ReviewProject) -> schemas.FlowDiagra
         screened=screened,
         excluded=excluded,
         pending=pending,
+        full_text_assessed=full_text_assessed,
+        full_text_excluded_by_reason=full_text_excluded_by_reason,
+        full_text_included=full_text_included,
+        full_text_pending=full_text_pending,
     )
