@@ -66,11 +66,6 @@ def find_conflicts(a: models.Citation, b: models.Citation) -> list[Conflict]:
     return conflicts
 
 
-def has_conflict(a: models.Citation, b: models.Citation) -> bool:
-    """Whether a matched pair already carries conflicting Reviewer-entered data."""
-    return bool(find_conflicts(a, b))
-
-
 def find_match(
     citation: models.Citation, pool: list[models.Citation]
 ) -> models.Citation | None:
