@@ -9,6 +9,32 @@ from asr_backend import models, schemas
 from asr_backend.citation_import import ParsedCitation
 
 
+def get_reviewer(db: Session, reviewer_id: uuid.UUID) -> models.Reviewer | None:
+    return db.get(models.Reviewer, reviewer_id)
+
+
+def get_reviewer_by_email(db: Session, email: str) -> models.Reviewer | None:
+    return db.query(models.Reviewer).filter(models.Reviewer.email == email).one_or_none()
+
+
+def create_reviewer(db: Session, email: str, hashed_password: str) -> models.Reviewer | None:
+    stmt = pg_insert(models.Reviewer).values(email=email, hashed_password=hashed_password)
+    stmt = stmt.on_conflict_do_nothing(index_elements=[models.Reviewer.email]).returning(
+        models.Reviewer.id
+    )
+    # Atomic INSERT ... ON CONFLICT DO NOTHING, like upsert_criteria, so two
+    # concurrent registrations with the same email can't both pass a
+    # read-then-write check and one race into an unhandled IntegrityError.
+    # RETURNING (rather than rowcount) detects the no-op reliably, since the
+    # psycopg driver reports rowcount as -1 for this statement shape.
+    inserted_id = db.execute(stmt).scalar_one_or_none()
+    if inserted_id is None:
+        db.rollback()
+        return None
+    db.commit()
+    return db.get(models.Reviewer, inserted_id)
+
+
 def get_review_project(db: Session, review_project_id: uuid.UUID) -> models.ReviewProject | None:
     return db.get(models.ReviewProject, review_project_id)
 

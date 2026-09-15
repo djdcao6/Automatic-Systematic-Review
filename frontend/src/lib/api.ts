@@ -1,3 +1,19 @@
+export type Reviewer = {
+  id: string;
+  email: string;
+  created_at: string;
+};
+
+export type ReviewerInput = {
+  email: string;
+  password: string;
+};
+
+export type AuthToken = {
+  access_token: string;
+  token_type: string;
+};
+
 export type MergeMode = "combine" | "keep_first";
 
 export type ReviewProject = {
@@ -181,6 +197,40 @@ export type ConflictResolutionChoiceInput = {
 };
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
+async function errorMessage(response: Response, fallback: string): Promise<string> {
+  try {
+    const body = await response.json();
+    if (typeof body?.detail === "string") return body.detail;
+  } catch {
+    // response body wasn't JSON; fall through to the generic message
+  }
+  return fallback;
+}
+
+export async function registerReviewer(payload: ReviewerInput): Promise<Reviewer> {
+  const response = await fetch(`${API_URL}/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw new Error(await errorMessage(response, "Failed to register"));
+  }
+  return response.json();
+}
+
+export async function loginReviewer(payload: ReviewerInput): Promise<AuthToken> {
+  const response = await fetch(`${API_URL}/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw new Error(await errorMessage(response, "Failed to log in"));
+  }
+  return response.json();
+}
 
 export async function listReviewProjects(): Promise<ReviewProject[]> {
   const response = await fetch(`${API_URL}/review-projects`);

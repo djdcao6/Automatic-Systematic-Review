@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
 def _require_non_blank(value: str) -> str:
@@ -10,6 +10,43 @@ def _require_non_blank(value: str) -> str:
     if not stripped:
         raise ValueError("name must not be blank")
     return stripped
+
+
+def _normalize_email(value: EmailStr) -> str:
+    return value.strip().lower()
+
+
+class ReviewerCreate(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=72)
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: EmailStr) -> str:
+        return _normalize_email(value)
+
+
+class ReviewerRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    email: EmailStr
+    created_at: datetime
+
+
+class ReviewerLogin(BaseModel):
+    email: EmailStr
+    password: str
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: EmailStr) -> str:
+        return _normalize_email(value)
+
+
+class Token(BaseModel):
+    access_token: str
+    token_type: Literal["bearer"] = "bearer"
 
 
 class ReviewProjectCreate(BaseModel):

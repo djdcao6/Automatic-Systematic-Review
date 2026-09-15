@@ -6,6 +6,7 @@ from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session
 
 from asr_backend import (
+    auth,
     citation_import,
     crud,
     duplicates,
@@ -33,6 +34,36 @@ app.add_middleware(
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.post("/register", response_model=schemas.ReviewerRead, status_code=201)
+def register(payload: schemas.ReviewerCreate, db: Session = Depends(get_db)) -> models.Reviewer:
+    hashed_password = auth.hash_password(payload.password)
+    reviewer = crud.create_reviewer(db, payload.email, hashed_password)
+    if reviewer is None:
+        raise HTTPException(status_code=409, detail="Email is already registered")
+    return reviewer
+
+
+@app.post("/login", response_model=schemas.Token)
+def login(payload: schemas.ReviewerLogin, db: Session = Depends(get_db)) -> schemas.Token:
+    reviewer = crud.get_reviewer_by_email(db, payload.email)
+    # Verify against a dummy hash when the email is unknown so an unknown
+    # email doesn't return measurably faster than a wrong password would,
+    # which would otherwise leak account existence via response timing.
+    hashed_password = reviewer.hashed_password if reviewer else auth.DUMMY_PASSWORD_HASH
+    password_ok = auth.verify_password(payload.password, hashed_password)
+    if reviewer is None or not password_ok:
+        raise HTTPException(status_code=401, detail="Incorrect email or password")
+    access_token = auth.create_access_token(reviewer.id)
+    return schemas.Token(access_token=access_token)
+
+
+@app.get("/me", response_model=schemas.ReviewerRead)
+def get_me(
+    reviewer: models.Reviewer = Depends(auth.get_current_reviewer),
+) -> models.Reviewer:
+    return reviewer
 
 
 @app.post(

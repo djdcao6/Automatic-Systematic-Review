@@ -10,6 +10,17 @@ from asr_backend.db import Base
 _AI_SUGGESTION_UNAVAILABLE = "not_available"
 
 
+class Reviewer(Base):
+    __tablename__ = "reviewers"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    email: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    hashed_password: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+
+
 class ReviewProject(Base):
     __tablename__ = "review_projects"
 

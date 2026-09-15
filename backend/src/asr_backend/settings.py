@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     anthropic_api_key: str
     anthropic_model: str = "claude-haiku-4-5"
     full_text_storage_path: str = "./storage/full_texts"
+    jwt_secret_key: str
 
 
 settings = Settings()
