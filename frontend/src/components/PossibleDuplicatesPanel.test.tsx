@@ -83,6 +83,7 @@ describe("PossibleDuplicatesPanel", () => {
       year: survivor.year,
       source: survivor.source,
       needs_abstract: false,
+      blocked_pending_co_reviewer: false,
     });
 
     render(<PossibleDuplicatesPanel reviewProjectId="1" />);

@@ -98,6 +98,15 @@ def list_review_projects(db: Session, reviewer_id: uuid.UUID) -> list[models.Rev
     )
 
 
+def remove_co_reviewer(db: Session, project: models.ReviewProject) -> models.ReviewProject:
+    """Detaches the current Co-Reviewer, remembered as `former_co_reviewer_id` (#29)."""
+    project.former_co_reviewer_id = project.co_reviewer_id
+    project.co_reviewer_id = None
+    db.commit()
+    db.refresh(project)
+    return project
+
+
 def create_extraction_field(
     db: Session, review_project_id: uuid.UUID, payload: schemas.ExtractionFieldCreate
 ) -> models.ExtractionField:
@@ -558,10 +567,17 @@ def get_conflict_by_id(
 
 
 def create_conflict(
-    db: Session, review_project_id: uuid.UUID, citation_id: uuid.UUID
+    db: Session,
+    review_project_id: uuid.UUID,
+    citation_id: uuid.UUID,
+    owner_reviewer_id: uuid.UUID,
+    co_reviewer_id: uuid.UUID,
 ) -> models.Conflict:
     stmt = pg_insert(models.Conflict).values(
-        review_project_id=review_project_id, citation_id=citation_id
+        review_project_id=review_project_id,
+        citation_id=citation_id,
+        owner_reviewer_id=owner_reviewer_id,
+        co_reviewer_id=co_reviewer_id,
     )
     stmt = stmt.on_conflict_do_nothing(index_elements=[models.Conflict.citation_id]).returning(
         models.Conflict.id

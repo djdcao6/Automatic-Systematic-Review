@@ -17,6 +17,7 @@ const baseCitation = {
   year: 2020,
   source: ["PubMed"],
   needs_abstract: false,
+  blocked_pending_co_reviewer: false,
   peer_screening_decision: null,
   screening_blind: false,
   screening_resolved: false,

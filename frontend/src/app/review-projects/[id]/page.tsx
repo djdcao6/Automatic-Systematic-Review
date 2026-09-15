@@ -182,6 +182,7 @@ export default function ReviewProjectDetailPage({
         <InvitationsPanel
           reviewProjectId={project.id}
           hasCoReviewer={project.co_reviewer_id !== null}
+          onCoReviewerRemoved={refreshProjectCounts}
         />
       )}
 

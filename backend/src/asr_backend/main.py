@@ -241,6 +241,21 @@ def revoke_invitation(
     return crud.revoke_invitation(db, invitation)
 
 
+@app.post(
+    "/review-projects/{review_project_id}/co-reviewer/remove",
+    response_model=schemas.ReviewProjectRead,
+)
+def remove_co_reviewer(
+    project: models.ReviewProject = Depends(require_owner),
+    db: Session = Depends(get_db),
+) -> models.ReviewProject:
+    if project.co_reviewer_id is None:
+        raise HTTPException(
+            status_code=409, detail="Review Project has no Co-Reviewer to remove"
+        )
+    return crud.remove_co_reviewer(db, project)
+
+
 @app.put(
     "/review-projects/{review_project_id}/criteria",
     response_model=schemas.CriteriaRead,
@@ -400,6 +415,7 @@ async def get_citation_detail(
         year=citation.year,
         source=citation.source,
         needs_abstract=citation.needs_abstract,
+        blocked_pending_co_reviewer=citation.blocked_pending_co_reviewer,
         suggestion=suggestion if not is_blind else None,
         suggestion_unavailable_reason=unavailable_reason if not is_blind else None,
         screening_decision=own_decision,

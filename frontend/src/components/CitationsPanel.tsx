@@ -52,6 +52,9 @@ export function CitationsPanel({
               {citation.title}
             </Link>
             {citation.needs_abstract && <span> (needs abstract)</span>}
+            {citation.blocked_pending_co_reviewer && (
+              <span> (blocked: awaiting a replacement Co-Reviewer)</span>
+            )}
           </li>
         ))}
       </ul>

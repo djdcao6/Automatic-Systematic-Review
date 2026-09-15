@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import {
   createInvitation,
   listInvitations,
+  removeCoReviewer,
   revokeInvitation,
   type Invitation,
 } from "@/lib/api";
@@ -17,9 +18,11 @@ function invitationLink(token: string): string {
 export function InvitationsPanel({
   reviewProjectId,
   hasCoReviewer,
+  onCoReviewerRemoved,
 }: {
   reviewProjectId: string;
   hasCoReviewer: boolean;
+  onCoReviewerRemoved?: () => void;
 }) {
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -60,12 +63,27 @@ export function InvitationsPanel({
     }
   }
 
+  async function handleRemove() {
+    try {
+      await removeCoReviewer(reviewProjectId);
+      setError(null);
+      onCoReviewerRemoved?.();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to remove Co-Reviewer.");
+    }
+  }
+
   return (
     <section>
       <h2>Co-Reviewer</h2>
       {error && <p role="alert">{error}</p>}
       {hasCoReviewer ? (
-        <p>A Co-Reviewer has joined this Review Project.</p>
+        <>
+          <p>A Co-Reviewer has joined this Review Project.</p>
+          <button type="button" onClick={handleRemove}>
+            Remove Co-Reviewer
+          </button>
+        </>
       ) : (
         <>
           {invitations.length === 0 ? (

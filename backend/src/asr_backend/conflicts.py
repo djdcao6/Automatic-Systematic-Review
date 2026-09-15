@@ -30,14 +30,18 @@ def sync_conflict(
         return
     if existing is not None:
         return
-    crud.create_conflict(db, project.id, citation.id)
+    crud.create_conflict(
+        db, project.id, citation.id, project.owner_reviewer_id, project.co_reviewer_id
+    )
 
 
 def to_conflict_read(conflict: models.Conflict) -> schemas.ConflictRead:
     citation = conflict.citation
-    project = citation.review_project
-    owner_decision = citation.screening_decision_for(project.owner_reviewer_id)
-    co_reviewer_decision = citation.screening_decision_for(project.co_reviewer_id)
+    # Reads the pairing off the Conflict itself, not the (possibly since
+    # changed) ReviewProject, so a Co-Reviewer removed -- or removed and
+    # replaced -- after this Conflict formed can't make it unreadable (#29).
+    owner_decision = citation.screening_decision_for(conflict.owner_reviewer_id)
+    co_reviewer_decision = citation.screening_decision_for(conflict.co_reviewer_id)
     assert owner_decision is not None
     assert co_reviewer_decision is not None
     return schemas.ConflictRead(

@@ -62,7 +62,10 @@ def resolve_screening_view(
         return own_decision, None, is_blind
 
     peer_reviewer_id = (
-        project.co_reviewer_id
+        # Falls back to former_co_reviewer_id so a decision already recorded
+        # by a since-removed Co-Reviewer (#29) still stays visible to the
+        # Owner rather than disappearing once co_reviewer_id is cleared.
+        (project.co_reviewer_id or project.former_co_reviewer_id)
         if reviewer.id == project.owner_reviewer_id
         else project.owner_reviewer_id
     )

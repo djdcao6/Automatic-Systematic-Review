@@ -24,6 +24,7 @@ describe("CitationsPanel", () => {
         year: 2020,
         source: ["PubMed"],
         needs_abstract: false,
+        blocked_pending_co_reviewer: false,
       },
       {
         id: "2",
@@ -33,6 +34,7 @@ describe("CitationsPanel", () => {
         year: null,
         source: [],
         needs_abstract: true,
+        blocked_pending_co_reviewer: false,
       },
     ]);
 
@@ -41,6 +43,26 @@ describe("CitationsPanel", () => {
     expect(await screen.findByText("Has Abstract")).toBeInTheDocument();
     expect(screen.getByText("Missing Abstract")).toBeInTheDocument();
     expect(screen.getByText(/needs abstract/i)).toBeInTheDocument();
+  });
+
+  it("flags a citation blocked pending a replacement Co-Reviewer", async () => {
+    mockedApi.listCitations.mockResolvedValue([
+      {
+        id: "1",
+        title: "Awaiting Replacement",
+        abstract: "An abstract",
+        authors: [],
+        year: 2020,
+        source: ["PubMed"],
+        needs_abstract: false,
+        blocked_pending_co_reviewer: true,
+      },
+    ]);
+
+    render(<CitationsPanel reviewProjectId="1" />);
+
+    expect(await screen.findByText("Awaiting Replacement")).toBeInTheDocument();
+    expect(screen.getByText(/awaiting a replacement co-reviewer/i)).toBeInTheDocument();
   });
 
   it("uploads a file and refreshes the list", async () => {
@@ -55,6 +77,7 @@ describe("CitationsPanel", () => {
           year: 2022,
           source: [],
           needs_abstract: false,
+          blocked_pending_co_reviewer: false,
         },
       ]);
 
@@ -81,6 +104,7 @@ describe("CitationsPanel", () => {
         year: 2020,
         source: ["PubMed", "Embase"],
         needs_abstract: false,
+        blocked_pending_co_reviewer: false,
       },
     ]);
 
@@ -100,6 +124,7 @@ describe("CitationsPanel", () => {
         year: 2022,
         source: [],
         needs_abstract: false,
+        blocked_pending_co_reviewer: false,
       },
     ]);
     const onCitationsChanged = vi.fn();

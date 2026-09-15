@@ -90,4 +90,53 @@ describe("InvitationsPanel", () => {
       await screen.findByText(/review project already has a co-reviewer/i)
     ).toBeInTheDocument();
   });
+
+  it("offers to remove a joined Co-Reviewer", async () => {
+    render(<InvitationsPanel reviewProjectId="1" hasCoReviewer />);
+
+    expect(
+      await screen.findByRole("button", { name: /remove co-reviewer/i })
+    ).toBeInTheDocument();
+  });
+
+  it("removes the Co-Reviewer and notifies the parent", async () => {
+    mockedApi.removeCoReviewer.mockResolvedValue({
+      id: "1",
+      name: "My Dual Review",
+      criteria_locked: false,
+      merge_mode: "combine",
+      review_mode: "dual",
+      owner_reviewer_id: "owner-1",
+      co_reviewer_id: null,
+      created_at: "2026-01-01T00:00:00Z",
+    });
+    const onCoReviewerRemoved = vi.fn();
+
+    render(
+      <InvitationsPanel
+        reviewProjectId="1"
+        hasCoReviewer
+        onCoReviewerRemoved={onCoReviewerRemoved}
+      />
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: /remove co-reviewer/i }));
+
+    await waitFor(() => expect(mockedApi.removeCoReviewer).toHaveBeenCalledWith("1"));
+    expect(onCoReviewerRemoved).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows an error when removing the Co-Reviewer fails", async () => {
+    mockedApi.removeCoReviewer.mockRejectedValue(
+      new Error("Review Project has no Co-Reviewer to remove")
+    );
+
+    render(<InvitationsPanel reviewProjectId="1" hasCoReviewer />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /remove co-reviewer/i }));
+
+    expect(
+      await screen.findByText(/review project has no co-reviewer to remove/i)
+    ).toBeInTheDocument();
+  });
 });

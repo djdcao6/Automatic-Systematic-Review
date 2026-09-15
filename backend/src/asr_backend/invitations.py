@@ -43,7 +43,9 @@ def accept_invitation(
             models.ReviewProject.id == invitation.review_project_id,
             models.ReviewProject.co_reviewer_id.is_(None),
         )
-        .values(co_reviewer_id=reviewer_id)
+        # Clears any former_co_reviewer_id left by a removal (#29) so the
+        # Citations it was blocking unblock now that a replacement has joined.
+        .values(co_reviewer_id=reviewer_id, former_co_reviewer_id=None)
     )
     if project_result.rowcount == 0:
         db.rollback()

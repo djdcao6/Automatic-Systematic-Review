@@ -133,6 +133,7 @@ describe("ReviewProjectDetailPage", () => {
           year: 2022,
           source: [],
           needs_abstract: false,
+          blocked_pending_co_reviewer: false,
         },
       ]);
     mockedApi.uploadCitations.mockResolvedValue({ created: 1, skipped: [] });

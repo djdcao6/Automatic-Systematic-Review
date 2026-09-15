@@ -32,6 +32,14 @@ class ReviewProject(Base):
     co_reviewer_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("reviewers.id"), nullable=True
     )
+    # Set when the Owner removes a Co-Reviewer (#29), cleared once a
+    # replacement joins. Lets a Citation missing that Reviewer's Screening
+    # Decision report itself as blocked pending a replacement, distinct from
+    # Dual mode before anyone has ever joined (#27), where the same missing
+    # decision isn't blocking anything yet.
+    former_co_reviewer_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("reviewers.id"), nullable=True
+    )
     criteria_locked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     merge_mode: Mapped[str] = mapped_column(String, nullable=False)
     review_mode: Mapped[str] = mapped_column(String, nullable=False)
@@ -188,15 +196,40 @@ class Citation(Base):
 
     @property
     def needs_screening_decision(self) -> bool:
-        """Whether any Reviewer required to screen this Citation hasn't yet (#27)."""
+        """Whether any Reviewer required to screen this Citation hasn't yet (#27).
+
+        A removed Co-Reviewer (#29) still counts until a replacement joins —
+        their decision is still owed, just currently blocked — so this stays
+        true for a blocked Citation rather than reporting it as settled.
+        """
         project = self.review_project
         required_reviewer_ids = [project.owner_reviewer_id]
-        if project.review_mode == "dual" and project.co_reviewer_id is not None:
-            required_reviewer_ids.append(project.co_reviewer_id)
+        if project.review_mode == "dual":
+            if project.co_reviewer_id is not None:
+                required_reviewer_ids.append(project.co_reviewer_id)
+            elif project.former_co_reviewer_id is not None:
+                required_reviewer_ids.append(project.former_co_reviewer_id)
         return any(
             self.screening_decision_for(reviewer_id) is None
             for reviewer_id in required_reviewer_ids
         )
+
+    @property
+    def blocked_pending_co_reviewer(self) -> bool:
+        """Whether this Citation awaits a decision from a removed Co-Reviewer (#29).
+
+        True only once a Co-Reviewer has actually been removed and no
+        replacement has joined yet, and only for a Citation that removed
+        Co-Reviewer never got to decide on. Dual mode before anyone has ever
+        joined (#27) is not blocked — there's no removal, just no Co-Reviewer
+        yet.
+        """
+        project = self.review_project
+        if project.review_mode != "dual" or project.co_reviewer_id is not None:
+            return False
+        if project.former_co_reviewer_id is None:
+            return False
+        return self.screening_decision_for(project.former_co_reviewer_id) is None
 
     @property
     def final_screening_decision(self) -> tuple[str, str] | None:
@@ -284,6 +317,11 @@ class Conflict(Base):
     Owner's final call, per ADR 0006 not constrained to either original
     value; the two original ScreeningDecision rows are never modified, so
     both stay visible after resolution.
+
+    `owner_reviewer_id`/`co_reviewer_id` snapshot the pairing at creation
+    time rather than being read live off the ReviewProject (#29): a
+    Co-Reviewer removed (and possibly replaced) after this Conflict formed
+    must not change which two ScreeningDecisions it displays.
     """
 
     __tablename__ = "conflicts"
@@ -294,6 +332,10 @@ class Conflict(Base):
         ForeignKey("review_projects.id"), nullable=False
     )
     citation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("citations.id"), nullable=False)
+    owner_reviewer_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("reviewers.id"), nullable=False
+    )
+    co_reviewer_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("reviewers.id"), nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False, default="pending")
     resolved_decision: Mapped[str | None] = mapped_column(String, nullable=True)
     resolved_reason: Mapped[str | None] = mapped_column(String, nullable=True)

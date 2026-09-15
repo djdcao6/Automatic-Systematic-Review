@@ -133,6 +133,7 @@ class CitationRead(BaseModel):
     year: int | None
     source: list[str]
     needs_abstract: bool
+    blocked_pending_co_reviewer: bool
 
 
 class CitationUploadSkipped(BaseModel):

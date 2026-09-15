@@ -82,6 +82,7 @@ export type Citation = {
   year: number | null;
   source: string[];
   needs_abstract: boolean;
+  blocked_pending_co_reviewer: boolean;
 };
 
 export type CitationUploadResult = {
@@ -655,6 +656,17 @@ export async function revokeInvitation(
   );
   if (!response.ok) {
     throw new Error("Failed to revoke invitation");
+  }
+  return response.json();
+}
+
+export async function removeCoReviewer(reviewProjectId: string): Promise<ReviewProject> {
+  const response = await authorizedFetch(
+    `${API_URL}/review-projects/${reviewProjectId}/co-reviewer/remove`,
+    { method: "POST" }
+  );
+  if (!response.ok) {
+    throw new Error(await errorMessage(response, "Failed to remove Co-Reviewer"));
   }
   return response.json();
 }
