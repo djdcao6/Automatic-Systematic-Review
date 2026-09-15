@@ -13,6 +13,7 @@ const baseProject = {
   id: "1",
   name: "My Review",
   criteria_locked: false,
+  merge_mode: "combine" as const,
   created_at: "2026-01-01T00:00:00Z",
   citations_needing_decision: 0,
 };

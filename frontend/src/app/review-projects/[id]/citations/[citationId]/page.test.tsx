@@ -43,6 +43,7 @@ describe("CitationScreeningPage", () => {
       id: "1",
       name: "My Review",
       criteria_locked: false,
+      merge_mode: "combine",
       created_at: "2026-01-01T00:00:00Z",
       criteria: {
         population: null,

@@ -1,8 +1,16 @@
+export type MergeMode = "combine" | "keep_first";
+
 export type ReviewProject = {
   id: string;
   name: string;
   criteria_locked: boolean;
+  merge_mode: MergeMode;
   created_at: string;
+};
+
+export type ReviewProjectInput = {
+  name: string;
+  merge_mode: MergeMode;
 };
 
 export type Criteria = {
@@ -144,11 +152,13 @@ export async function listReviewProjects(): Promise<ReviewProject[]> {
   return response.json();
 }
 
-export async function createReviewProject(name: string): Promise<ReviewProject> {
+export async function createReviewProject(
+  payload: ReviewProjectInput
+): Promise<ReviewProject> {
   const response = await fetch(`${API_URL}/review-projects`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify(payload),
   });
   if (!response.ok) {
     throw new Error("Failed to create review project");

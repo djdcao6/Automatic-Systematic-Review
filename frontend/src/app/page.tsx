@@ -4,11 +4,17 @@ import { type FormEvent, useEffect, useState } from "react";
 
 import Link from "next/link";
 
-import { createReviewProject, listReviewProjects, type ReviewProject } from "@/lib/api";
+import {
+  createReviewProject,
+  listReviewProjects,
+  type MergeMode,
+  type ReviewProject,
+} from "@/lib/api";
 
 export default function Home() {
   const [projects, setProjects] = useState<ReviewProject[]>([]);
   const [name, setName] = useState("");
+  const [mergeMode, setMergeMode] = useState<MergeMode | "">("");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -20,12 +26,13 @@ export default function Home() {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const trimmedName = name.trim();
-    if (!trimmedName) return;
+    if (!trimmedName || !mergeMode) return;
 
     try {
-      const project = await createReviewProject(trimmedName);
+      const project = await createReviewProject({ name: trimmedName, merge_mode: mergeMode });
       setProjects((current) => [...current, project]);
       setName("");
+      setMergeMode("");
       setError(null);
     } catch {
       setError("Failed to create review project.");
@@ -43,6 +50,16 @@ export default function Home() {
           value={name}
           onChange={(event) => setName(event.target.value)}
         />
+        <label htmlFor="merge-mode">Merge Mode</label>
+        <select
+          id="merge-mode"
+          value={mergeMode}
+          onChange={(event) => setMergeMode(event.target.value as MergeMode | "")}
+        >
+          <option value="">Select a merge mode</option>
+          <option value="combine">Combine</option>
+          <option value="keep_first">Keep First</option>
+        </select>
         <button type="submit">Create Review Project</button>
       </form>
       <ul>

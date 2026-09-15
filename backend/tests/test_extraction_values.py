@@ -4,7 +4,8 @@ import pymupdf
 
 
 def create_project(client, name: str = "My Review") -> str:
-    return client.post("/review-projects", json={"name": name}).json()["id"]
+    payload = {"name": name, "merge_mode": "combine"}
+    return client.post("/review-projects", json=payload).json()["id"]
 
 
 def create_citation(client, project_id: str, title: str = "Study A") -> str:

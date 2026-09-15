@@ -6,7 +6,7 @@ from asr_backend import full_text
 
 
 def create_project(client, name: str = "My Review") -> str:
-    response = client.post("/review-projects", json={"name": name})
+    response = client.post("/review-projects", json={"name": name, "merge_mode": "combine"})
     return response.json()["id"]
 
 

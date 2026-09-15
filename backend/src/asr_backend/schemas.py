@@ -14,6 +14,7 @@ def _require_non_blank(value: str) -> str:
 
 class ReviewProjectCreate(BaseModel):
     name: str
+    merge_mode: Literal["combine", "keep_first"]
 
     @field_validator("name")
     @classmethod
@@ -47,6 +48,7 @@ class ReviewProjectRead(BaseModel):
     id: uuid.UUID
     name: str
     criteria_locked: bool
+    merge_mode: Literal["combine", "keep_first"]
     created_at: datetime
 
 

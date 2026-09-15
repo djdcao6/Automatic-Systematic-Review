@@ -16,6 +16,7 @@ describe("Home", () => {
       id: "1",
       name: "New Review",
       criteria_locked: false,
+      merge_mode: "combine",
       created_at: "2026-01-01T00:00:00Z",
     });
   });
@@ -26,6 +27,7 @@ describe("Home", () => {
         id: "1",
         name: "Existing Review",
         criteria_locked: false,
+        merge_mode: "combine",
         created_at: "2026-01-01T00:00:00Z",
       },
     ]);
@@ -43,9 +45,28 @@ describe("Home", () => {
     fireEvent.change(screen.getByLabelText(/project name/i), {
       target: { value: "New Review" },
     });
+    fireEvent.change(screen.getByLabelText(/merge mode/i), {
+      target: { value: "combine" },
+    });
     fireEvent.click(screen.getByRole("button", { name: /create review project/i }));
 
     expect(await screen.findByText("New Review")).toBeInTheDocument();
-    expect(mockedApi.createReviewProject).toHaveBeenCalledWith("New Review");
+    expect(mockedApi.createReviewProject).toHaveBeenCalledWith({
+      name: "New Review",
+      merge_mode: "combine",
+    });
+  });
+
+  it("does not submit without a merge mode chosen", async () => {
+    render(<Home />);
+
+    await waitFor(() => expect(mockedApi.listReviewProjects).toHaveBeenCalled());
+
+    fireEvent.change(screen.getByLabelText(/project name/i), {
+      target: { value: "New Review" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /create review project/i }));
+
+    await waitFor(() => expect(mockedApi.createReviewProject).not.toHaveBeenCalled());
   });
 });

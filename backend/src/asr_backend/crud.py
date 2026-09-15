@@ -46,7 +46,7 @@ def upsert_criteria(
 def create_review_project(
     db: Session, payload: schemas.ReviewProjectCreate
 ) -> models.ReviewProject:
-    project = models.ReviewProject(name=payload.name)
+    project = models.ReviewProject(name=payload.name, merge_mode=payload.merge_mode)
     db.add(project)
     db.commit()
     db.refresh(project)

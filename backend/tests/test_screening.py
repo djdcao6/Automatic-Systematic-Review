@@ -5,7 +5,8 @@ from asr_backend.main import app
 
 
 def create_project(client, name: str = "My Review") -> str:
-    return client.post("/review-projects", json={"name": name}).json()["id"]
+    payload = {"name": name, "merge_mode": "combine"}
+    return client.post("/review-projects", json=payload).json()["id"]
 
 
 def upload_one_citation(client, project_id: str, abstract: str | None = "An abstract") -> str:
