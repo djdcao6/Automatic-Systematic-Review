@@ -1,4 +1,7 @@
+import { useRef, useState } from "react";
+
 import type { Criteria, FlowDiagram } from "@/lib/api";
+import { downloadElementAsPng } from "@/lib/png-export";
 
 function CriteriaHeader({ criteria }: { criteria: Criteria | null }) {
   if (!criteria) {
@@ -164,11 +167,30 @@ function SummaryTable({ diagram }: { diagram: FlowDiagram }) {
 }
 
 export function FlowDiagramView({ diagram }: { diagram: FlowDiagram }) {
+  const containerRef = useRef<HTMLElement | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+
+  async function handleDownloadPng() {
+    if (!containerRef.current) return;
+    try {
+      await downloadElementAsPng(containerRef.current, "prisma-flow-diagram.png");
+      setDownloadError(null);
+    } catch {
+      setDownloadError("Failed to download PRISMA Flow Diagram as PNG.");
+    }
+  }
+
   return (
     <>
-      <CriteriaHeader criteria={diagram.criteria} />
-      <ScreeningFunnelDiagram diagram={diagram} />
-      <SummaryTable diagram={diagram} />
+      <section aria-label="PRISMA Flow Diagram" ref={containerRef}>
+        <CriteriaHeader criteria={diagram.criteria} />
+        <ScreeningFunnelDiagram diagram={diagram} />
+        <SummaryTable diagram={diagram} />
+      </section>
+      <button type="button" onClick={handleDownloadPng}>
+        Download as PNG
+      </button>
+      {downloadError && <p role="alert">{downloadError}</p>}
     </>
   );
 }
