@@ -45,9 +45,9 @@ def find_conflicts(a: models.Citation, b: models.Citation) -> list[Conflict]:
     """
     conflicts: list[Conflict] = []
     if (
-        a.screening_decision is not None
-        and b.screening_decision is not None
-        and a.screening_decision.decision != b.screening_decision.decision
+        a.owner_screening_decision is not None
+        and b.owner_screening_decision is not None
+        and a.owner_screening_decision.decision != b.owner_screening_decision.decision
     ):
         conflicts.append(Conflict(field="screening_decision"))
     if (
@@ -97,14 +97,15 @@ def _transfer_reviewer_data(
     Always a copy onto a new row keyed to the survivor, never a reassignment
     of the loser's own row, so the archived Citation keeps its original data.
     """
-    if survivor.screening_decision is None and loser.screening_decision is not None:
+    if survivor.owner_screening_decision is None and loser.owner_screening_decision is not None:
         crud.upsert_screening_decision(
             db,
             project,
             survivor.id,
+            project.owner_reviewer_id,
             schemas.ScreeningDecisionCreate(
-                decision=loser.screening_decision.decision,
-                reason=loser.screening_decision.reason,
+                decision=loser.owner_screening_decision.decision,
+                reason=loser.owner_screening_decision.reason,
             ),
         )
     if survivor.full_text is None and loser.full_text is not None:
@@ -210,9 +211,10 @@ def _apply_resolution_choice(
             db,
             project,
             survivor.id,
+            project.owner_reviewer_id,
             schemas.ScreeningDecisionCreate(
-                decision=loser.screening_decision.decision,
-                reason=loser.screening_decision.reason,
+                decision=loser.owner_screening_decision.decision,
+                reason=loser.owner_screening_decision.reason,
             ),
         )
     elif choice.field == "full_text_decision":

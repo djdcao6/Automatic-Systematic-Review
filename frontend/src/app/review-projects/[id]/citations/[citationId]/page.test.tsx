@@ -17,12 +17,34 @@ const baseCitation = {
   year: 2020,
   source: ["PubMed"],
   needs_abstract: false,
+  peer_screening_decision: null,
+  screening_blind: false,
   screening_resolved: false,
   full_text_decision: null,
   full_text_suggestion: null,
   full_text_suggestion_unavailable_reason: null,
   extraction_fields: [],
   extraction_values: [],
+};
+
+const dualReviewProject = {
+  id: "1",
+  name: "My Dual Review",
+  criteria_locked: false,
+  merge_mode: "combine" as const,
+  review_mode: "dual" as const,
+  owner_reviewer_id: "owner-1",
+  co_reviewer_id: "co-reviewer-1",
+  created_at: "2026-01-01T00:00:00Z",
+  criteria: {
+    population: null,
+    intervention: null,
+    comparison: null,
+    outcome: null,
+    exclusion_rules: [],
+    notes: null,
+  },
+  citations_needing_decision: 0,
 };
 
 function renderPage() {
@@ -150,6 +172,93 @@ describe("CitationScreeningPage", () => {
       })
     );
     expect(await screen.findByText(/decision saved/i)).toBeInTheDocument();
+  });
+
+  it("hides the AI Suggestion and Co-Reviewer's Decision while blind", async () => {
+    mockedApi.getReviewProject.mockResolvedValue(dualReviewProject);
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+      screening_decision: null,
+      peer_screening_decision: null,
+      screening_blind: true,
+      full_text: null,
+    });
+
+    renderPage();
+
+    expect(
+      await screen.findByText(/hidden until you record your own screening decision/i)
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/co-reviewer's decision/i)).not.toBeInTheDocument();
+  });
+
+  it("shows the AI Suggestion and Co-Reviewer's Decision once revealed", async () => {
+    mockedApi.getReviewProject.mockResolvedValue(dualReviewProject);
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: { decision: "include", reason: "Matches all criteria." },
+      suggestion_unavailable_reason: null,
+      screening_decision: {
+        decision: "include",
+        reason: "My take",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+      peer_screening_decision: {
+        decision: "exclude",
+        reason: "Wrong population",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+      screening_blind: false,
+      full_text: null,
+    });
+
+    renderPage();
+
+    expect(await screen.findByText(/include:\s*matches all criteria/i)).toBeInTheDocument();
+    expect(await screen.findByText(/co-reviewer's decision/i)).toBeInTheDocument();
+    expect(screen.getByText(/exclude:\s*wrong population/i)).toBeInTheDocument();
+  });
+
+  it("shows the Co-Reviewer's Decision as not yet recorded when only this Reviewer has decided", async () => {
+    mockedApi.getReviewProject.mockResolvedValue(dualReviewProject);
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: { decision: "include", reason: "Matches all criteria." },
+      suggestion_unavailable_reason: null,
+      screening_decision: {
+        decision: "include",
+        reason: "My take",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+      peer_screening_decision: null,
+      screening_blind: false,
+      full_text: null,
+    });
+
+    renderPage();
+
+    expect(await screen.findByText(/co-reviewer's decision/i)).toBeInTheDocument();
+    expect(screen.getByText(/not yet recorded/i)).toBeInTheDocument();
+  });
+
+  it("does not show a Co-Reviewer's Decision section in a Solo Review Project", async () => {
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: { decision: "include", reason: "Matches all criteria." },
+      suggestion_unavailable_reason: null,
+      screening_decision: null,
+      full_text: null,
+    });
+
+    renderPage();
+
+    await screen.findByText(/include:\s*matches all criteria/i);
+    expect(screen.queryByText(/co-reviewer's decision/i)).not.toBeInTheDocument();
   });
 
   it("shows an upload control when there is no Full Text yet", async () => {

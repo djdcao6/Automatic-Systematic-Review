@@ -374,13 +374,17 @@ def get_citation_or_404(
 )
 async def get_citation_detail(
     citation: models.Citation = Depends(get_citation_or_404),
+    project: models.ReviewProject = Depends(get_review_project_or_404),
+    reviewer: models.Reviewer = Depends(auth.get_current_reviewer),
     db: Session = Depends(get_db),
     suggester: AISuggester = Depends(get_ai_suggester),
 ) -> schemas.CitationDetailRead:
     suggestion, unavailable_reason = await screening.get_or_generate_suggestion(
         db, citation, suggester
     )
-    decision = crud.get_screening_decision(db, citation.id)
+    own_decision, peer_decision, is_blind = screening.resolve_screening_view(
+        db, project, citation, reviewer
+    )
     existing_full_text = crud.get_full_text(db, citation.id)
     full_text_decision = crud.get_full_text_decision(db, citation.id)
     ft_suggestion, ft_unavailable_reason = await full_text_suggestion.get_or_generate_full_text_suggestion(
@@ -395,9 +399,11 @@ async def get_citation_detail(
         year=citation.year,
         source=citation.source,
         needs_abstract=citation.needs_abstract,
-        suggestion=suggestion,
-        suggestion_unavailable_reason=unavailable_reason,
-        screening_decision=decision,
+        suggestion=suggestion if not is_blind else None,
+        suggestion_unavailable_reason=unavailable_reason if not is_blind else None,
+        screening_decision=own_decision,
+        peer_screening_decision=peer_decision,
+        screening_blind=is_blind,
         screening_resolved=citation.screening_resolved,
         full_text=existing_full_text,
         full_text_decision=full_text_decision,
@@ -416,9 +422,10 @@ def record_screening_decision(
     payload: schemas.ScreeningDecisionCreate,
     citation: models.Citation = Depends(get_citation_or_404),
     project: models.ReviewProject = Depends(get_review_project_or_404),
+    reviewer: models.Reviewer = Depends(auth.get_current_reviewer),
     db: Session = Depends(get_db),
 ) -> models.ScreeningDecision:
-    return crud.upsert_screening_decision(db, project, citation.id, payload)
+    return crud.upsert_screening_decision(db, project, citation.id, reviewer.id, payload)
 
 
 @app.post(

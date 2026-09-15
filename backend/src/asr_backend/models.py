@@ -62,7 +62,7 @@ class ReviewProject(Base):
         return sum(
             1
             for citation in self.citations
-            if not citation.archived and citation.screening_decision is None
+            if not citation.archived and citation.needs_screening_decision
         )
 
     @property
@@ -136,8 +136,8 @@ class Citation(Base):
     ai_suggestion: Mapped["AISuggestion | None"] = relationship(
         back_populates="citation", uselist=False, cascade="all, delete-orphan"
     )
-    screening_decision: Mapped["ScreeningDecision | None"] = relationship(
-        back_populates="citation", uselist=False, cascade="all, delete-orphan"
+    screening_decisions: Mapped[list["ScreeningDecision"]] = relationship(
+        back_populates="citation", cascade="all, delete-orphan"
     )
     full_text: Mapped["FullText | None"] = relationship(
         back_populates="citation", uselist=False, cascade="all, delete-orphan"
@@ -158,6 +158,40 @@ class Citation(Base):
     def needs_abstract(self) -> bool:
         return self.abstract is None
 
+    def screening_decision_for(self, reviewer_id: uuid.UUID) -> "ScreeningDecision | None":
+        for decision in self.screening_decisions:
+            if decision.reviewer_id == reviewer_id:
+                return decision
+        return None
+
+    @property
+    def owner_screening_decision(self) -> "ScreeningDecision | None":
+        """The Owner's Screening Decision.
+
+        Screening Decisions are now one-per-(Citation, Reviewer) (#27), but
+        Possible Duplicate merging, CSV export, and Full-Text resolution
+        still only understand a single decision per Citation — they haven't
+        been adapted yet for Dual mode's independent per-reviewer decisions,
+        which is #28/#30's job. Until then, the Owner's decision stands in as
+        the canonical one, since the Owner always exists (Solo or Dual) and
+        has final say resolving a Conflict once #28 lands.
+        """
+        if not self.screening_decisions:
+            return None
+        return self.screening_decision_for(self.review_project.owner_reviewer_id)
+
+    @property
+    def needs_screening_decision(self) -> bool:
+        """Whether any Reviewer required to screen this Citation hasn't yet (#27)."""
+        project = self.review_project
+        required_reviewer_ids = [project.owner_reviewer_id]
+        if project.review_mode == "dual" and project.co_reviewer_id is not None:
+            required_reviewer_ids.append(project.co_reviewer_id)
+        return any(
+            self.screening_decision_for(reviewer_id) is None
+            for reviewer_id in required_reviewer_ids
+        )
+
     @property
     def screening_resolved(self) -> bool:
         """Whether the title/abstract stage is settled, per ADR 0003.
@@ -168,9 +202,9 @@ class Citation(Base):
         A Maybe Full-Text Decision carries the same ambiguity forward, so it
         does not resolve anything.
         """
-        if self.screening_decision is None:
+        if self.owner_screening_decision is None:
             return False
-        if self.screening_decision.decision != "maybe":
+        if self.owner_screening_decision.decision != "maybe":
             return True
         return (
             self.full_text_decision is not None
@@ -179,13 +213,15 @@ class Citation(Base):
 
     @property
     def decision_label(self) -> str:
-        return self.screening_decision.decision if self.screening_decision else "unscreened"
+        decision = self.owner_screening_decision
+        return decision.decision if decision else "unscreened"
 
     @property
     def screening_reason(self) -> str:
-        if self.screening_decision is None:
+        decision = self.owner_screening_decision
+        if decision is None:
             return ""
-        return self.screening_decision.reason or ""
+        return decision.reason or ""
 
     @property
     def ai_suggestion_decision_label(self) -> str:
@@ -283,12 +319,19 @@ class AISuggestion(Base):
 
 
 class ScreeningDecision(Base):
+    """A Reviewer's Screening Decision for a Citation.
+
+    One per (Citation, Reviewer) rather than one per Citation, per #27 — in a
+    Dual Review Project the Owner and Co-Reviewer each record their own,
+    independently of one another.
+    """
+
     __tablename__ = "screening_decisions"
+    __table_args__ = (UniqueConstraint("citation_id", "reviewer_id"),)
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    citation_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("citations.id"), unique=True, nullable=False
-    )
+    citation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("citations.id"), nullable=False)
+    reviewer_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("reviewers.id"), nullable=False)
     decision: Mapped[str] = mapped_column(String, nullable=False)
     reason: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -300,7 +343,7 @@ class ScreeningDecision(Base):
         onupdate=lambda: datetime.now(UTC),
     )
 
-    citation: Mapped[Citation] = relationship(back_populates="screening_decision")
+    citation: Mapped[Citation] = relationship(back_populates="screening_decisions")
 
 
 class FullText(Base):

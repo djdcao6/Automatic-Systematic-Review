@@ -143,6 +143,8 @@ export type CitationDetail = Citation & {
   suggestion: Suggestion | null;
   suggestion_unavailable_reason: string | null;
   screening_decision: ScreeningDecision | null;
+  peer_screening_decision: ScreeningDecision | null;
+  screening_blind: boolean;
   screening_resolved: boolean;
   full_text: FullText | null;
   full_text_decision: FullTextDecision | null;

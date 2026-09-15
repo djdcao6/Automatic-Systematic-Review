@@ -224,11 +224,14 @@ def create_ai_suggestion(
 
 
 def get_screening_decision(
-    db: Session, citation_id: uuid.UUID
+    db: Session, citation_id: uuid.UUID, reviewer_id: uuid.UUID
 ) -> models.ScreeningDecision | None:
     return (
         db.query(models.ScreeningDecision)
-        .filter(models.ScreeningDecision.citation_id == citation_id)
+        .filter(
+            models.ScreeningDecision.citation_id == citation_id,
+            models.ScreeningDecision.reviewer_id == reviewer_id,
+        )
         .one_or_none()
     )
 
@@ -237,16 +240,21 @@ def upsert_screening_decision(
     db: Session,
     review_project: models.ReviewProject,
     citation_id: uuid.UUID,
+    reviewer_id: uuid.UUID,
     payload: schemas.ScreeningDecisionCreate,
 ) -> models.ScreeningDecision:
     values = {
         "citation_id": citation_id,
+        "reviewer_id": reviewer_id,
         "decision": payload.decision,
         "reason": payload.reason,
     }
     stmt = pg_insert(models.ScreeningDecision).values(**values)
     stmt = stmt.on_conflict_do_update(
-        index_elements=[models.ScreeningDecision.citation_id],
+        index_elements=[
+            models.ScreeningDecision.citation_id,
+            models.ScreeningDecision.reviewer_id,
+        ],
         set_={
             "decision": stmt.excluded.decision,
             "reason": stmt.excluded.reason,
@@ -261,7 +269,10 @@ def upsert_screening_decision(
     db.commit()
     return (
         db.query(models.ScreeningDecision)
-        .filter(models.ScreeningDecision.citation_id == citation_id)
+        .filter(
+            models.ScreeningDecision.citation_id == citation_id,
+            models.ScreeningDecision.reviewer_id == reviewer_id,
+        )
         .one()
     )
 

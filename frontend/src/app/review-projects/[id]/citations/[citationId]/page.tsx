@@ -53,6 +53,7 @@ export default function CitationScreeningPage({
   const [uploadingFullText, setUploadingFullText] = useState(false);
   const [viewFullTextError, setViewFullTextError] = useState<string | null>(null);
   const [exclusionRules, setExclusionRules] = useState<string[]>([]);
+  const [reviewMode, setReviewMode] = useState<"solo" | "dual">("solo");
   const [ftDecision, setFtDecision] = useState<Decision>("maybe");
   const [ftReason, setFtReason] = useState("");
   const [ftError, setFtError] = useState<string | null>(null);
@@ -110,7 +111,10 @@ export default function CitationScreeningPage({
   useEffect(() => {
     if (!reviewProjectId) return;
     getReviewProject(reviewProjectId)
-      .then((project) => setExclusionRules(project.criteria?.exclusion_rules ?? []))
+      .then((project) => {
+        setExclusionRules(project.criteria?.exclusion_rules ?? []);
+        setReviewMode(project.review_mode);
+      })
       .catch(() => setExclusionRules([]));
   }, [reviewProjectId]);
 
@@ -119,13 +123,16 @@ export default function CitationScreeningPage({
     if (!reviewProjectId || !citationId) return;
 
     try {
-      const updated = await recordScreeningDecision(reviewProjectId, citationId, {
+      await recordScreeningDecision(reviewProjectId, citationId, {
         decision,
         reason: blankOrValue(reason),
       });
-      setCitation((current) =>
-        current ? { ...current, screening_decision: updated } : current
-      );
+      // Recording a decision can flip this Reviewer from blind to revealed
+      // (#27), which changes more than just screening_decision — the AI
+      // Suggestion and the peer's decision may now be visible too — so the
+      // whole Citation is re-fetched rather than merging the one field.
+      const refreshed = await getCitation(reviewProjectId, citationId);
+      setCitation(refreshed);
       setSaved(true);
       setError(null);
     } catch {
@@ -231,7 +238,9 @@ export default function CitationScreeningPage({
 
       <section>
         <h2>AI Suggestion</h2>
-        {citation.suggestion ? (
+        {citation.screening_blind ? (
+          <p>Hidden until you record your own Screening Decision.</p>
+        ) : citation.suggestion ? (
           <p>
             {citation.suggestion.decision}: {citation.suggestion.reason}
           </p>
@@ -239,6 +248,22 @@ export default function CitationScreeningPage({
           <p>{unavailableMessage}</p>
         )}
       </section>
+
+      {reviewMode === "dual" && !citation.screening_blind && (
+        <section>
+          <h2>Co-Reviewer&apos;s Decision</h2>
+          {citation.peer_screening_decision ? (
+            <p>
+              {citation.peer_screening_decision.decision}
+              {citation.peer_screening_decision.reason
+                ? `: ${citation.peer_screening_decision.reason}`
+                : ""}
+            </p>
+          ) : (
+            <p>Not yet recorded.</p>
+          )}
+        </section>
+      )}
 
       <section>
         <h2>Full Text</h2>

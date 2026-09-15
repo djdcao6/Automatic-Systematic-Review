@@ -243,7 +243,11 @@ class PossibleDuplicateCitationRead(BaseModel):
     year: int | None
     source: list[str]
     doi: str | None
-    screening_decision: ScreeningDecisionRead | None = None
+    # Reads Citation.owner_screening_decision — Possible Duplicate merging
+    # hasn't been adapted for Dual mode's per-reviewer decisions yet (#28/#30).
+    screening_decision: ScreeningDecisionRead | None = Field(
+        default=None, validation_alias="owner_screening_decision"
+    )
     full_text_decision: FullTextDecisionRead | None = None
     full_text: FullTextRead | None = None
     extraction_values: list[ExtractionValueRead] = []
@@ -292,6 +296,8 @@ class CitationDetailRead(CitationRead):
     suggestion: SuggestionRead | None = None
     suggestion_unavailable_reason: str | None = None
     screening_decision: ScreeningDecisionRead | None = None
+    peer_screening_decision: ScreeningDecisionRead | None = None
+    screening_blind: bool = False
     screening_resolved: bool
     full_text: FullTextRead | None = None
     full_text_decision: FullTextDecisionRead | None = None

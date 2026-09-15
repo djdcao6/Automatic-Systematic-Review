@@ -192,17 +192,23 @@ def test_one_sided_transfer_of_screening_decision(authed_client, db_session):
     loser = _seed_unmatched_citation(db_session, project_id, "Study", doi="10.1/x")
     project = _get_project(db_session, project_id)
     crud.upsert_screening_decision(
-        db_session, project, loser.id, schemas.ScreeningDecisionCreate(decision="exclude", reason="Not relevant")
+        db_session,
+        project,
+        loser.id,
+        project.owner_reviewer_id,
+        schemas.ScreeningDecisionCreate(decision="exclude", reason="Not relevant"),
     )
 
     duplicates.process_upload_matches(db_session, project, [loser])
 
-    survivor_decision = crud.get_screening_decision(db_session, uuid.UUID(survivor_id))
+    survivor_decision = crud.get_screening_decision(
+        db_session, uuid.UUID(survivor_id), project.owner_reviewer_id
+    )
     assert survivor_decision is not None
     assert survivor_decision.decision == "exclude"
     assert survivor_decision.reason == "Not relevant"
 
-    loser_decision = crud.get_screening_decision(db_session, loser.id)
+    loser_decision = crud.get_screening_decision(db_session, loser.id, project.owner_reviewer_id)
     assert loser_decision is not None
     assert loser_decision.decision == "exclude"
 
@@ -283,7 +289,11 @@ def test_two_sided_conflicting_screening_decision_is_held_as_possible_duplicate(
     loser = _seed_unmatched_citation(db_session, project_id, "Study", doi="10.1/x")
     project = _get_project(db_session, project_id)
     crud.upsert_screening_decision(
-        db_session, project, loser.id, schemas.ScreeningDecisionCreate(decision="exclude")
+        db_session,
+        project,
+        loser.id,
+        project.owner_reviewer_id,
+        schemas.ScreeningDecisionCreate(decision="exclude"),
     )
 
     duplicates.process_upload_matches(db_session, project, [loser])
@@ -292,10 +302,10 @@ def test_two_sided_conflicting_screening_decision_is_held_as_possible_duplicate(
     assert len(citations) == 2
 
     survivor = crud.get_citation(db_session, project.id, uuid.UUID(survivor_id))
-    assert survivor.screening_decision.decision == "include"
+    assert survivor.owner_screening_decision.decision == "include"
     loser_after = crud.get_citation(db_session, project.id, loser.id)
     assert loser_after.archived is False
-    assert loser_after.screening_decision.decision == "exclude"
+    assert loser_after.owner_screening_decision.decision == "exclude"
 
     possible_duplicates = authed_client.get(f"/review-projects/{project_id}/possible-duplicates").json()
     assert len(possible_duplicates) == 1

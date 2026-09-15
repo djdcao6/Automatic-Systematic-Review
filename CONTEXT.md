@@ -29,12 +29,20 @@ A Review Project-level choice, made once at creation and never revisited, for ho
 _Avoid_: Dedup mode, Merge strategy
 
 **Screening Decision**:
-The three-state outcome — Include, Exclude, or Maybe — that a Reviewer records for a Citation against a Review Project's Criteria at the title/abstract stage, with an optional reason. Editable at any time. A Maybe stands indefinitely unless a Full-Text Decision is later recorded for that Citation, which resolves it.
+The three-state outcome — Include, Exclude, or Maybe — that a Reviewer records for a Citation against a Review Project's Criteria at the title/abstract stage, with an optional reason. Editable at any time. A Maybe stands indefinitely unless a Full-Text Decision is later recorded for that Citation, which resolves it. In a Dual Review Project, the Owner and Co-Reviewer each record their own independently; a Conflict is held when they disagree.
 _Avoid_: Unsure, Undecided, Verdict
 
 **AI Suggestion**:
-A proposed Screening Decision plus a reason, generated once on demand when a Reviewer first opens a Citation and persisted from then on — not regenerated on later views. Always advisory, and stored separately from the Reviewer's final Screening Decision — even when they match — so AI accuracy can be reviewed later.
+A proposed Screening Decision plus a reason, generated once on demand when a Reviewer first opens a Citation and persisted from then on — not regenerated on later views. Always advisory, and stored separately from the Reviewer's final Screening Decision — even when they match — so AI accuracy can be reviewed later. In a Dual Review Project, withheld from both the Owner and Co-Reviewer until each has independently recorded their own Screening Decision, so neither's judgment is AI-anchored.
 _Avoid_: AI decision, Auto-screening
+
+**Conflict**:
+Held when a Dual Review Project's Owner and Co-Reviewer record different Screening Decisions for the same Citation. Sits in a dedicated queue until the Owner resolves it — either by picking one of the two recorded decisions or entering a different decision reached through discussion — which becomes the Citation's final Screening Decision. Both original decisions remain on record afterward.
+_Avoid_: Disagreement, Discrepancy
+
+**Invitation**:
+A shareable link/token an Owner generates to add a Co-Reviewer to a Dual Review Project. Valid until accepted or revoked by the Owner (no automatic expiry); accepting it registers a new Reviewer account on the spot if the recipient doesn't already have one, or attaches an existing one.
+_Avoid_: Invite code, Access token
 
 **Full Text**:
 The PDF of a Citation's full paper, attached by a Reviewer independently of its Screening Decision — Include and Maybe Citations are the primary candidates, but any Citation can have one attached. Parsed to text to support the Full-Text Decision and Extraction Fields; a PDF that can't be parsed (e.g. a scan with no text layer) is flagged for manual entry instead.
@@ -53,5 +61,17 @@ A free-text data point a Reviewer defines per Review Project to capture from a C
 _Avoid_: Data point, Schema field
 
 **Reviewer**:
-The single person who owns a Review Project and makes its final Screening Decisions in v1. Future versions may support multiple Reviewers per PRISMA's dual-review guidance.
-_Avoid_: User, Screener
+An authenticated account (email + password) that can create Review Projects and record Screening Decisions. A Review Project has one Reviewer (Solo Review Mode) or two — its Owner and a Co-Reviewer (Dual Review Mode).
+_Avoid_: User, Screener, Account
+
+**Review Mode**:
+A Review Project-level choice, made once at creation and never revisited, for how many Reviewers independently screen its Citations. **Solo** has one Reviewer, its Owner, whose Screening Decision is final. **Dual** has an Owner and a Co-Reviewer, each recording an independent Screening Decision per Citation without seeing the other's decision beforehand; a Conflict is held for the Owner to resolve when the two disagree.
+_Avoid_: Review type, Screening mode
+
+**Owner**:
+The Reviewer who created a Review Project. In a Dual Review Project, the Owner alone invites or removes the Co-Reviewer and has final say resolving a Conflict.
+_Avoid_: Admin, Creator
+
+**Co-Reviewer**:
+The second Reviewer in a Dual Review Project, invited by its Owner. Records an independent Screening Decision per Citation alongside the Owner's.
+_Avoid_: Second reviewer, Collaborator

@@ -63,6 +63,7 @@ def _make_conflicting_pair(authed_client, db_session, project_id: str):
         db_session,
         project,
         loser.id,
+        project.owner_reviewer_id,
         schemas.ScreeningDecisionCreate(decision="exclude", reason="Loser reason"),
     )
 
@@ -99,8 +100,8 @@ def test_resolving_applies_chosen_value_and_merges_everything_else(authed_client
 
     project = _get_project(db_session, project_id)
     survivor = crud.get_citation(db_session, project.id, uuid.UUID(survivor_id))
-    assert survivor.screening_decision.decision == "exclude"
-    assert survivor.screening_decision.reason == "Loser reason"
+    assert survivor.owner_screening_decision.decision == "exclude"
+    assert survivor.owner_screening_decision.reason == "Loser reason"
     assert survivor.archived is False
 
     loser = crud.get_citation(db_session, project.id, uuid.UUID(loser_id))
@@ -126,8 +127,8 @@ def test_resolving_keeps_survivor_value_when_survivor_side_chosen(authed_client,
 
     project = _get_project(db_session, project_id)
     survivor = crud.get_citation(db_session, project.id, uuid.UUID(survivor_id))
-    assert survivor.screening_decision.decision == "include"
-    assert survivor.screening_decision.reason == "Survivor reason"
+    assert survivor.owner_screening_decision.decision == "include"
+    assert survivor.owner_screening_decision.reason == "Survivor reason"
 
 
 def test_resolving_extraction_value_conflict_per_field(authed_client, db_session):
