@@ -29,6 +29,9 @@ class ReviewProject(Base):
     owner_reviewer_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("reviewers.id"), nullable=False
     )
+    co_reviewer_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("reviewers.id"), nullable=True
+    )
     criteria_locked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     merge_mode: Mapped[str] = mapped_column(String, nullable=False)
     review_mode: Mapped[str] = mapped_column(String, nullable=False)
@@ -48,6 +51,9 @@ class ReviewProject(Base):
         order_by="ExtractionField.created_at",
     )
     possible_duplicates: Mapped[list["PossibleDuplicate"]] = relationship(
+        back_populates="review_project", cascade="all, delete-orphan"
+    )
+    invitations: Mapped[list["Invitation"]] = relationship(
         back_populates="review_project", cascade="all, delete-orphan"
     )
 
@@ -235,6 +241,29 @@ class PossibleDuplicate(Base):
     review_project: Mapped[ReviewProject] = relationship(back_populates="possible_duplicates")
     survivor_citation: Mapped[Citation] = relationship(foreign_keys=[survivor_citation_id])
     loser_citation: Mapped[Citation] = relationship(foreign_keys=[loser_citation_id])
+
+
+class Invitation(Base):
+    """A shareable token an Owner generates to add a Co-Reviewer, per ticket #26.
+
+    Has no automatic expiry — valid until accepted or revoked by the Owner.
+    """
+
+    __tablename__ = "invitations"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    review_project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("review_projects.id"), nullable=False
+    )
+    token: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="pending")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    review_project: Mapped[ReviewProject] = relationship(back_populates="invitations")
 
 
 class AISuggestion(Base):

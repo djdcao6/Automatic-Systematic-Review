@@ -123,6 +123,68 @@ def test_representative_endpoints_allow_owner(
         assert response.status_code < 400, f"{method.upper()} {path} -> {response.status_code}"
 
 
+def test_co_reviewer_passes_the_representative_endpoints_gate(client, owner_headers):
+    """A Co-Reviewer gets the same access as the Owner through the shared gate,
+    per #26 — checked once here rather than per-endpoint like test_representative_endpoints_allow_owner.
+    """
+    dual_project_id = client.post(
+        "/review-projects",
+        json={"name": "Dual Review", "merge_mode": "combine", "review_mode": "dual"},
+        headers=owner_headers,
+    ).json()["id"]
+    invitation_token = client.post(
+        f"/review-projects/{dual_project_id}/invitations", headers=owner_headers
+    ).json()["token"]
+    co_reviewer_token = client.post(
+        f"/invitations/{invitation_token}/accept-register",
+        json={"email": "co-reviewer@example.com", "password": "correcthorse"},
+    ).json()["access_token"]
+    co_reviewer_headers = {"Authorization": f"Bearer {co_reviewer_token}"}
+    client.post(
+        f"/review-projects/{dual_project_id}/citations",
+        files={"file": ("citations.csv", CSV_SAMPLE, "text/csv")},
+        headers=owner_headers,
+    )
+    citation_id = client.get(
+        f"/review-projects/{dual_project_id}/citations", headers=owner_headers
+    ).json()[0]["id"]
+    extraction_field_id = client.post(
+        f"/review-projects/{dual_project_id}/extraction-fields",
+        json={"name": "Sample size", "description": None},
+        headers=owner_headers,
+    ).json()["id"]
+
+    for method, path, payload in _representative_requests(
+        dual_project_id, citation_id, extraction_field_id
+    ):
+        response = client.request(
+            method.upper(), path, json=payload, headers=co_reviewer_headers
+        )
+        assert response.status_code < 400, f"{method.upper()} {path} -> {response.status_code}"
+
+
+def test_co_reviewer_cannot_manage_invitations(client, owner_headers):
+    dual_project_id = client.post(
+        "/review-projects",
+        json={"name": "Dual Review", "merge_mode": "combine", "review_mode": "dual"},
+        headers=owner_headers,
+    ).json()["id"]
+    invitation_token = client.post(
+        f"/review-projects/{dual_project_id}/invitations", headers=owner_headers
+    ).json()["token"]
+    co_reviewer_token = client.post(
+        f"/invitations/{invitation_token}/accept-register",
+        json={"email": "co-reviewer@example.com", "password": "correcthorse"},
+    ).json()["access_token"]
+    co_reviewer_headers = {"Authorization": f"Bearer {co_reviewer_token}"}
+
+    response = client.post(
+        f"/review-projects/{dual_project_id}/invitations", headers=co_reviewer_headers
+    )
+
+    assert response.status_code == 403
+
+
 def test_dismiss_possible_duplicate_rejects_non_owner(client, other_headers, project_id):
     # Ownership is checked before the possible duplicate lookup (both hang off
     # the same get_review_project_or_404 dependency), so a non-owner is

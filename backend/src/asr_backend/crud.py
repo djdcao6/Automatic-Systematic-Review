@@ -1,3 +1,4 @@
+import secrets
 import uuid
 from datetime import UTC, datetime
 
@@ -85,12 +86,13 @@ def create_review_project(
     return project
 
 
-def list_review_projects(
-    db: Session, owner_reviewer_id: uuid.UUID
-) -> list[models.ReviewProject]:
+def list_review_projects(db: Session, reviewer_id: uuid.UUID) -> list[models.ReviewProject]:
     return list(
         db.query(models.ReviewProject)
-        .filter(models.ReviewProject.owner_reviewer_id == owner_reviewer_id)
+        .filter(
+            (models.ReviewProject.owner_reviewer_id == reviewer_id)
+            | (models.ReviewProject.co_reviewer_id == reviewer_id)
+        )
         .order_by(models.ReviewProject.created_at)
         .all()
     )
@@ -521,3 +523,52 @@ def held_citation_ids(db: Session, review_project_id: uuid.UUID) -> set[uuid.UUI
         ids.add(survivor_id)
         ids.add(loser_id)
     return ids
+
+
+def create_invitation(db: Session, review_project_id: uuid.UUID) -> models.Invitation:
+    invitation = models.Invitation(
+        review_project_id=review_project_id, token=secrets.token_urlsafe(32)
+    )
+    db.add(invitation)
+    db.commit()
+    db.refresh(invitation)
+    return invitation
+
+
+def list_invitations(
+    db: Session, review_project_id: uuid.UUID, status: str = "pending"
+) -> list[models.Invitation]:
+    return list(
+        db.query(models.Invitation)
+        .filter(
+            models.Invitation.review_project_id == review_project_id,
+            models.Invitation.status == status,
+        )
+        .order_by(models.Invitation.created_at)
+        .all()
+    )
+
+
+def get_invitation(
+    db: Session, review_project_id: uuid.UUID, invitation_id: uuid.UUID
+) -> models.Invitation | None:
+    return (
+        db.query(models.Invitation)
+        .filter(
+            models.Invitation.id == invitation_id,
+            models.Invitation.review_project_id == review_project_id,
+        )
+        .one_or_none()
+    )
+
+
+def get_invitation_by_token(db: Session, token: str) -> models.Invitation | None:
+    return db.query(models.Invitation).filter(models.Invitation.token == token).one_or_none()
+
+
+def revoke_invitation(db: Session, invitation: models.Invitation) -> models.Invitation:
+    invitation.status = "revoked"
+    invitation.revoked_at = datetime.now(UTC)
+    db.commit()
+    db.refresh(invitation)
+    return invitation

@@ -88,6 +88,8 @@ class ReviewProjectRead(BaseModel):
     criteria_locked: bool
     merge_mode: Literal["combine", "keep_first"]
     review_mode: Literal["solo", "dual"]
+    owner_reviewer_id: uuid.UUID
+    co_reviewer_id: uuid.UUID | None
     created_at: datetime
 
 
@@ -263,6 +265,27 @@ class ConflictResolutionChoice(BaseModel):
 
 class PossibleDuplicateResolve(BaseModel):
     choices: list[ConflictResolutionChoice]
+
+
+InvitationStatus = Literal["pending", "accepted", "revoked"]
+
+
+class InvitationRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    token: str
+    status: InvitationStatus
+    created_at: datetime
+
+
+class InvitationPublicRead(BaseModel):
+    review_project_name: str
+    status: InvitationStatus
+
+
+class InvitationAcceptRead(Token):
+    review_project_id: uuid.UUID
 
 
 class CitationDetailRead(CitationRead):

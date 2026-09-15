@@ -26,6 +26,8 @@ export type ReviewProject = {
   criteria_locked: boolean;
   merge_mode: MergeMode;
   review_mode: ReviewMode;
+  owner_reviewer_id: string;
+  co_reviewer_id: string | null;
   created_at: string;
 };
 
@@ -202,6 +204,26 @@ export type ConflictResolutionChoiceInput = {
   winner: ConflictWinner;
 };
 
+export type InvitationStatus = "pending" | "accepted" | "revoked";
+
+export type Invitation = {
+  id: string;
+  token: string;
+  status: InvitationStatus;
+  created_at: string;
+};
+
+export type InvitationPublic = {
+  review_project_name: string;
+  status: InvitationStatus;
+};
+
+export type InvitationAcceptResult = {
+  access_token: string;
+  token_type: string;
+  review_project_id: string;
+};
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 function redirectToLogin(): void {
@@ -262,6 +284,14 @@ export async function loginReviewer(payload: ReviewerInput): Promise<AuthToken> 
   });
   if (!response.ok) {
     throw new Error(await errorMessage(response, "Failed to log in"));
+  }
+  return response.json();
+}
+
+export async function getMe(): Promise<Reviewer> {
+  const response = await authorizedFetch(`${API_URL}/me`);
+  if (!response.ok) {
+    throw new Error("Failed to load current reviewer");
   }
   return response.json();
 }
@@ -537,6 +567,83 @@ export async function dismissPossibleDuplicate(
   if (!response.ok) {
     throw new Error("Failed to dismiss possible duplicate");
   }
+}
+
+export async function listInvitations(reviewProjectId: string): Promise<Invitation[]> {
+  const response = await authorizedFetch(
+    `${API_URL}/review-projects/${reviewProjectId}/invitations`
+  );
+  if (!response.ok) {
+    throw new Error("Failed to load invitations");
+  }
+  return response.json();
+}
+
+export async function createInvitation(reviewProjectId: string): Promise<Invitation> {
+  const response = await authorizedFetch(
+    `${API_URL}/review-projects/${reviewProjectId}/invitations`,
+    { method: "POST" }
+  );
+  if (!response.ok) {
+    throw new Error(await errorMessage(response, "Failed to generate invitation"));
+  }
+  return response.json();
+}
+
+export async function revokeInvitation(
+  reviewProjectId: string,
+  invitationId: string
+): Promise<Invitation> {
+  const response = await authorizedFetch(
+    `${API_URL}/review-projects/${reviewProjectId}/invitations/${invitationId}/revoke`,
+    { method: "POST" }
+  );
+  if (!response.ok) {
+    throw new Error("Failed to revoke invitation");
+  }
+  return response.json();
+}
+
+// Unauthenticated: the recipient doesn't have an account yet when they open
+// the invite link, so these three calls (unlike everything else in this
+// file) don't go through authorizedFetch.
+
+export async function getInvitationPublic(token: string): Promise<InvitationPublic> {
+  const response = await fetch(`${API_URL}/invitations/${token}`);
+  if (!response.ok) {
+    throw new Error(await errorMessage(response, "Failed to load invitation"));
+  }
+  return response.json();
+}
+
+export async function acceptInvitationByRegistering(
+  token: string,
+  payload: ReviewerInput
+): Promise<InvitationAcceptResult> {
+  const response = await fetch(`${API_URL}/invitations/${token}/accept-register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw new Error(await errorMessage(response, "Failed to accept invitation"));
+  }
+  return response.json();
+}
+
+export async function acceptInvitationByLoggingIn(
+  token: string,
+  payload: ReviewerInput
+): Promise<InvitationAcceptResult> {
+  const response = await fetch(`${API_URL}/invitations/${token}/accept-login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw new Error(await errorMessage(response, "Failed to accept invitation"));
+  }
+  return response.json();
 }
 
 export async function recordExtractionValue(

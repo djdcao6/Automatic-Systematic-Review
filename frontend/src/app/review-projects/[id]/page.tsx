@@ -4,9 +4,11 @@ import { useEffect, useState, type FormEvent } from "react";
 
 import { CitationsPanel } from "@/components/CitationsPanel";
 import { ExtractionFieldsPanel } from "@/components/ExtractionFieldsPanel";
+import { InvitationsPanel } from "@/components/InvitationsPanel";
 import { PossibleDuplicatesPanel } from "@/components/PossibleDuplicatesPanel";
 import {
   exportReviewProject,
+  getMe,
   getReviewProject,
   saveCriteria,
   type CriteriaInput,
@@ -40,6 +42,7 @@ export default function ReviewProjectDetailPage({
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [citationsRefreshToken, setCitationsRefreshToken] = useState(0);
+  const [isOwner, setIsOwner] = useState(false);
 
   useEffect(() => {
     params.then((resolved) => setId(resolved.id));
@@ -49,6 +52,9 @@ export default function ReviewProjectDetailPage({
     if (!id) return;
     getReviewProject(id)
       .then((data) => {
+        getMe()
+          .then((reviewer) => setIsOwner(reviewer.id === data.owner_reviewer_id))
+          .catch(() => setIsOwner(false));
         setProject(data);
         const criteria = data.criteria;
         if (criteria) {
@@ -170,6 +176,13 @@ export default function ReviewProjectDetailPage({
 
         <button type="submit">Save Criteria</button>
       </form>
+
+      {project.review_mode === "dual" && isOwner && (
+        <InvitationsPanel
+          reviewProjectId={project.id}
+          hasCoReviewer={project.co_reviewer_id !== null}
+        />
+      )}
 
       <CitationsPanel
         reviewProjectId={project.id}

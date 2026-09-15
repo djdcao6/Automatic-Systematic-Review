@@ -45,6 +45,8 @@ describe("CitationScreeningPage", () => {
       criteria_locked: false,
       merge_mode: "combine",
       review_mode: "solo",
+      owner_reviewer_id: "owner-1",
+      co_reviewer_id: null,
       created_at: "2026-01-01T00:00:00Z",
       criteria: {
         population: null,

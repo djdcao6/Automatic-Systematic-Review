@@ -15,6 +15,8 @@ const baseProject = {
   criteria_locked: false,
   merge_mode: "combine" as const,
   review_mode: "solo" as const,
+  owner_reviewer_id: "owner-1",
+  co_reviewer_id: null,
   created_at: "2026-01-01T00:00:00Z",
   citations_needing_decision: 0,
 };
@@ -36,6 +38,12 @@ describe("ReviewProjectDetailPage", () => {
     mockedApi.listCitations.mockResolvedValue([]);
     mockedApi.listExtractionFields.mockResolvedValue([]);
     mockedApi.listPossibleDuplicates.mockResolvedValue([]);
+    mockedApi.listInvitations.mockResolvedValue([]);
+    mockedApi.getMe.mockResolvedValue({
+      id: "owner-1",
+      email: "owner@example.com",
+      created_at: "2026-01-01T00:00:00Z",
+    });
   });
 
   it("displays the review project's Review Mode", async () => {
@@ -182,5 +190,49 @@ describe("ReviewProjectDetailPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /export csv/i }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/failed to export/i);
+  });
+
+  it("shows the Co-Reviewer panel to the Owner of a Dual Review Project", async () => {
+    mockedApi.getReviewProject.mockResolvedValue({
+      ...baseProject,
+      review_mode: "dual",
+      criteria: null,
+    });
+
+    renderPage();
+
+    expect(await screen.findByRole("heading", { name: /co-reviewer/i })).toBeInTheDocument();
+  });
+
+  it("hides the Co-Reviewer panel for a Solo Review Project", async () => {
+    mockedApi.getReviewProject.mockResolvedValue({
+      ...baseProject,
+      review_mode: "solo",
+      criteria: null,
+    });
+
+    renderPage();
+
+    await waitFor(() => expect(mockedApi.getMe).toHaveBeenCalled());
+    expect(screen.queryByRole("heading", { name: /co-reviewer/i })).not.toBeInTheDocument();
+  });
+
+  it("hides the Co-Reviewer panel from a Co-Reviewer, even on a Dual Review Project", async () => {
+    mockedApi.getReviewProject.mockResolvedValue({
+      ...baseProject,
+      review_mode: "dual",
+      co_reviewer_id: "co-reviewer-1",
+      criteria: null,
+    });
+    mockedApi.getMe.mockResolvedValue({
+      id: "co-reviewer-1",
+      email: "co-reviewer@example.com",
+      created_at: "2026-01-01T00:00:00Z",
+    });
+
+    renderPage();
+
+    await waitFor(() => expect(mockedApi.getMe).toHaveBeenCalled());
+    expect(screen.queryByRole("heading", { name: /co-reviewer/i })).not.toBeInTheDocument();
   });
 });

@@ -13,6 +13,7 @@ from asr_backend import (
     export,
     full_text,
     full_text_suggestion,
+    invitations,
     models,
     schemas,
     screening,
@@ -66,6 +67,80 @@ def get_me(
     return reviewer
 
 
+def get_invitation_by_token_or_404(
+    token: str, db: Session = Depends(get_db)
+) -> models.Invitation:
+    invitation = crud.get_invitation_by_token(db, token)
+    if invitation is None:
+        raise HTTPException(status_code=404, detail="Invitation not found")
+    return invitation
+
+
+@app.get("/invitations/{token}", response_model=schemas.InvitationPublicRead)
+def get_invitation_public(
+    invitation: models.Invitation = Depends(get_invitation_by_token_or_404),
+) -> schemas.InvitationPublicRead:
+    return schemas.InvitationPublicRead(
+        review_project_name=invitation.review_project.name,
+        status=invitation.status,
+    )
+
+
+@app.post(
+    "/invitations/{token}/accept-register",
+    response_model=schemas.InvitationAcceptRead,
+)
+def accept_invitation_by_registering(
+    payload: schemas.ReviewerCreate,
+    invitation: models.Invitation = Depends(get_invitation_by_token_or_404),
+    db: Session = Depends(get_db),
+) -> schemas.InvitationAcceptRead:
+    # Both checked before creating an account, so a revoked/already-accepted
+    # link, or one for a project that already has a Co-Reviewer, can't leave
+    # behind a Reviewer account no Invitation actually admits. accept_invitation
+    # still re-checks both atomically below, since a concurrent accept can slip
+    # in between this check and that one.
+    if invitation.status != "pending":
+        raise HTTPException(status_code=409, detail="Invitation is no longer valid")
+    if invitation.review_project.co_reviewer_id is not None:
+        raise HTTPException(status_code=409, detail="Review Project already has a Co-Reviewer")
+    hashed_password = auth.hash_password(payload.password)
+    reviewer = crud.create_reviewer(db, payload.email, hashed_password)
+    if reviewer is None:
+        raise HTTPException(status_code=409, detail="Email is already registered")
+    try:
+        project = invitations.accept_invitation(db, invitation, reviewer.id)
+    except invitations.InvitationNotAcceptable as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    access_token = auth.create_access_token(reviewer.id)
+    return schemas.InvitationAcceptRead(access_token=access_token, review_project_id=project.id)
+
+
+@app.post(
+    "/invitations/{token}/accept-login",
+    response_model=schemas.InvitationAcceptRead,
+)
+def accept_invitation_by_logging_in(
+    payload: schemas.ReviewerLogin,
+    invitation: models.Invitation = Depends(get_invitation_by_token_or_404),
+    db: Session = Depends(get_db),
+) -> schemas.InvitationAcceptRead:
+    if invitation.status != "pending":
+        raise HTTPException(status_code=409, detail="Invitation is no longer valid")
+    reviewer = crud.get_reviewer_by_email(db, payload.email)
+    # Same dummy-hash timing guard as /login.
+    hashed_password = reviewer.hashed_password if reviewer else auth.DUMMY_PASSWORD_HASH
+    password_ok = auth.verify_password(payload.password, hashed_password)
+    if reviewer is None or not password_ok:
+        raise HTTPException(status_code=401, detail="Incorrect email or password")
+    try:
+        project = invitations.accept_invitation(db, invitation, reviewer.id)
+    except invitations.InvitationNotAcceptable as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    access_token = auth.create_access_token(reviewer.id)
+    return schemas.InvitationAcceptRead(access_token=access_token, review_project_id=project.id)
+
+
 @app.post(
     "/review-projects",
     response_model=schemas.ReviewProjectRead,
@@ -95,8 +170,18 @@ def get_review_project_or_404(
     project = crud.get_review_project(db, review_project_id)
     if project is None:
         raise HTTPException(status_code=404, detail="Review project not found")
-    if project.owner_reviewer_id != reviewer.id:
+    if reviewer.id not in (project.owner_reviewer_id, project.co_reviewer_id):
         raise HTTPException(status_code=403, detail="Not authorized for this review project")
+    return project
+
+
+def require_owner(
+    project: models.ReviewProject = Depends(get_review_project_or_404),
+    reviewer: models.Reviewer = Depends(auth.get_current_reviewer),
+) -> models.ReviewProject:
+    """Narrows access to the Owner alone, e.g. for managing Invitations (#26)."""
+    if reviewer.id != project.owner_reviewer_id:
+        raise HTTPException(status_code=403, detail="Only the Owner can perform this action")
     return project
 
 
@@ -105,6 +190,54 @@ def get_review_project(
     project: models.ReviewProject = Depends(get_review_project_or_404),
 ) -> models.ReviewProject:
     return project
+
+
+@app.post(
+    "/review-projects/{review_project_id}/invitations",
+    response_model=schemas.InvitationRead,
+    status_code=201,
+)
+def create_invitation(
+    project: models.ReviewProject = Depends(require_owner),
+    db: Session = Depends(get_db),
+) -> models.Invitation:
+    if project.review_mode != "dual":
+        raise HTTPException(
+            status_code=409, detail="A Solo Review Project has no Invitation capability"
+        )
+    if project.co_reviewer_id is not None:
+        raise HTTPException(
+            status_code=409, detail="Review Project already has a Co-Reviewer"
+        )
+    return crud.create_invitation(db, project.id)
+
+
+@app.get(
+    "/review-projects/{review_project_id}/invitations",
+    response_model=list[schemas.InvitationRead],
+)
+def list_invitations(
+    project: models.ReviewProject = Depends(require_owner),
+    db: Session = Depends(get_db),
+) -> list[models.Invitation]:
+    return crud.list_invitations(db, project.id)
+
+
+@app.post(
+    "/review-projects/{review_project_id}/invitations/{invitation_id}/revoke",
+    response_model=schemas.InvitationRead,
+)
+def revoke_invitation(
+    invitation_id: uuid.UUID,
+    project: models.ReviewProject = Depends(require_owner),
+    db: Session = Depends(get_db),
+) -> models.Invitation:
+    invitation = crud.get_invitation(db, project.id, invitation_id)
+    if invitation is None:
+        raise HTTPException(status_code=404, detail="Invitation not found")
+    if invitation.status != "pending":
+        raise HTTPException(status_code=409, detail="Invitation is already settled")
+    return crud.revoke_invitation(db, invitation)
 
 
 @app.put(
