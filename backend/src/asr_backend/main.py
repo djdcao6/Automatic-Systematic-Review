@@ -12,6 +12,7 @@ from asr_backend import (
     crud,
     duplicates,
     export,
+    flow_diagram,
     full_text,
     full_text_suggestion,
     invitations,
@@ -622,6 +623,16 @@ def resolve_conflict(
     if conflict.status != "pending":
         raise HTTPException(status_code=409, detail="Conflict is already resolved")
     return crud.resolve_conflict(db, conflict, payload.decision, payload.reason)
+
+
+@app.get(
+    "/review-projects/{review_project_id}/flow-diagram",
+    response_model=schemas.FlowDiagramRead,
+)
+def get_flow_diagram(
+    project: models.ReviewProject = Depends(get_review_project_or_404),
+) -> schemas.FlowDiagramRead:
+    return flow_diagram.build_flow_diagram_read(project)
 
 
 @app.get("/review-projects/{review_project_id}/export")

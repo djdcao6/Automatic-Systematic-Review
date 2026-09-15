@@ -78,6 +78,7 @@ def _representative_requests(project_id, citation_id, extraction_field_id):
             {"value": "120 patients"},
         ),
         ("get", f"/review-projects/{project_id}/possible-duplicates", None),
+        ("get", f"/review-projects/{project_id}/flow-diagram", None),
         ("get", f"/review-projects/{project_id}/export", None),
     ]
 

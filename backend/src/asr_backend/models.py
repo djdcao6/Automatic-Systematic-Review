@@ -134,6 +134,13 @@ class Citation(Base):
     authors: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, default=list)
     year: Mapped[int | None] = mapped_column(Integer, nullable=True)
     source: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, default=list)
+    # Snapshot of `source` as this row was first created, never touched
+    # afterward -- unlike `source` itself, which a Combine-mode Duplicate
+    # merge (duplicates.py) extends with a merged-away loser's databases.
+    # The PRISMA Flow Diagram's per-source Identification counts (#32) read
+    # this instead of `source`, so a survivor's count isn't inflated by
+    # databases that arrived via a later merge rather than its own upload.
+    original_source: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, default=list)
     doi: Mapped[str | None] = mapped_column(String, nullable=True)
     archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     merged_into_citation_id: Mapped[uuid.UUID | None] = mapped_column(

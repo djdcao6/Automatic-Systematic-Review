@@ -323,6 +323,15 @@ class InvitationAcceptRead(Token):
     review_project_id: uuid.UUID
 
 
+class FlowDiagramRead(BaseModel):
+    criteria: CriteriaRead | None = None
+    identification_counts: dict[str, int]
+    duplicates_removed: int
+    screened: int
+    excluded: int
+    pending: int
+
+
 class CitationDetailRead(CitationRead):
     suggestion: SuggestionRead | None = None
     suggestion_unavailable_reason: str | None = None

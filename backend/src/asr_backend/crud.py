@@ -180,6 +180,7 @@ def create_citations(
             authors=parsed.authors,
             year=parsed.year,
             source=parsed.source,
+            original_source=parsed.source,
             doi=parsed.doi,
         )
         for parsed in parsed_citations

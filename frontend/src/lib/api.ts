@@ -465,6 +465,25 @@ export async function getCitation(
   return response.json();
 }
 
+export type FlowDiagram = {
+  criteria: Criteria | null;
+  identification_counts: Record<string, number>;
+  duplicates_removed: number;
+  screened: number;
+  excluded: number;
+  pending: number;
+};
+
+export async function getFlowDiagram(reviewProjectId: string): Promise<FlowDiagram> {
+  const response = await authorizedFetch(
+    `${API_URL}/review-projects/${reviewProjectId}/flow-diagram`
+  );
+  if (!response.ok) {
+    throw new Error("Failed to load flow diagram");
+  }
+  return response.json();
+}
+
 export type ExportedFile = {
   blob: Blob;
   filename: string;

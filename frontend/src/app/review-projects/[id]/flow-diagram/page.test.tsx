@@ -1,0 +1,144 @@
+import { render, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import * as api from "@/lib/api";
+
+import FlowDiagramPage from "./page";
+
+vi.mock("@/lib/api");
+
+const mockedApi = vi.mocked(api);
+
+const baseProject = {
+  id: "1",
+  name: "My Review",
+  criteria_locked: false,
+  merge_mode: "combine" as const,
+  review_mode: "solo" as const,
+  owner_reviewer_id: "owner-1",
+  co_reviewer_id: null,
+  created_at: "2026-01-01T00:00:00Z",
+  citations_needing_decision: 0,
+  criteria: null,
+};
+
+function renderPage() {
+  return render(<FlowDiagramPage params={Promise.resolve({ id: "1" })} />);
+}
+
+describe("FlowDiagramPage", () => {
+  beforeEach(() => {
+    mockedApi.getReviewProject.mockResolvedValue(baseProject);
+  });
+
+  it("renders per-source identification counts, duplicates removed, and screening totals", async () => {
+    mockedApi.getFlowDiagram.mockResolvedValue({
+      criteria: null,
+      identification_counts: { PubMed: 3, Embase: 2 },
+      duplicates_removed: 1,
+      screened: 2,
+      excluded: 1,
+      pending: 2,
+    });
+
+    renderPage();
+
+    expect(await screen.findByText("PubMed: 3")).toBeInTheDocument();
+    expect(screen.getByText("Embase: 2")).toBeInTheDocument();
+    expect(screen.getByText(/total records identified: 5/i)).toBeInTheDocument();
+    expect(screen.getByText(/duplicates removed: 1/i)).toBeInTheDocument();
+    expect(screen.getByText(/records screened: 2/i)).toBeInTheDocument();
+    expect(screen.getByText(/records excluded: 1/i)).toBeInTheDocument();
+  });
+
+  it("notes the pending-decision count", async () => {
+    mockedApi.getFlowDiagram.mockResolvedValue({
+      criteria: null,
+      identification_counts: { PubMed: 3 },
+      duplicates_removed: 0,
+      screened: 1,
+      excluded: 0,
+      pending: 2,
+    });
+
+    renderPage();
+
+    expect(
+      await screen.findByText(/2 citation\(s\) still pending a screening decision/i)
+    ).toBeInTheDocument();
+  });
+
+  it("renders a plain numeric summary table with the same figures as the diagram", async () => {
+    mockedApi.getFlowDiagram.mockResolvedValue({
+      criteria: null,
+      identification_counts: { PubMed: 3, Embase: 2 },
+      duplicates_removed: 1,
+      screened: 2,
+      excluded: 1,
+      pending: 2,
+    });
+
+    renderPage();
+
+    const table = await screen.findByRole("table");
+    expect(table).toHaveTextContent("Identified (PubMed)");
+    expect(table).toHaveTextContent("Identified (Embase)");
+    expect(table).toHaveTextContent("Total Identified");
+    expect(table).toHaveTextContent("Duplicates Removed");
+    expect(table).toHaveTextContent("Screened");
+    expect(table).toHaveTextContent("Excluded");
+    expect(table).toHaveTextContent("Pending Decision");
+  });
+
+  it("renders the Review Project's Criteria as a header", async () => {
+    mockedApi.getFlowDiagram.mockResolvedValue({
+      criteria: {
+        population: "Adults with diabetes",
+        intervention: "Metformin",
+        comparison: "Placebo",
+        outcome: "HbA1c",
+        exclusion_rules: ["Non-English", "Case reports"],
+        notes: "Focus on RCTs only",
+      },
+      identification_counts: {},
+      duplicates_removed: 0,
+      screened: 0,
+      excluded: 0,
+      pending: 0,
+    });
+
+    renderPage();
+
+    expect(await screen.findByText("Adults with diabetes")).toBeInTheDocument();
+    expect(screen.getByText("Metformin")).toBeInTheDocument();
+    expect(screen.getByText("Placebo")).toBeInTheDocument();
+    expect(screen.getByText("HbA1c")).toBeInTheDocument();
+    expect(screen.getByText("Non-English")).toBeInTheDocument();
+    expect(screen.getByText("Case reports")).toBeInTheDocument();
+  });
+
+  it("shows a message when no Criteria has been saved yet", async () => {
+    mockedApi.getFlowDiagram.mockResolvedValue({
+      criteria: null,
+      identification_counts: {},
+      duplicates_removed: 0,
+      screened: 0,
+      excluded: 0,
+      pending: 0,
+    });
+
+    renderPage();
+
+    expect(
+      await screen.findByText(/no criteria saved yet for this review project/i)
+    ).toBeInTheDocument();
+  });
+
+  it("shows an error when the flow diagram fails to load", async () => {
+    mockedApi.getFlowDiagram.mockRejectedValue(new Error("boom"));
+
+    renderPage();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/failed to load prisma flow diagram/i);
+  });
+});

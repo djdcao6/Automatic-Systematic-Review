@@ -75,3 +75,7 @@ _Avoid_: Admin, Creator
 **Co-Reviewer**:
 The second Reviewer in a Dual Review Project, invited by its Owner. Records an independent Screening Decision per Citation alongside the Owner's.
 _Avoid_: Second reviewer, Collaborator
+
+**PRISMA Flow Diagram**:
+A per-Review-Project report of the screening funnel — records identified (per source, counted before deduplication), duplicates removed, screened, excluded, full-text assessed, excluded with itemized reasons, and included — computed live from current data and viewable at any point in a review, with a plain numeric summary alongside the visual. Adapted rather than a literal reproduction of the official PRISMA 2020 template: omits stages this tool has no data for (records marked ineligible by automation, reports sought but not retrieved) and the qualitative/quantitative synthesis split.
+_Avoid_: Report, Chart, PRISMA diagram

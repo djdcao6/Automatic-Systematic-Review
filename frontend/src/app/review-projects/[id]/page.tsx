@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState, type FormEvent } from "react";
 
 import { CitationsPanel } from "@/components/CitationsPanel";
@@ -135,6 +136,7 @@ export default function ReviewProjectDetailPage({
       <button type="button" onClick={handleExport}>
         Export CSV
       </button>
+      <Link href={`/review-projects/${project.id}/flow-diagram`}>View PRISMA Flow Diagram</Link>
       {error && <p role="alert">{error}</p>}
       <form onSubmit={handleSubmit}>
         <label htmlFor="population">Population</label>
