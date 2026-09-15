@@ -38,6 +38,7 @@ describe("ReviewProjectDetailPage", () => {
     mockedApi.listCitations.mockResolvedValue([]);
     mockedApi.listExtractionFields.mockResolvedValue([]);
     mockedApi.listPossibleDuplicates.mockResolvedValue([]);
+    mockedApi.listConflicts.mockResolvedValue([]);
     mockedApi.listInvitations.mockResolvedValue([]);
     mockedApi.getMe.mockResolvedValue({
       id: "owner-1",

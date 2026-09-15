@@ -56,6 +56,9 @@ class ReviewProject(Base):
     invitations: Mapped[list["Invitation"]] = relationship(
         back_populates="review_project", cascade="all, delete-orphan"
     )
+    conflicts: Mapped[list["Conflict"]] = relationship(
+        back_populates="review_project", cascade="all, delete-orphan"
+    )
 
     @property
     def citations_needing_decision(self) -> int:
@@ -153,6 +156,9 @@ class Citation(Base):
         cascade="all, delete-orphan",
         order_by="ExtractionValue.created_at",
     )
+    conflict: Mapped["Conflict | None"] = relationship(
+        back_populates="citation", uselist=False, cascade="all, delete-orphan"
+    )
 
     @property
     def needs_abstract(self) -> bool:
@@ -193,18 +199,42 @@ class Citation(Base):
         )
 
     @property
-    def screening_resolved(self) -> bool:
-        """Whether the title/abstract stage is settled, per ADR 0003.
+    def final_screening_decision(self) -> tuple[str, str] | None:
+        """The Citation's settled (decision, reason), reflecting a resolved Conflict.
 
-        A Maybe Screening Decision stands indefinitely unless an Include or
-        Exclude Full-Text Decision is later recorded for the Citation, which
-        resolves it without altering the original Screening Decision record.
-        A Maybe Full-Text Decision carries the same ambiguity forward, so it
-        does not resolve anything.
+        Per #28: once the Owner has resolved a Conflict, that decision — which
+        may match neither original — is what counts as final. Otherwise falls
+        back to the Owner's own Screening Decision, which is canonical for
+        Solo, and for Dual before a Conflict exists or while one is pending.
         """
-        if self.owner_screening_decision is None:
+        if self.conflict is not None and self.conflict.status == "resolved":
+            assert self.conflict.resolved_decision is not None
+            return self.conflict.resolved_decision, self.conflict.resolved_reason or ""
+        decision = self.owner_screening_decision
+        if decision is None:
+            return None
+        return decision.decision, decision.reason or ""
+
+    @property
+    def screening_resolved(self) -> bool:
+        """Whether the title/abstract stage is settled, per ADR 0003 and #28.
+
+        A pending Conflict leaves this unsettled regardless of either
+        Reviewer's own decision, since the two disagree and the Owner hasn't
+        yet said which one stands. Otherwise, a Maybe Screening Decision
+        stands indefinitely unless an Include or Exclude Full-Text Decision
+        is later recorded for the Citation, which resolves it without
+        altering the original Screening Decision record. A Maybe Full-Text
+        Decision carries the same ambiguity forward, so it does not resolve
+        anything.
+        """
+        if self.conflict is not None and self.conflict.status == "pending":
             return False
-        if self.owner_screening_decision.decision != "maybe":
+        final = self.final_screening_decision
+        if final is None:
+            return False
+        decision, _ = final
+        if decision != "maybe":
             return True
         return (
             self.full_text_decision is not None
@@ -213,15 +243,13 @@ class Citation(Base):
 
     @property
     def decision_label(self) -> str:
-        decision = self.owner_screening_decision
-        return decision.decision if decision else "unscreened"
+        final = self.final_screening_decision
+        return final[0] if final else "unscreened"
 
     @property
     def screening_reason(self) -> str:
-        decision = self.owner_screening_decision
-        if decision is None:
-            return ""
-        return decision.reason or ""
+        final = self.final_screening_decision
+        return final[1] if final else ""
 
     @property
     def ai_suggestion_decision_label(self) -> str:
@@ -246,6 +274,36 @@ class Citation(Base):
             if extraction_value.extraction_field_id == extraction_field_id:
                 return extraction_value.value
         return ""
+
+
+class Conflict(Base):
+    """Held when a Dual Review Project's two Screening Decisions differ, per #28.
+
+    One per Citation — created once the Owner and Co-Reviewer have both
+    decided and disagree. `resolved_decision`/`resolved_reason` is the
+    Owner's final call, per ADR 0006 not constrained to either original
+    value; the two original ScreeningDecision rows are never modified, so
+    both stay visible after resolution.
+    """
+
+    __tablename__ = "conflicts"
+    __table_args__ = (UniqueConstraint("citation_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    review_project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("review_projects.id"), nullable=False
+    )
+    citation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("citations.id"), nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="pending")
+    resolved_decision: Mapped[str | None] = mapped_column(String, nullable=True)
+    resolved_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    review_project: Mapped[ReviewProject] = relationship(back_populates="conflicts")
+    citation: Mapped[Citation] = relationship(back_populates="conflict")
 
 
 class PossibleDuplicate(Base):

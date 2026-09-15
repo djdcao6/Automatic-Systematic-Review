@@ -536,6 +536,80 @@ def held_citation_ids(db: Session, review_project_id: uuid.UUID) -> set[uuid.UUI
     return ids
 
 
+def get_conflict(db: Session, citation_id: uuid.UUID) -> models.Conflict | None:
+    return (
+        db.query(models.Conflict)
+        .filter(models.Conflict.citation_id == citation_id)
+        .one_or_none()
+    )
+
+
+def get_conflict_by_id(
+    db: Session, review_project_id: uuid.UUID, conflict_id: uuid.UUID
+) -> models.Conflict | None:
+    return (
+        db.query(models.Conflict)
+        .filter(
+            models.Conflict.id == conflict_id,
+            models.Conflict.review_project_id == review_project_id,
+        )
+        .one_or_none()
+    )
+
+
+def create_conflict(
+    db: Session, review_project_id: uuid.UUID, citation_id: uuid.UUID
+) -> models.Conflict:
+    stmt = pg_insert(models.Conflict).values(
+        review_project_id=review_project_id, citation_id=citation_id
+    )
+    stmt = stmt.on_conflict_do_nothing(index_elements=[models.Conflict.citation_id]).returning(
+        models.Conflict.id
+    )
+    # Same atomic INSERT ... ON CONFLICT DO NOTHING pattern as create_reviewer,
+    # since two decisions racing to complete the pair could both observe that
+    # they differ and try to create the Conflict at once.
+    inserted_id = db.execute(stmt).scalar_one_or_none()
+    if inserted_id is None:
+        db.rollback()
+        existing = get_conflict(db, citation_id)
+        assert existing is not None
+        return existing
+    db.commit()
+    return db.get(models.Conflict, inserted_id)
+
+
+def list_conflicts(
+    db: Session, review_project_id: uuid.UUID, status: str = "pending"
+) -> list[models.Conflict]:
+    return list(
+        db.query(models.Conflict)
+        .filter(
+            models.Conflict.review_project_id == review_project_id,
+            models.Conflict.status == status,
+        )
+        .order_by(models.Conflict.created_at)
+        .all()
+    )
+
+
+def resolve_conflict(
+    db: Session, conflict: models.Conflict, decision: str, reason: str | None
+) -> models.Conflict:
+    conflict.status = "resolved"
+    conflict.resolved_decision = decision
+    conflict.resolved_reason = reason
+    conflict.resolved_at = datetime.now(UTC)
+    db.commit()
+    db.refresh(conflict)
+    return conflict
+
+
+def delete_conflict(db: Session, conflict: models.Conflict) -> None:
+    db.delete(conflict)
+    db.commit()
+
+
 def create_invitation(db: Session, review_project_id: uuid.UUID) -> models.Invitation:
     invitation = models.Invitation(
         review_project_id=review_project_id, token=secrets.token_urlsafe(32)

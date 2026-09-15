@@ -253,6 +253,36 @@ class PossibleDuplicateCitationRead(BaseModel):
     extraction_values: list[ExtractionValueRead] = []
 
 
+class ConflictCitationRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    title: str
+
+
+class ConflictRead(BaseModel):
+    id: uuid.UUID
+    citation: ConflictCitationRead
+    owner_decision: ScreeningDecisionRead
+    co_reviewer_decision: ScreeningDecisionRead
+    created_at: datetime
+
+
+class ConflictResolve(BaseModel):
+    decision: Literal["include", "exclude", "maybe"]
+    reason: str | None = None
+
+
+class ConflictResolvedRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    status: Literal["resolved"]
+    resolved_decision: Literal["include", "exclude", "maybe"]
+    resolved_reason: str | None
+    resolved_at: datetime
+
+
 class PossibleDuplicateRead(BaseModel):
     id: uuid.UUID
     survivor: PossibleDuplicateCitationRead

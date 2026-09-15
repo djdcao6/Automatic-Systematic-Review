@@ -206,6 +206,32 @@ export type ConflictResolutionChoiceInput = {
   winner: ConflictWinner;
 };
 
+export type ConflictCitation = {
+  id: string;
+  title: string;
+};
+
+export type Conflict = {
+  id: string;
+  citation: ConflictCitation;
+  owner_decision: ScreeningDecision;
+  co_reviewer_decision: ScreeningDecision;
+  created_at: string;
+};
+
+export type ConflictResolveInput = {
+  decision: Decision;
+  reason: string | null;
+};
+
+export type ConflictResolved = {
+  id: string;
+  status: "resolved";
+  resolved_decision: Decision;
+  resolved_reason: string | null;
+  resolved_at: string;
+};
+
 export type InvitationStatus = "pending" | "accepted" | "revoked";
 
 export type Invitation = {
@@ -569,6 +595,33 @@ export async function dismissPossibleDuplicate(
   if (!response.ok) {
     throw new Error("Failed to dismiss possible duplicate");
   }
+}
+
+export async function listConflicts(reviewProjectId: string): Promise<Conflict[]> {
+  const response = await authorizedFetch(`${API_URL}/review-projects/${reviewProjectId}/conflicts`);
+  if (!response.ok) {
+    throw new Error("Failed to load conflicts");
+  }
+  return response.json();
+}
+
+export async function resolveConflict(
+  reviewProjectId: string,
+  conflictId: string,
+  payload: ConflictResolveInput
+): Promise<ConflictResolved> {
+  const response = await authorizedFetch(
+    `${API_URL}/review-projects/${reviewProjectId}/conflicts/${conflictId}/resolve`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }
+  );
+  if (!response.ok) {
+    throw new Error(await errorMessage(response, "Failed to resolve conflict"));
+  }
+  return response.json();
 }
 
 export async function listInvitations(reviewProjectId: string): Promise<Invitation[]> {

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from asr_backend import (
     auth,
     citation_import,
+    conflicts,
     crud,
     duplicates,
     export,
@@ -425,7 +426,9 @@ def record_screening_decision(
     reviewer: models.Reviewer = Depends(auth.get_current_reviewer),
     db: Session = Depends(get_db),
 ) -> models.ScreeningDecision:
-    return crud.upsert_screening_decision(db, project, citation.id, reviewer.id, payload)
+    result = crud.upsert_screening_decision(db, project, citation.id, reviewer.id, payload)
+    conflicts.sync_conflict(db, project, citation)
+    return result
 
 
 @app.post(
@@ -566,6 +569,43 @@ def dismiss_possible_duplicate(
     if possible_duplicate.status != "pending":
         raise HTTPException(status_code=409, detail="Possible Duplicate is already settled")
     crud.set_possible_duplicate_status(db, possible_duplicate, "dismissed")
+
+
+@app.get(
+    "/review-projects/{review_project_id}/conflicts",
+    response_model=list[schemas.ConflictRead],
+)
+def list_conflicts(
+    project: models.ReviewProject = Depends(get_review_project_or_404),
+    db: Session = Depends(get_db),
+) -> list[schemas.ConflictRead]:
+    return [conflicts.to_conflict_read(c) for c in crud.list_conflicts(db, project.id)]
+
+
+def get_conflict_or_404(
+    conflict_id: uuid.UUID,
+    project: models.ReviewProject = Depends(get_review_project_or_404),
+    db: Session = Depends(get_db),
+) -> models.Conflict:
+    conflict = crud.get_conflict_by_id(db, project.id, conflict_id)
+    if conflict is None:
+        raise HTTPException(status_code=404, detail="Conflict not found")
+    return conflict
+
+
+@app.post(
+    "/review-projects/{review_project_id}/conflicts/{conflict_id}/resolve",
+    response_model=schemas.ConflictResolvedRead,
+)
+def resolve_conflict(
+    payload: schemas.ConflictResolve,
+    conflict: models.Conflict = Depends(get_conflict_or_404),
+    project: models.ReviewProject = Depends(require_owner),
+    db: Session = Depends(get_db),
+) -> models.Conflict:
+    if conflict.status != "pending":
+        raise HTTPException(status_code=409, detail="Conflict is already resolved")
+    return crud.resolve_conflict(db, conflict, payload.decision, payload.reason)
 
 
 @app.get("/review-projects/{review_project_id}/export")

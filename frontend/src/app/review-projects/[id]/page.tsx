@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 
 import { CitationsPanel } from "@/components/CitationsPanel";
+import { ConflictsPanel } from "@/components/ConflictsPanel";
 import { ExtractionFieldsPanel } from "@/components/ExtractionFieldsPanel";
 import { InvitationsPanel } from "@/components/InvitationsPanel";
 import { PossibleDuplicatesPanel } from "@/components/PossibleDuplicatesPanel";
@@ -189,6 +190,14 @@ export default function ReviewProjectDetailPage({
         onCitationsChanged={refreshProjectCounts}
         refreshToken={citationsRefreshToken}
       />
+
+      {project.review_mode === "dual" && (
+        <ConflictsPanel
+          reviewProjectId={project.id}
+          isOwner={isOwner}
+          onChanged={refreshProjectCounts}
+        />
+      )}
 
       <PossibleDuplicatesPanel reviewProjectId={project.id} onChanged={refreshProjectCounts} />
 
