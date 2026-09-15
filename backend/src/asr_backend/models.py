@@ -31,6 +31,7 @@ class ReviewProject(Base):
     )
     criteria_locked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     merge_mode: Mapped[str] = mapped_column(String, nullable=False)
+    review_mode: Mapped[str] = mapped_column(String, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC)
     )

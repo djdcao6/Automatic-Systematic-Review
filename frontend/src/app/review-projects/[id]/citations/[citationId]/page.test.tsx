@@ -44,6 +44,7 @@ describe("CitationScreeningPage", () => {
       name: "My Review",
       criteria_locked: false,
       merge_mode: "combine",
+      review_mode: "solo",
       created_at: "2026-01-01T00:00:00Z",
       criteria: {
         population: null,

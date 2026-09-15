@@ -7,7 +7,10 @@ CSV_HEADER = "title,abstract,authors,year,source,doi\n"
 
 
 def create_project(authed_client, name: str = "My Review", merge_mode: str = "combine") -> str:
-    response = authed_client.post("/review-projects", json={"name": name, "merge_mode": merge_mode})
+    response = authed_client.post(
+        "/review-projects",
+        json={"name": name, "merge_mode": merge_mode, "review_mode": "solo"},
+    )
     return response.json()["id"]
 
 

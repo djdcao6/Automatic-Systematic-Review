@@ -52,6 +52,7 @@ class Token(BaseModel):
 class ReviewProjectCreate(BaseModel):
     name: str
     merge_mode: Literal["combine", "keep_first"]
+    review_mode: Literal["solo", "dual"]
 
     @field_validator("name")
     @classmethod
@@ -86,6 +87,7 @@ class ReviewProjectRead(BaseModel):
     name: str
     criteria_locked: bool
     merge_mode: Literal["combine", "keep_first"]
+    review_mode: Literal["solo", "dual"]
     created_at: datetime
 
 

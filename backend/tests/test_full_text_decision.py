@@ -4,7 +4,7 @@ import pymupdf
 
 
 def create_project(authed_client, name: str = "My Review") -> str:
-    payload = {"name": name, "merge_mode": "combine"}
+    payload = {"name": name, "merge_mode": "combine", "review_mode": "solo"}
     return authed_client.post("/review-projects", json=payload).json()["id"]
 
 

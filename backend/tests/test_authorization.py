@@ -28,7 +28,7 @@ def other_headers(client):
 def project_id(client, owner_headers):
     return client.post(
         "/review-projects",
-        json={"name": "My Review", "merge_mode": "combine"},
+        json={"name": "My Review", "merge_mode": "combine", "review_mode": "solo"},
         headers=owner_headers,
     ).json()["id"]
 

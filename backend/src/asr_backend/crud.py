@@ -76,6 +76,7 @@ def create_review_project(
     project = models.ReviewProject(
         name=payload.name,
         merge_mode=payload.merge_mode,
+        review_mode=payload.review_mode,
         owner_reviewer_id=owner_reviewer_id,
     )
     db.add(project)

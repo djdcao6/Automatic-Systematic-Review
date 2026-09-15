@@ -18,17 +18,21 @@ export type AuthToken = {
 
 export type MergeMode = "combine" | "keep_first";
 
+export type ReviewMode = "solo" | "dual";
+
 export type ReviewProject = {
   id: string;
   name: string;
   criteria_locked: boolean;
   merge_mode: MergeMode;
+  review_mode: ReviewMode;
   created_at: string;
 };
 
 export type ReviewProjectInput = {
   name: string;
   merge_mode: MergeMode;
+  review_mode: ReviewMode;
 };
 
 export type Criteria = {

@@ -14,6 +14,7 @@ const baseProject = {
   name: "My Review",
   criteria_locked: false,
   merge_mode: "combine" as const,
+  review_mode: "solo" as const,
   created_at: "2026-01-01T00:00:00Z",
   citations_needing_decision: 0,
 };
@@ -35,6 +36,18 @@ describe("ReviewProjectDetailPage", () => {
     mockedApi.listCitations.mockResolvedValue([]);
     mockedApi.listExtractionFields.mockResolvedValue([]);
     mockedApi.listPossibleDuplicates.mockResolvedValue([]);
+  });
+
+  it("displays the review project's Review Mode", async () => {
+    mockedApi.getReviewProject.mockResolvedValue({
+      ...baseProject,
+      review_mode: "dual",
+      criteria: null,
+    });
+
+    renderPage();
+
+    expect(await screen.findByText(/review mode: dual/i)).toBeInTheDocument();
   });
 
   it("shows previously saved criteria", async () => {

@@ -123,6 +123,7 @@ export default function ReviewProjectDetailPage({
   return (
     <main>
       <h1>{project.name}</h1>
+      <p>Review Mode: {project.review_mode}</p>
       <p>{project.citations_needing_decision} citation(s) still need a decision</p>
       <button type="button" onClick={handleExport}>
         Export CSV
