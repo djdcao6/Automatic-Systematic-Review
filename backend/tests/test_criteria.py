@@ -5,30 +5,30 @@ from conftest import TestSessionLocal
 from asr_backend import crud, models, schemas
 
 
-def create_project(client, name: str = "My Review") -> str:
-    response = client.post("/review-projects", json={"name": name, "merge_mode": "combine"})
+def create_project(authed_client, name: str = "My Review") -> str:
+    response = authed_client.post("/review-projects", json={"name": name, "merge_mode": "combine"})
     return response.json()["id"]
 
 
-def test_get_review_project_not_found(client):
-    response = client.get("/review-projects/00000000-0000-0000-0000-000000000000")
+def test_get_review_project_not_found(authed_client):
+    response = authed_client.get("/review-projects/00000000-0000-0000-0000-000000000000")
 
     assert response.status_code == 404
 
 
-def test_new_review_project_has_no_criteria(client):
-    project_id = create_project(client)
+def test_new_review_project_has_no_criteria(authed_client):
+    project_id = create_project(authed_client)
 
-    response = client.get(f"/review-projects/{project_id}")
+    response = authed_client.get(f"/review-projects/{project_id}")
 
     assert response.status_code == 200
     assert response.json()["criteria"] is None
 
 
-def test_save_criteria_with_all_pico_fields_blank(client):
-    project_id = create_project(client)
+def test_save_criteria_with_all_pico_fields_blank(authed_client):
+    project_id = create_project(authed_client)
 
-    response = client.put(
+    response = authed_client.put(
         f"/review-projects/{project_id}/criteria",
         json={
             "exclusion_rules": ["Non-English", "Case reports"],
@@ -46,10 +46,10 @@ def test_save_criteria_with_all_pico_fields_blank(client):
     assert body["notes"] == "Focus on adult populations only."
 
 
-def test_save_and_retrieve_full_criteria(client):
-    project_id = create_project(client)
+def test_save_and_retrieve_full_criteria(authed_client):
+    project_id = create_project(authed_client)
 
-    client.put(
+    authed_client.put(
         f"/review-projects/{project_id}/criteria",
         json={
             "population": "Adults with type 2 diabetes",
@@ -61,7 +61,7 @@ def test_save_and_retrieve_full_criteria(client):
         },
     )
 
-    response = client.get(f"/review-projects/{project_id}")
+    response = authed_client.get(f"/review-projects/{project_id}")
 
     assert response.status_code == 200
     criteria = response.json()["criteria"]
@@ -73,14 +73,14 @@ def test_save_and_retrieve_full_criteria(client):
     assert criteria["notes"] == "Exclude conference abstracts."
 
 
-def test_saving_criteria_again_replaces_previous_values(client):
-    project_id = create_project(client)
+def test_saving_criteria_again_replaces_previous_values(authed_client):
+    project_id = create_project(authed_client)
 
-    client.put(
+    authed_client.put(
         f"/review-projects/{project_id}/criteria",
         json={"population": "First draft"},
     )
-    response = client.put(
+    response = authed_client.put(
         f"/review-projects/{project_id}/criteria",
         json={"population": "Revised"},
     )
@@ -89,8 +89,8 @@ def test_saving_criteria_again_replaces_previous_values(client):
     assert response.json()["population"] == "Revised"
 
 
-def test_upsert_criteria_is_safe_when_two_sessions_race(client):
-    project_id = uuid.UUID(create_project(client))
+def test_upsert_criteria_is_safe_when_two_sessions_race(authed_client):
+    project_id = uuid.UUID(create_project(authed_client))
 
     session_a = TestSessionLocal()
     session_b = TestSessionLocal()
@@ -113,8 +113,8 @@ def test_upsert_criteria_is_safe_when_two_sessions_race(client):
         session_b.close()
 
 
-def test_save_criteria_for_missing_review_project(client):
-    response = client.put(
+def test_save_criteria_for_missing_review_project(authed_client):
+    response = authed_client.put(
         "/review-projects/00000000-0000-0000-0000-000000000000/criteria",
         json={"population": "Adults"},
     )

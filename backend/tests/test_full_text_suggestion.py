@@ -7,13 +7,13 @@ from asr_backend.ai_suggestion import SuggestionGenerationError, SuggestionResul
 from asr_backend.main import app
 
 
-def create_project(client, name: str = "My Review") -> str:
+def create_project(authed_client, name: str = "My Review") -> str:
     payload = {"name": name, "merge_mode": "combine"}
-    return client.post("/review-projects", json=payload).json()["id"]
+    return authed_client.post("/review-projects", json=payload).json()["id"]
 
 
-def create_citation(client, project_id: str, title: str = "Study A") -> str:
-    client.post(
+def create_citation(authed_client, project_id: str, title: str = "Study A") -> str:
+    authed_client.post(
         f"/review-projects/{project_id}/citations",
         files={
             "file": (
@@ -23,12 +23,12 @@ def create_citation(client, project_id: str, title: str = "Study A") -> str:
             )
         },
     )
-    citations = client.get(f"/review-projects/{project_id}/citations").json()
+    citations = authed_client.get(f"/review-projects/{project_id}/citations").json()
     return next(c["id"] for c in citations if c["title"] == title)
 
 
-def create_extraction_field(client, project_id: str, name: str = "Sample size") -> dict:
-    return client.post(
+def create_extraction_field(authed_client, project_id: str, name: str = "Sample size") -> dict:
+    return authed_client.post(
         f"/review-projects/{project_id}/extraction-fields",
         json={"name": name, "description": None},
     ).json()
@@ -41,15 +41,15 @@ def make_pdf(text: str = "Sample paper text") -> bytes:
     return doc.tobytes()
 
 
-def upload_full_text(client, project_id: str, citation_id: str, content: bytes, filename="paper.pdf"):
-    return client.post(
+def upload_full_text(authed_client, project_id: str, citation_id: str, content: bytes, filename="paper.pdf"):
+    return authed_client.post(
         f"/review-projects/{project_id}/citations/{citation_id}/full-text",
         files={"file": (filename, io.BytesIO(content), "application/pdf")},
     )
 
 
-def get_detail(client, project_id: str, citation_id: str) -> dict:
-    return client.get(f"/review-projects/{project_id}/citations/{citation_id}").json()
+def get_detail(authed_client, project_id: str, citation_id: str) -> dict:
+    return authed_client.get(f"/review-projects/{project_id}/citations/{citation_id}").json()
 
 
 class _FakeSuggester:
@@ -92,12 +92,12 @@ def override_suggester():
     app.dependency_overrides.pop(get_ai_suggester, None)
 
 
-def test_full_text_suggestion_generated_and_persisted_on_first_view(client, override_suggester):
-    project_id = create_project(client)
-    citation_id = create_citation(client, project_id)
-    upload_full_text(client, project_id, citation_id, make_pdf())
+def test_full_text_suggestion_generated_and_persisted_on_first_view(authed_client, override_suggester):
+    project_id = create_project(authed_client)
+    citation_id = create_citation(authed_client, project_id)
+    upload_full_text(authed_client, project_id, citation_id, make_pdf())
 
-    detail = get_detail(client, project_id, citation_id)
+    detail = get_detail(authed_client, project_id, citation_id)
 
     assert detail["full_text_suggestion"]["decision"] == "include"
     assert detail["full_text_suggestion"]["reason"] == "Meets all criteria."
@@ -105,14 +105,14 @@ def test_full_text_suggestion_generated_and_persisted_on_first_view(client, over
     assert override_suggester.full_text_calls == 1
 
 
-def test_full_text_suggestion_includes_active_extraction_field_values(client, override_suggester):
-    project_id = create_project(client)
-    field = create_extraction_field(client, project_id, name="Sample size")
-    citation_id = create_citation(client, project_id)
-    upload_full_text(client, project_id, citation_id, make_pdf())
+def test_full_text_suggestion_includes_active_extraction_field_values(authed_client, override_suggester):
+    project_id = create_project(authed_client)
+    field = create_extraction_field(authed_client, project_id, name="Sample size")
+    citation_id = create_citation(authed_client, project_id)
+    upload_full_text(authed_client, project_id, citation_id, make_pdf())
     override_suggester.extraction_values = {field["id"]: "120 participants"}
 
-    detail = get_detail(client, project_id, citation_id)
+    detail = get_detail(authed_client, project_id, citation_id)
 
     values = detail["full_text_suggestion"]["extraction_values"]
     assert values == [
@@ -125,55 +125,55 @@ def test_full_text_suggestion_includes_active_extraction_field_values(client, ov
 
 
 def test_full_text_suggestion_keeps_values_distinct_for_same_named_fields(
-    client, override_suggester
+    authed_client, override_suggester
 ):
-    project_id = create_project(client)
-    field_a = create_extraction_field(client, project_id, name="Duration")
-    field_b = create_extraction_field(client, project_id, name="Duration")
-    citation_id = create_citation(client, project_id)
-    upload_full_text(client, project_id, citation_id, make_pdf())
+    project_id = create_project(authed_client)
+    field_a = create_extraction_field(authed_client, project_id, name="Duration")
+    field_b = create_extraction_field(authed_client, project_id, name="Duration")
+    citation_id = create_citation(authed_client, project_id)
+    upload_full_text(authed_client, project_id, citation_id, make_pdf())
     override_suggester.extraction_values = {
         field_a["id"]: "6 months",
         field_b["id"]: "12 months",
     }
 
-    detail = get_detail(client, project_id, citation_id)
+    detail = get_detail(authed_client, project_id, citation_id)
 
     values = {v["extraction_field_id"]: v["value"] for v in detail["full_text_suggestion"]["extraction_values"]}
     assert values == {field_a["id"]: "6 months", field_b["id"]: "12 months"}
 
 
-def test_full_text_suggestion_is_reused_on_second_view(client, override_suggester):
-    project_id = create_project(client)
-    citation_id = create_citation(client, project_id)
-    upload_full_text(client, project_id, citation_id, make_pdf())
+def test_full_text_suggestion_is_reused_on_second_view(authed_client, override_suggester):
+    project_id = create_project(authed_client)
+    citation_id = create_citation(authed_client, project_id)
+    upload_full_text(authed_client, project_id, citation_id, make_pdf())
 
-    get_detail(client, project_id, citation_id)
-    get_detail(client, project_id, citation_id)
+    get_detail(authed_client, project_id, citation_id)
+    get_detail(authed_client, project_id, citation_id)
 
     assert override_suggester.full_text_calls == 1
 
 
-def test_full_text_suggestion_unavailable_without_a_full_text(client, override_suggester):
-    project_id = create_project(client)
-    citation_id = create_citation(client, project_id)
+def test_full_text_suggestion_unavailable_without_a_full_text(authed_client, override_suggester):
+    project_id = create_project(authed_client)
+    citation_id = create_citation(authed_client, project_id)
 
-    detail = get_detail(client, project_id, citation_id)
+    detail = get_detail(authed_client, project_id, citation_id)
 
     assert detail["full_text_suggestion"] is None
     assert detail["full_text_suggestion_unavailable_reason"] == "no_full_text"
     assert override_suggester.full_text_calls == 0
 
 
-def test_full_text_suggestion_unavailable_when_parse_failed(client, override_suggester):
-    project_id = create_project(client)
-    citation_id = create_citation(client, project_id)
+def test_full_text_suggestion_unavailable_when_parse_failed(authed_client, override_suggester):
+    project_id = create_project(authed_client)
+    citation_id = create_citation(authed_client, project_id)
     # An all-image PDF page has no extractable text layer, so parsing fails.
     doc = pymupdf.open()
     doc.new_page()
-    upload_full_text(client, project_id, citation_id, doc.tobytes())
+    upload_full_text(authed_client, project_id, citation_id, doc.tobytes())
 
-    detail = get_detail(client, project_id, citation_id)
+    detail = get_detail(authed_client, project_id, citation_id)
 
     assert detail["full_text"]["parse_status"] == "parse_failed"
     assert detail["full_text_suggestion"] is None
@@ -181,43 +181,43 @@ def test_full_text_suggestion_unavailable_when_parse_failed(client, override_sug
     assert override_suggester.full_text_calls == 0
 
 
-def test_full_text_suggestion_generation_failure_reports_reason(client):
-    project_id = create_project(client)
-    citation_id = create_citation(client, project_id)
-    upload_full_text(client, project_id, citation_id, make_pdf())
+def test_full_text_suggestion_generation_failure_reports_reason(authed_client):
+    project_id = create_project(authed_client)
+    citation_id = create_citation(authed_client, project_id)
+    upload_full_text(authed_client, project_id, citation_id, make_pdf())
     app.dependency_overrides[get_ai_suggester] = lambda: _FakeSuggester(
         error=SuggestionGenerationError("boom")
     )
 
-    detail = get_detail(client, project_id, citation_id)
+    detail = get_detail(authed_client, project_id, citation_id)
     app.dependency_overrides.pop(get_ai_suggester, None)
 
     assert detail["full_text_suggestion"] is None
     assert detail["full_text_suggestion_unavailable_reason"] == "generation_failed"
 
 
-def test_replacing_the_pdf_invalidates_and_regenerates_the_suggestion(client, override_suggester):
-    project_id = create_project(client)
-    citation_id = create_citation(client, project_id)
-    upload_full_text(client, project_id, citation_id, make_pdf("First version"))
-    get_detail(client, project_id, citation_id)
+def test_replacing_the_pdf_invalidates_and_regenerates_the_suggestion(authed_client, override_suggester):
+    project_id = create_project(authed_client)
+    citation_id = create_citation(authed_client, project_id)
+    upload_full_text(authed_client, project_id, citation_id, make_pdf("First version"))
+    get_detail(authed_client, project_id, citation_id)
     assert override_suggester.full_text_calls == 1
 
     override_suggester.decision = "exclude"
     override_suggester.reason = "Wrong study design after re-read."
-    upload_full_text(client, project_id, citation_id, make_pdf("Second version"))
+    upload_full_text(authed_client, project_id, citation_id, make_pdf("Second version"))
 
-    detail = get_detail(client, project_id, citation_id)
+    detail = get_detail(authed_client, project_id, citation_id)
 
     assert override_suggester.full_text_calls == 2
     assert detail["full_text_suggestion"]["decision"] == "exclude"
     assert detail["full_text_suggestion"]["reason"] == "Wrong study design after re-read."
 
 
-def test_full_text_suggestion_for_missing_citation_returns_404(client, override_suggester):
-    project_id = create_project(client)
+def test_full_text_suggestion_for_missing_citation_returns_404(authed_client, override_suggester):
+    project_id = create_project(authed_client)
 
-    response = client.get(
+    response = authed_client.get(
         f"/review-projects/{project_id}/citations/00000000-0000-0000-0000-000000000000"
     )
 

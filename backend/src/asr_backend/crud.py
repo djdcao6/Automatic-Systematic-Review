@@ -71,17 +71,28 @@ def upsert_criteria(
 
 
 def create_review_project(
-    db: Session, payload: schemas.ReviewProjectCreate
+    db: Session, owner_reviewer_id: uuid.UUID, payload: schemas.ReviewProjectCreate
 ) -> models.ReviewProject:
-    project = models.ReviewProject(name=payload.name, merge_mode=payload.merge_mode)
+    project = models.ReviewProject(
+        name=payload.name,
+        merge_mode=payload.merge_mode,
+        owner_reviewer_id=owner_reviewer_id,
+    )
     db.add(project)
     db.commit()
     db.refresh(project)
     return project
 
 
-def list_review_projects(db: Session) -> list[models.ReviewProject]:
-    return list(db.query(models.ReviewProject).order_by(models.ReviewProject.created_at).all())
+def list_review_projects(
+    db: Session, owner_reviewer_id: uuid.UUID
+) -> list[models.ReviewProject]:
+    return list(
+        db.query(models.ReviewProject)
+        .filter(models.ReviewProject.owner_reviewer_id == owner_reviewer_id)
+        .order_by(models.ReviewProject.created_at)
+        .all()
+    )
 
 
 def create_extraction_field(

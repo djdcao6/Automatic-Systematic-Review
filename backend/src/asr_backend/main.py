@@ -72,22 +72,31 @@ def get_me(
     status_code=201,
 )
 def create_review_project(
-    payload: schemas.ReviewProjectCreate, db: Session = Depends(get_db)
+    payload: schemas.ReviewProjectCreate,
+    reviewer: models.Reviewer = Depends(auth.get_current_reviewer),
+    db: Session = Depends(get_db),
 ) -> models.ReviewProject:
-    return crud.create_review_project(db, payload)
+    return crud.create_review_project(db, reviewer.id, payload)
 
 
 @app.get("/review-projects", response_model=list[schemas.ReviewProjectRead])
-def list_review_projects(db: Session = Depends(get_db)) -> list[models.ReviewProject]:
-    return crud.list_review_projects(db)
+def list_review_projects(
+    reviewer: models.Reviewer = Depends(auth.get_current_reviewer),
+    db: Session = Depends(get_db),
+) -> list[models.ReviewProject]:
+    return crud.list_review_projects(db, reviewer.id)
 
 
 def get_review_project_or_404(
-    review_project_id: uuid.UUID, db: Session = Depends(get_db)
+    review_project_id: uuid.UUID,
+    reviewer: models.Reviewer = Depends(auth.get_current_reviewer),
+    db: Session = Depends(get_db),
 ) -> models.ReviewProject:
     project = crud.get_review_project(db, review_project_id)
     if project is None:
         raise HTTPException(status_code=404, detail="Review project not found")
+    if project.owner_reviewer_id != reviewer.id:
+        raise HTTPException(status_code=403, detail="Not authorized for this review project")
     return project
 
 

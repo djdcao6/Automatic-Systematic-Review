@@ -8,20 +8,20 @@ from asr_backend.citation_import import ParsedCitation
 CSV_HEADER = "title,abstract,authors,year,source,doi\n"
 
 
-def create_project(client, name: str = "My Review", merge_mode: str = "combine") -> str:
-    response = client.post("/review-projects", json={"name": name, "merge_mode": merge_mode})
+def create_project(authed_client, name: str = "My Review", merge_mode: str = "combine") -> str:
+    response = authed_client.post("/review-projects", json={"name": name, "merge_mode": merge_mode})
     return response.json()["id"]
 
 
-def upload_csv(client, project_id: str, content: str):
-    return client.post(
+def upload_csv(authed_client, project_id: str, content: str):
+    return authed_client.post(
         f"/review-projects/{project_id}/citations",
         files={"file": ("citations.csv", content, "text/csv")},
     )
 
 
-def list_citations(client, project_id: str) -> list[dict]:
-    return client.get(f"/review-projects/{project_id}/citations").json()
+def list_citations(authed_client, project_id: str) -> list[dict]:
+    return authed_client.get(f"/review-projects/{project_id}/citations").json()
 
 
 def row(title: str, abstract: str = "", authors: str = "Author", year: str = "2020",
@@ -36,11 +36,11 @@ def parse_export(response) -> list[dict[str, str]]:
 # --- Matching: within batch, DOI, and title fallback ---
 
 
-def test_within_batch_duplicate_rows_merge_automatically(client):
-    project_id = create_project(client)
+def test_within_batch_duplicate_rows_merge_automatically(authed_client):
+    project_id = create_project(authed_client)
 
     response = upload_csv(
-        client,
+        authed_client,
         project_id,
         CSV_HEADER
         + row("Dup Study", abstract="First row's abstract")
@@ -48,61 +48,61 @@ def test_within_batch_duplicate_rows_merge_automatically(client):
     )
 
     assert response.json()["created"] == 2
-    citations = list_citations(client, project_id)
+    citations = list_citations(authed_client, project_id)
     assert len(citations) == 1
     # The earlier-created (first) row survives; the second is archived into it.
     assert citations[0]["abstract"] == "First row's abstract"
 
 
-def test_doi_match_merges_across_uploads_even_with_different_titles(client):
-    project_id = create_project(client)
+def test_doi_match_merges_across_uploads_even_with_different_titles(authed_client):
+    project_id = create_project(authed_client)
 
-    upload_csv(client, project_id, CSV_HEADER + row("First Title", doi="10.1/x"))
-    upload_csv(client, project_id, CSV_HEADER + row("Totally Different Title", doi="10.1/x"))
+    upload_csv(authed_client, project_id, CSV_HEADER + row("First Title", doi="10.1/x"))
+    upload_csv(authed_client, project_id, CSV_HEADER + row("Totally Different Title", doi="10.1/x"))
 
-    citations = list_citations(client, project_id)
+    citations = list_citations(authed_client, project_id)
     assert len(citations) == 1
     assert citations[0]["title"] == "First Title"
 
 
-def test_title_fallback_match_merges_when_neither_side_has_doi(client):
-    project_id = create_project(client)
+def test_title_fallback_match_merges_when_neither_side_has_doi(authed_client):
+    project_id = create_project(authed_client)
 
-    upload_csv(client, project_id, CSV_HEADER + row("Same Study"))
-    upload_csv(client, project_id, CSV_HEADER + row("  SAME Study!!  "))
+    upload_csv(authed_client, project_id, CSV_HEADER + row("Same Study"))
+    upload_csv(authed_client, project_id, CSV_HEADER + row("  SAME Study!!  "))
 
-    citations = list_citations(client, project_id)
+    citations = list_citations(authed_client, project_id)
     assert len(citations) == 1
 
 
-def test_differing_dois_do_not_match_even_with_identical_titles(client):
-    project_id = create_project(client)
+def test_differing_dois_do_not_match_even_with_identical_titles(authed_client):
+    project_id = create_project(authed_client)
 
-    upload_csv(client, project_id, CSV_HEADER + row("Same Study", doi="10.1/a"))
-    upload_csv(client, project_id, CSV_HEADER + row("Same Study", doi="10.1/b"))
+    upload_csv(authed_client, project_id, CSV_HEADER + row("Same Study", doi="10.1/a"))
+    upload_csv(authed_client, project_id, CSV_HEADER + row("Same Study", doi="10.1/b"))
 
-    citations = list_citations(client, project_id)
+    citations = list_citations(authed_client, project_id)
     assert len(citations) == 2
 
 
 # --- Merge Mode: bibliographic field handling ---
 
 
-def test_combine_mode_gap_fills_missing_fields_and_accumulates_source(client):
-    project_id = create_project(client, merge_mode="combine")
+def test_combine_mode_gap_fills_missing_fields_and_accumulates_source(authed_client):
+    project_id = create_project(authed_client, merge_mode="combine")
 
     upload_csv(
-        client,
+        authed_client,
         project_id,
         CSV_HEADER + row("Study", abstract="", year="", source="PubMed"),
     )
     upload_csv(
-        client,
+        authed_client,
         project_id,
         CSV_HEADER + row("Study", abstract="An abstract", year="2021", source="Embase"),
     )
 
-    citations = list_citations(client, project_id)
+    citations = list_citations(authed_client, project_id)
     assert len(citations) == 1
     survivor = citations[0]
     assert survivor["abstract"] == "An abstract"
@@ -110,21 +110,21 @@ def test_combine_mode_gap_fills_missing_fields_and_accumulates_source(client):
     assert survivor["source"] == ["PubMed", "Embase"]
 
 
-def test_keep_first_mode_leaves_survivor_bibliographic_fields_untouched(client):
-    project_id = create_project(client, merge_mode="keep_first")
+def test_keep_first_mode_leaves_survivor_bibliographic_fields_untouched(authed_client):
+    project_id = create_project(authed_client, merge_mode="keep_first")
 
     upload_csv(
-        client,
+        authed_client,
         project_id,
         CSV_HEADER + row("Study", abstract="", year="", source="PubMed"),
     )
     upload_csv(
-        client,
+        authed_client,
         project_id,
         CSV_HEADER + row("Study", abstract="An abstract", year="2021", source="Embase"),
     )
 
-    citations = list_citations(client, project_id)
+    citations = list_citations(authed_client, project_id)
     assert len(citations) == 1
     survivor = citations[0]
     assert survivor["abstract"] is None
@@ -135,18 +135,18 @@ def test_keep_first_mode_leaves_survivor_bibliographic_fields_untouched(client):
 # --- Archived Citations are excluded from list, count, and export ---
 
 
-def test_archived_citations_excluded_from_list_count_and_export(client):
-    project_id = create_project(client)
+def test_archived_citations_excluded_from_list_count_and_export(authed_client):
+    project_id = create_project(authed_client)
 
-    upload_csv(client, project_id, CSV_HEADER + row("Dup Study") + row("Dup Study"))
+    upload_csv(authed_client, project_id, CSV_HEADER + row("Dup Study") + row("Dup Study"))
 
-    citations = list_citations(client, project_id)
+    citations = list_citations(authed_client, project_id)
     assert len(citations) == 1
 
-    detail = client.get(f"/review-projects/{project_id}").json()
+    detail = authed_client.get(f"/review-projects/{project_id}").json()
     assert detail["citations_needing_decision"] == 1
 
-    export_rows = parse_export(client.get(f"/review-projects/{project_id}/export"))
+    export_rows = parse_export(authed_client.get(f"/review-projects/{project_id}/export"))
     assert len(export_rows) == 1
 
 
@@ -181,10 +181,10 @@ def _seed_unmatched_citation(db_session, project_id: str, title: str, doi: str |
     return citation
 
 
-def test_one_sided_transfer_of_screening_decision(client, db_session):
-    project_id = create_project(client)
-    upload_csv(client, project_id, CSV_HEADER + row("Study", doi="10.1/x"))
-    survivor_id = list_citations(client, project_id)[0]["id"]
+def test_one_sided_transfer_of_screening_decision(authed_client, db_session):
+    project_id = create_project(authed_client)
+    upload_csv(authed_client, project_id, CSV_HEADER + row("Study", doi="10.1/x"))
+    survivor_id = list_citations(authed_client, project_id)[0]["id"]
 
     loser = _seed_unmatched_citation(db_session, project_id, "Study", doi="10.1/x")
     project = _get_project(db_session, project_id)
@@ -208,10 +208,10 @@ def test_one_sided_transfer_of_screening_decision(client, db_session):
     assert citation.merged_into_citation_id == uuid.UUID(survivor_id)
 
 
-def test_one_sided_transfer_of_full_text_decision(client, db_session):
-    project_id = create_project(client)
-    upload_csv(client, project_id, CSV_HEADER + row("Study", doi="10.1/x"))
-    survivor_id = uuid.UUID(list_citations(client, project_id)[0]["id"])
+def test_one_sided_transfer_of_full_text_decision(authed_client, db_session):
+    project_id = create_project(authed_client)
+    upload_csv(authed_client, project_id, CSV_HEADER + row("Study", doi="10.1/x"))
+    survivor_id = uuid.UUID(list_citations(authed_client, project_id)[0]["id"])
 
     loser = _seed_unmatched_citation(db_session, project_id, "Study", doi="10.1/x")
     project = _get_project(db_session, project_id)
@@ -242,14 +242,14 @@ def test_one_sided_transfer_of_full_text_decision(client, db_session):
     assert loser_decision.decision == "include"
 
 
-def test_one_sided_transfer_of_extraction_value(client, db_session):
-    project_id = create_project(client)
-    field = client.post(
+def test_one_sided_transfer_of_extraction_value(authed_client, db_session):
+    project_id = create_project(authed_client)
+    field = authed_client.post(
         f"/review-projects/{project_id}/extraction-fields",
         json={"name": "Sample size", "description": None},
     ).json()
-    upload_csv(client, project_id, CSV_HEADER + row("Study", doi="10.1/x"))
-    survivor_id = uuid.UUID(list_citations(client, project_id)[0]["id"])
+    upload_csv(authed_client, project_id, CSV_HEADER + row("Study", doi="10.1/x"))
+    survivor_id = uuid.UUID(list_citations(authed_client, project_id)[0]["id"])
 
     loser = _seed_unmatched_citation(db_session, project_id, "Study", doi="10.1/x")
     project = _get_project(db_session, project_id)
@@ -268,11 +268,11 @@ def test_one_sided_transfer_of_extraction_value(client, db_session):
     assert loser_values[0].value == "120 patients"
 
 
-def test_two_sided_conflicting_screening_decision_is_held_as_possible_duplicate(client, db_session):
-    project_id = create_project(client)
-    upload_csv(client, project_id, CSV_HEADER + row("Study", doi="10.1/x"))
-    survivor_id = list_citations(client, project_id)[0]["id"]
-    client.post(
+def test_two_sided_conflicting_screening_decision_is_held_as_possible_duplicate(authed_client, db_session):
+    project_id = create_project(authed_client)
+    upload_csv(authed_client, project_id, CSV_HEADER + row("Study", doi="10.1/x"))
+    survivor_id = list_citations(authed_client, project_id)[0]["id"]
+    authed_client.post(
         f"/review-projects/{project_id}/citations/{survivor_id}/decision",
         json={"decision": "include"},
     )
@@ -285,7 +285,7 @@ def test_two_sided_conflicting_screening_decision_is_held_as_possible_duplicate(
 
     duplicates.process_upload_matches(db_session, project, [loser])
 
-    citations = list_citations(client, project_id)
+    citations = list_citations(authed_client, project_id)
     assert len(citations) == 2
 
     survivor = crud.get_citation(db_session, project.id, uuid.UUID(survivor_id))
@@ -294,7 +294,7 @@ def test_two_sided_conflicting_screening_decision_is_held_as_possible_duplicate(
     assert loser_after.archived is False
     assert loser_after.screening_decision.decision == "exclude"
 
-    possible_duplicates = client.get(f"/review-projects/{project_id}/possible-duplicates").json()
+    possible_duplicates = authed_client.get(f"/review-projects/{project_id}/possible-duplicates").json()
     assert len(possible_duplicates) == 1
     pd = possible_duplicates[0]
     assert pd["survivor"]["id"] == survivor_id

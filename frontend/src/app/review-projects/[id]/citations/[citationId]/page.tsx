@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
 
 import {
-  fullTextFileUrl,
+  fetchFullTextFile,
   getCitation,
   getReviewProject,
   recordExtractionValue,
@@ -51,6 +51,7 @@ export default function CitationScreeningPage({
   const [saved, setSaved] = useState(false);
   const [fullTextError, setFullTextError] = useState<string | null>(null);
   const [uploadingFullText, setUploadingFullText] = useState(false);
+  const [viewFullTextError, setViewFullTextError] = useState<string | null>(null);
   const [exclusionRules, setExclusionRules] = useState<string[]>([]);
   const [ftDecision, setFtDecision] = useState<Decision>("maybe");
   const [ftReason, setFtReason] = useState("");
@@ -175,6 +176,18 @@ export default function CitationScreeningPage({
     }
   }
 
+  async function handleViewFullText() {
+    if (!reviewProjectId || !citationId) return;
+    setViewFullTextError(null);
+    try {
+      const blob = await fetchFullTextFile(reviewProjectId, citationId);
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank", "noreferrer");
+    } catch {
+      setViewFullTextError("Failed to load Full Text.");
+    }
+  }
+
   async function handleFullTextChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -234,15 +247,12 @@ export default function CitationScreeningPage({
             <p>
               {citation.full_text.original_filename}{" "}
               {reviewProjectId && citationId && (
-                <a
-                  href={fullTextFileUrl(reviewProjectId, citationId)}
-                  target="_blank"
-                  rel="noreferrer"
-                >
+                <button type="button" onClick={handleViewFullText}>
                   View / Download
-                </a>
+                </button>
               )}
             </p>
+            {viewFullTextError && <p role="alert">{viewFullTextError}</p>}
             {citation.full_text.parse_status === "parse_failed" && (
               <p role="alert">
                 Could not extract text from this PDF. Enter extracted data manually.

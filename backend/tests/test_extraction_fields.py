@@ -1,22 +1,22 @@
-def create_project(client, name: str = "My Review") -> str:
-    response = client.post("/review-projects", json={"name": name, "merge_mode": "combine"})
+def create_project(authed_client, name: str = "My Review") -> str:
+    response = authed_client.post("/review-projects", json={"name": name, "merge_mode": "combine"})
     return response.json()["id"]
 
 
 def create_field(
-    client, project_id: str, name: str = "Sample size", description: str = "Number of participants"
+    authed_client, project_id: str, name: str = "Sample size", description: str = "Number of participants"
 ) -> dict:
-    response = client.post(
+    response = authed_client.post(
         f"/review-projects/{project_id}/extraction-fields",
         json={"name": name, "description": description},
     )
     return response.json()
 
 
-def test_create_extraction_field(client):
-    project_id = create_project(client)
+def test_create_extraction_field(authed_client):
+    project_id = create_project(authed_client)
 
-    response = client.post(
+    response = authed_client.post(
         f"/review-projects/{project_id}/extraction-fields",
         json={"name": "Sample size", "description": "Number of participants"},
     )
@@ -29,10 +29,10 @@ def test_create_extraction_field(client):
     assert "id" in body
 
 
-def test_create_extraction_field_rejects_blank_name(client):
-    project_id = create_project(client)
+def test_create_extraction_field_rejects_blank_name(authed_client):
+    project_id = create_project(authed_client)
 
-    response = client.post(
+    response = authed_client.post(
         f"/review-projects/{project_id}/extraction-fields",
         json={"name": "   ", "description": "Number of participants"},
     )
@@ -40,8 +40,8 @@ def test_create_extraction_field_rejects_blank_name(client):
     assert response.status_code == 422
 
 
-def test_create_extraction_field_for_missing_review_project_returns_404(client):
-    response = client.post(
+def test_create_extraction_field_for_missing_review_project_returns_404(authed_client):
+    response = authed_client.post(
         "/review-projects/00000000-0000-0000-0000-000000000000/extraction-fields",
         json={"name": "Sample size", "description": "Number of participants"},
     )
@@ -49,34 +49,34 @@ def test_create_extraction_field_for_missing_review_project_returns_404(client):
     assert response.status_code == 404
 
 
-def test_list_extraction_fields(client):
-    project_id = create_project(client)
-    create_field(client, project_id, name="Sample size")
-    create_field(client, project_id, name="Methodology")
+def test_list_extraction_fields(authed_client):
+    project_id = create_project(authed_client)
+    create_field(authed_client, project_id, name="Sample size")
+    create_field(authed_client, project_id, name="Methodology")
 
-    response = client.get(f"/review-projects/{project_id}/extraction-fields")
+    response = authed_client.get(f"/review-projects/{project_id}/extraction-fields")
 
     assert response.status_code == 200
     names = [field["name"] for field in response.json()]
     assert names == ["Sample size", "Methodology"]
 
 
-def test_list_extraction_fields_is_scoped_to_review_project(client):
-    project_a = create_project(client, "A")
-    project_b = create_project(client, "B")
-    create_field(client, project_a, name="Only in A")
+def test_list_extraction_fields_is_scoped_to_review_project(authed_client):
+    project_a = create_project(authed_client, "A")
+    project_b = create_project(authed_client, "B")
+    create_field(authed_client, project_a, name="Only in A")
 
-    response = client.get(f"/review-projects/{project_b}/extraction-fields")
+    response = authed_client.get(f"/review-projects/{project_b}/extraction-fields")
 
     assert response.status_code == 200
     assert response.json() == []
 
 
-def test_edit_extraction_field_name_and_description(client):
-    project_id = create_project(client)
-    field = create_field(client, project_id)
+def test_edit_extraction_field_name_and_description(authed_client):
+    project_id = create_project(authed_client)
+    field = create_field(authed_client, project_id)
 
-    response = client.put(
+    response = authed_client.put(
         f"/review-projects/{project_id}/extraction-fields/{field['id']}",
         json={"name": "Sample size (n)", "description": "Total enrolled participants"},
     )
@@ -87,11 +87,11 @@ def test_edit_extraction_field_name_and_description(client):
     assert body["description"] == "Total enrolled participants"
 
 
-def test_edit_extraction_field_rejects_blank_name(client):
-    project_id = create_project(client)
-    field = create_field(client, project_id)
+def test_edit_extraction_field_rejects_blank_name(authed_client):
+    project_id = create_project(authed_client)
+    field = create_field(authed_client, project_id)
 
-    response = client.put(
+    response = authed_client.put(
         f"/review-projects/{project_id}/extraction-fields/{field['id']}",
         json={"name": "   ", "description": "Total enrolled participants"},
     )
@@ -99,10 +99,10 @@ def test_edit_extraction_field_rejects_blank_name(client):
     assert response.status_code == 422
 
 
-def test_edit_missing_extraction_field_returns_404(client):
-    project_id = create_project(client)
+def test_edit_missing_extraction_field_returns_404(authed_client):
+    project_id = create_project(authed_client)
 
-    response = client.put(
+    response = authed_client.put(
         f"/review-projects/{project_id}/extraction-fields/00000000-0000-0000-0000-000000000000",
         json={"name": "Sample size", "description": "Number of participants"},
     )
@@ -110,29 +110,29 @@ def test_edit_missing_extraction_field_returns_404(client):
     assert response.status_code == 404
 
 
-def test_archive_extraction_field_hides_it_from_the_active_list(client):
-    project_id = create_project(client)
-    field = create_field(client, project_id, name="Sample size")
-    create_field(client, project_id, name="Methodology")
+def test_archive_extraction_field_hides_it_from_the_active_list(authed_client):
+    project_id = create_project(authed_client)
+    field = create_field(authed_client, project_id, name="Sample size")
+    create_field(authed_client, project_id, name="Methodology")
 
-    response = client.post(
+    response = authed_client.post(
         f"/review-projects/{project_id}/extraction-fields/{field['id']}/archive"
     )
 
     assert response.status_code == 200
     assert response.json()["archived"] is True
 
-    active = client.get(f"/review-projects/{project_id}/extraction-fields").json()
+    active = authed_client.get(f"/review-projects/{project_id}/extraction-fields").json()
     names = [f["name"] for f in active]
     assert names == ["Methodology"]
 
 
-def test_archiving_a_field_preserves_its_name_and_description(client):
-    project_id = create_project(client)
-    field = create_field(client, project_id, name="Sample size", description="n participants")
+def test_archiving_a_field_preserves_its_name_and_description(authed_client):
+    project_id = create_project(authed_client)
+    field = create_field(authed_client, project_id, name="Sample size", description="n participants")
 
-    client.post(f"/review-projects/{project_id}/extraction-fields/{field['id']}/archive")
-    edited = client.put(
+    authed_client.post(f"/review-projects/{project_id}/extraction-fields/{field['id']}/archive")
+    edited = authed_client.put(
         f"/review-projects/{project_id}/extraction-fields/{field['id']}",
         json={"name": "Sample size", "description": "n participants"},
     )
@@ -145,12 +145,12 @@ def test_archiving_a_field_preserves_its_name_and_description(client):
     assert edited.json()["archived"] is True
 
 
-def test_archiving_an_already_archived_field_is_idempotent(client):
-    project_id = create_project(client)
-    field = create_field(client, project_id)
+def test_archiving_an_already_archived_field_is_idempotent(authed_client):
+    project_id = create_project(authed_client)
+    field = create_field(authed_client, project_id)
 
-    client.post(f"/review-projects/{project_id}/extraction-fields/{field['id']}/archive")
-    response = client.post(
+    authed_client.post(f"/review-projects/{project_id}/extraction-fields/{field['id']}/archive")
+    response = authed_client.post(
         f"/review-projects/{project_id}/extraction-fields/{field['id']}/archive"
     )
 
@@ -158,10 +158,10 @@ def test_archiving_an_already_archived_field_is_idempotent(client):
     assert response.json()["archived"] is True
 
 
-def test_archive_missing_extraction_field_returns_404(client):
-    project_id = create_project(client)
+def test_archive_missing_extraction_field_returns_404(authed_client):
+    project_id = create_project(authed_client)
 
-    response = client.post(
+    response = authed_client.post(
         f"/review-projects/{project_id}/extraction-fields/"
         "00000000-0000-0000-0000-000000000000/archive"
     )

@@ -17,13 +17,13 @@ class _FakeSuggester:
         return SuggestionResult(decision=self.decision, reason=self.reason)
 
 
-def create_project(client, name: str = "My Review") -> str:
-    response = client.post("/review-projects", json={"name": name, "merge_mode": "combine"})
+def create_project(authed_client, name: str = "My Review") -> str:
+    response = authed_client.post("/review-projects", json={"name": name, "merge_mode": "combine"})
     return response.json()["id"]
 
 
-def upload_csv(client, project_id: str, content: str):
-    return client.post(
+def upload_csv(authed_client, project_id: str, content: str):
+    return authed_client.post(
         f"/review-projects/{project_id}/citations",
         files={"file": ("citations.csv", content, "text/csv")},
     )
@@ -37,34 +37,34 @@ def parse_export(response) -> list[dict[str, str]]:
 
 
 def generate_ai_suggestion(
-    client, project_id: str, citation_id: str, decision: str = "include", reason: str = "Matches criteria."
+    authed_client, project_id: str, citation_id: str, decision: str = "include", reason: str = "Matches criteria."
 ) -> None:
     app.dependency_overrides[get_ai_suggester] = lambda: _FakeSuggester(
         decision=decision, reason=reason
     )
     try:
-        client.get(f"/review-projects/{project_id}/citations/{citation_id}")
+        authed_client.get(f"/review-projects/{project_id}/citations/{citation_id}")
     finally:
         app.dependency_overrides.pop(get_ai_suggester, None)
 
 
-def test_export_includes_screened_and_unscreened_citations(client):
-    project_id = create_project(client)
+def test_export_includes_screened_and_unscreened_citations(authed_client):
+    project_id = create_project(authed_client)
     upload_csv(
-        client,
+        authed_client,
         project_id,
         CSV_HEADER
         + "Screened Study,An abstract,Jane Doe; John Smith,2020,PubMed\n"
         + "Unscreened Study,Another abstract,Jane Doe,2021,PubMed\n",
     )
-    citations = client.get(f"/review-projects/{project_id}/citations").json()
+    citations = authed_client.get(f"/review-projects/{project_id}/citations").json()
     screened_id = next(c["id"] for c in citations if c["title"] == "Screened Study")
-    client.post(
+    authed_client.post(
         f"/review-projects/{project_id}/citations/{screened_id}/decision",
         json={"decision": "include", "reason": "Meets criteria"},
     )
 
-    response = client.get(f"/review-projects/{project_id}/export")
+    response = authed_client.get(f"/review-projects/{project_id}/export")
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/csv")
@@ -84,58 +84,58 @@ def test_export_includes_screened_and_unscreened_citations(client):
     assert unscreened_row["reason"] == ""
 
 
-def test_export_includes_ai_suggestion_columns_for_citation_with_suggestion(client):
-    project_id = create_project(client)
-    upload_csv(client, project_id, CSV_HEADER + "Study,An abstract,Author,2020,PubMed\n")
-    citation_id = client.get(f"/review-projects/{project_id}/citations").json()[0]["id"]
+def test_export_includes_ai_suggestion_columns_for_citation_with_suggestion(authed_client):
+    project_id = create_project(authed_client)
+    upload_csv(authed_client, project_id, CSV_HEADER + "Study,An abstract,Author,2020,PubMed\n")
+    citation_id = authed_client.get(f"/review-projects/{project_id}/citations").json()[0]["id"]
     generate_ai_suggestion(
-        client, project_id, citation_id, decision="exclude", reason="Wrong population."
+        authed_client, project_id, citation_id, decision="exclude", reason="Wrong population."
     )
 
-    response = client.get(f"/review-projects/{project_id}/export")
+    response = authed_client.get(f"/review-projects/{project_id}/export")
 
     row = parse_export(response)[0]
     assert row["ai_suggestion_decision"] == "exclude"
     assert row["ai_suggestion_reason"] == "Wrong population."
 
 
-def test_export_marks_ai_suggestion_unavailable_when_none_generated(client):
-    project_id = create_project(client)
-    upload_csv(client, project_id, CSV_HEADER + "Study,An abstract,Author,2020,PubMed\n")
+def test_export_marks_ai_suggestion_unavailable_when_none_generated(authed_client):
+    project_id = create_project(authed_client)
+    upload_csv(authed_client, project_id, CSV_HEADER + "Study,An abstract,Author,2020,PubMed\n")
 
-    response = client.get(f"/review-projects/{project_id}/export")
-
-    row = parse_export(response)[0]
-    assert row["ai_suggestion_decision"] == "not_available"
-    assert row["ai_suggestion_reason"] == "not_available"
-
-
-def test_export_marks_ai_suggestion_unavailable_for_citation_missing_abstract(client):
-    project_id = create_project(client)
-    upload_csv(client, project_id, CSV_HEADER + "Study,,Author,2020,PubMed\n")
-    citation_id = client.get(f"/review-projects/{project_id}/citations").json()[0]["id"]
-    generate_ai_suggestion(client, project_id, citation_id)
-
-    response = client.get(f"/review-projects/{project_id}/export")
+    response = authed_client.get(f"/review-projects/{project_id}/export")
 
     row = parse_export(response)[0]
     assert row["ai_suggestion_decision"] == "not_available"
     assert row["ai_suggestion_reason"] == "not_available"
 
 
-def test_export_shows_ai_suggestion_and_final_decision_when_they_disagree(client):
-    project_id = create_project(client)
-    upload_csv(client, project_id, CSV_HEADER + "Study,An abstract,Author,2020,PubMed\n")
-    citation_id = client.get(f"/review-projects/{project_id}/citations").json()[0]["id"]
+def test_export_marks_ai_suggestion_unavailable_for_citation_missing_abstract(authed_client):
+    project_id = create_project(authed_client)
+    upload_csv(authed_client, project_id, CSV_HEADER + "Study,,Author,2020,PubMed\n")
+    citation_id = authed_client.get(f"/review-projects/{project_id}/citations").json()[0]["id"]
+    generate_ai_suggestion(authed_client, project_id, citation_id)
+
+    response = authed_client.get(f"/review-projects/{project_id}/export")
+
+    row = parse_export(response)[0]
+    assert row["ai_suggestion_decision"] == "not_available"
+    assert row["ai_suggestion_reason"] == "not_available"
+
+
+def test_export_shows_ai_suggestion_and_final_decision_when_they_disagree(authed_client):
+    project_id = create_project(authed_client)
+    upload_csv(authed_client, project_id, CSV_HEADER + "Study,An abstract,Author,2020,PubMed\n")
+    citation_id = authed_client.get(f"/review-projects/{project_id}/citations").json()[0]["id"]
     generate_ai_suggestion(
-        client, project_id, citation_id, decision="include", reason="Looks relevant."
+        authed_client, project_id, citation_id, decision="include", reason="Looks relevant."
     )
-    client.post(
+    authed_client.post(
         f"/review-projects/{project_id}/citations/{citation_id}/decision",
         json={"decision": "exclude", "reason": "Reviewer disagrees"},
     )
 
-    response = client.get(f"/review-projects/{project_id}/export")
+    response = authed_client.get(f"/review-projects/{project_id}/export")
 
     row = parse_export(response)[0]
     assert row["screening_decision"] == "exclude"
@@ -151,90 +151,90 @@ def make_pdf(text: str = "Sample paper text") -> bytes:
     return doc.tobytes()
 
 
-def attach_full_text(client, project_id: str, citation_id: str) -> None:
-    client.post(
+def attach_full_text(authed_client, project_id: str, citation_id: str) -> None:
+    authed_client.post(
         f"/review-projects/{project_id}/citations/{citation_id}/full-text",
         files={"file": ("paper.pdf", io.BytesIO(make_pdf()), "application/pdf")},
     )
 
 
 def record_full_text_decision(
-    client, project_id: str, citation_id: str, decision: str, reason: str | None = None
+    authed_client, project_id: str, citation_id: str, decision: str, reason: str | None = None
 ) -> None:
-    client.post(
+    authed_client.post(
         f"/review-projects/{project_id}/citations/{citation_id}/full-text-decision",
         json={"decision": decision, "reason": reason},
     )
 
 
-def create_extraction_field(client, project_id: str, name: str = "Sample size") -> dict:
-    return client.post(
+def create_extraction_field(authed_client, project_id: str, name: str = "Sample size") -> dict:
+    return authed_client.post(
         f"/review-projects/{project_id}/extraction-fields",
         json={"name": name, "description": None},
     ).json()
 
 
-def archive_extraction_field(client, project_id: str, field_id: str) -> None:
-    client.post(f"/review-projects/{project_id}/extraction-fields/{field_id}/archive")
+def archive_extraction_field(authed_client, project_id: str, field_id: str) -> None:
+    authed_client.post(f"/review-projects/{project_id}/extraction-fields/{field_id}/archive")
 
 
-def record_extraction_value(client, project_id: str, citation_id: str, field_id: str, value: str) -> None:
-    client.post(
+def record_extraction_value(authed_client, project_id: str, citation_id: str, field_id: str, value: str) -> None:
+    authed_client.post(
         f"/review-projects/{project_id}/citations/{citation_id}"
         f"/extraction-fields/{field_id}/value",
         json={"value": value},
     )
 
 
-def test_export_includes_full_text_decision_and_reason_when_recorded(client):
-    project_id = create_project(client)
-    upload_csv(client, project_id, CSV_HEADER + "Study,An abstract,Author,2020,PubMed\n")
-    citation_id = client.get(f"/review-projects/{project_id}/citations").json()[0]["id"]
-    attach_full_text(client, project_id, citation_id)
+def test_export_includes_full_text_decision_and_reason_when_recorded(authed_client):
+    project_id = create_project(authed_client)
+    upload_csv(authed_client, project_id, CSV_HEADER + "Study,An abstract,Author,2020,PubMed\n")
+    citation_id = authed_client.get(f"/review-projects/{project_id}/citations").json()[0]["id"]
+    attach_full_text(authed_client, project_id, citation_id)
     record_full_text_decision(
-        client, project_id, citation_id, "exclude", "Wrong study design on closer read"
+        authed_client, project_id, citation_id, "exclude", "Wrong study design on closer read"
     )
 
-    response = client.get(f"/review-projects/{project_id}/export")
+    response = authed_client.get(f"/review-projects/{project_id}/export")
 
     row = parse_export(response)[0]
     assert row["full_text_decision"] == "exclude"
     assert row["full_text_reason"] == "Wrong study design on closer read"
 
 
-def test_export_full_text_reason_empty_when_decision_recorded_without_reason(client):
-    project_id = create_project(client)
-    upload_csv(client, project_id, CSV_HEADER + "Study,An abstract,Author,2020,PubMed\n")
-    citation_id = client.get(f"/review-projects/{project_id}/citations").json()[0]["id"]
-    attach_full_text(client, project_id, citation_id)
-    record_full_text_decision(client, project_id, citation_id, "include")
+def test_export_full_text_reason_empty_when_decision_recorded_without_reason(authed_client):
+    project_id = create_project(authed_client)
+    upload_csv(authed_client, project_id, CSV_HEADER + "Study,An abstract,Author,2020,PubMed\n")
+    citation_id = authed_client.get(f"/review-projects/{project_id}/citations").json()[0]["id"]
+    attach_full_text(authed_client, project_id, citation_id)
+    record_full_text_decision(authed_client, project_id, citation_id, "include")
 
-    response = client.get(f"/review-projects/{project_id}/export")
+    response = authed_client.get(f"/review-projects/{project_id}/export")
 
     row = parse_export(response)[0]
     assert row["full_text_decision"] == "include"
     assert row["full_text_reason"] == ""
 
 
-def test_export_full_text_decision_columns_empty_when_no_decision_recorded(client):
-    project_id = create_project(client)
-    upload_csv(client, project_id, CSV_HEADER + "Study,An abstract,Author,2020,PubMed\n")
+def test_export_full_text_decision_columns_empty_when_no_decision_recorded(authed_client):
+    project_id = create_project(authed_client)
+    upload_csv(authed_client, project_id, CSV_HEADER + "Study,An abstract,Author,2020,PubMed\n")
 
-    response = client.get(f"/review-projects/{project_id}/export")
+    response = authed_client.get(f"/review-projects/{project_id}/export")
 
     row = parse_export(response)[0]
     assert row["full_text_decision"] == ""
     assert row["full_text_reason"] == ""
 
 
-def test_export_includes_column_per_active_extraction_field_with_recorded_value(client):
-    project_id = create_project(client)
-    field = create_extraction_field(client, project_id, name="Sample size")
-    upload_csv(client, project_id, CSV_HEADER + "Study,An abstract,Author,2020,PubMed\n")
-    citation_id = client.get(f"/review-projects/{project_id}/citations").json()[0]["id"]
-    record_extraction_value(client, project_id, citation_id, field["id"], "142 patients")
+def test_export_includes_column_per_active_extraction_field_with_recorded_value(authed_client):
+    project_id = create_project(authed_client)
+    field = create_extraction_field(authed_client, project_id, name="Sample size")
+    upload_csv(authed_client, project_id, CSV_HEADER + "Study,An abstract,Author,2020,PubMed\n")
+    citation_id = authed_client.get(f"/review-projects/{project_id}/citations").json()[0]["id"]
+    record_extraction_value(authed_client, project_id, citation_id, field["id"], "142 patients")
 
-    response = client.get(f"/review-projects/{project_id}/export")
+    response = authed_client.get(f"/review-projects/{project_id}/export")
 
     lines = response.text.splitlines()
     assert lines[0] == ",".join([*export.CSV_HEADER, "Sample size"])
@@ -242,57 +242,57 @@ def test_export_includes_column_per_active_extraction_field_with_recorded_value(
     assert row["Sample size"] == "142 patients"
 
 
-def test_export_extraction_field_column_empty_when_no_value_recorded(client):
-    project_id = create_project(client)
-    create_extraction_field(client, project_id, name="Sample size")
-    upload_csv(client, project_id, CSV_HEADER + "Study,An abstract,Author,2020,PubMed\n")
+def test_export_extraction_field_column_empty_when_no_value_recorded(authed_client):
+    project_id = create_project(authed_client)
+    create_extraction_field(authed_client, project_id, name="Sample size")
+    upload_csv(authed_client, project_id, CSV_HEADER + "Study,An abstract,Author,2020,PubMed\n")
 
-    response = client.get(f"/review-projects/{project_id}/export")
+    response = authed_client.get(f"/review-projects/{project_id}/export")
 
     row = parse_export(response)[0]
     assert row["Sample size"] == ""
 
 
-def test_export_omits_archived_extraction_fields_from_columns(client):
-    project_id = create_project(client)
-    field = create_extraction_field(client, project_id, name="Sample size")
-    archive_extraction_field(client, project_id, field["id"])
-    upload_csv(client, project_id, CSV_HEADER + "Study,An abstract,Author,2020,PubMed\n")
+def test_export_omits_archived_extraction_fields_from_columns(authed_client):
+    project_id = create_project(authed_client)
+    field = create_extraction_field(authed_client, project_id, name="Sample size")
+    archive_extraction_field(authed_client, project_id, field["id"])
+    upload_csv(authed_client, project_id, CSV_HEADER + "Study,An abstract,Author,2020,PubMed\n")
 
-    response = client.get(f"/review-projects/{project_id}/export")
+    response = authed_client.get(f"/review-projects/{project_id}/export")
 
     lines = response.text.splitlines()
     assert lines[0] == ",".join(export.CSV_HEADER)
     assert "Sample size" not in lines[0]
 
 
-def test_export_empty_review_project(client):
-    project_id = create_project(client)
+def test_export_empty_review_project(authed_client):
+    project_id = create_project(authed_client)
 
-    response = client.get(f"/review-projects/{project_id}/export")
+    response = authed_client.get(f"/review-projects/{project_id}/export")
 
     assert response.status_code == 200
     assert parse_export(response) == []
 
 
-def test_export_for_missing_review_project(client):
-    response = client.get(
+def test_export_for_missing_review_project(authed_client):
+    response = authed_client.get(
         "/review-projects/00000000-0000-0000-0000-000000000000/export"
     )
 
     assert response.status_code == 404
 
 
-def test_export_filename_slugifies_project_name_and_appends_id_suffix(client):
-    project_id = create_project(client, name="COPD & Metformin Review!!")
+def test_export_filename_slugifies_project_name_and_appends_id_suffix(authed_client):
+    project_id = create_project(authed_client, name="COPD & Metformin Review!!")
 
-    response = client.get(f"/review-projects/{project_id}/export")
+    response = authed_client.get(f"/review-projects/{project_id}/export")
 
     disposition = response.headers["content-disposition"]
     assert f'filename="copd-metformin-review-{project_id[:8]}.csv"' in disposition
 
 
-def save_criteria(client, project_id: str, **fields) -> None:
+def save_criteria(authed_client, project_id: str, **fields) -> None:
     payload = {
         "population": None,
         "intervention": None,
@@ -302,14 +302,14 @@ def save_criteria(client, project_id: str, **fields) -> None:
         "notes": None,
     }
     payload.update(fields)
-    response = client.put(f"/review-projects/{project_id}/criteria", json=payload)
+    response = authed_client.put(f"/review-projects/{project_id}/criteria", json=payload)
     assert response.status_code == 200
 
 
-def test_export_prepends_criteria_header_block_when_criteria_saved(client):
-    project_id = create_project(client)
+def test_export_prepends_criteria_header_block_when_criteria_saved(authed_client):
+    project_id = create_project(authed_client)
     save_criteria(
-        client,
+        authed_client,
         project_id,
         population="Adults with type 2 diabetes",
         intervention="Metformin",
@@ -318,9 +318,9 @@ def test_export_prepends_criteria_header_block_when_criteria_saved(client):
         exclusion_rules=["Non-English", "Case reports"],
         notes="Focus on RCTs only",
     )
-    upload_csv(client, project_id, CSV_HEADER + "Study,An abstract,Author,2020,PubMed\n")
+    upload_csv(authed_client, project_id, CSV_HEADER + "Study,An abstract,Author,2020,PubMed\n")
 
-    response = client.get(f"/review-projects/{project_id}/export")
+    response = authed_client.get(f"/review-projects/{project_id}/export")
 
     lines = response.text.splitlines()
     assert lines[0] == "# Review Project Criteria"
@@ -338,11 +338,11 @@ def test_export_prepends_criteria_header_block_when_criteria_saved(client):
     assert rows[0]["title"] == "Study"
 
 
-def test_export_criteria_header_block_renders_blank_for_unset_fields(client):
-    project_id = create_project(client)
-    save_criteria(client, project_id, notes="Only notes were filled in")
+def test_export_criteria_header_block_renders_blank_for_unset_fields(authed_client):
+    project_id = create_project(authed_client)
+    save_criteria(authed_client, project_id, notes="Only notes were filled in")
 
-    response = client.get(f"/review-projects/{project_id}/export")
+    response = authed_client.get(f"/review-projects/{project_id}/export")
 
     lines = response.text.splitlines()
     assert lines[0] == "# Review Project Criteria"
@@ -355,10 +355,10 @@ def test_export_criteria_header_block_renders_blank_for_unset_fields(client):
     assert lines[7] == ""
 
 
-def test_export_omits_criteria_header_block_when_no_criteria_saved(client):
-    project_id = create_project(client)
+def test_export_omits_criteria_header_block_when_no_criteria_saved(authed_client):
+    project_id = create_project(authed_client)
 
-    response = client.get(f"/review-projects/{project_id}/export")
+    response = authed_client.get(f"/review-projects/{project_id}/export")
 
     lines = response.text.splitlines()
     assert lines[0] == ",".join(export.CSV_HEADER)

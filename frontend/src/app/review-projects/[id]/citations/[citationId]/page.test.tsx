@@ -270,6 +270,60 @@ describe("CitationScreeningPage", () => {
     expect(await screen.findByText(/failed to upload full text/i)).toBeInTheDocument();
   });
 
+  it("fetches and opens the Full Text file when View / Download is clicked", async () => {
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+      screening_decision: null,
+      full_text: {
+        original_filename: "paper.pdf",
+        parse_status: "parsed",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+    });
+    const blob = new Blob(["pdf-bytes"], { type: "application/pdf" });
+    mockedApi.fetchFullTextFile.mockResolvedValue(blob);
+    const createObjectURL = vi.fn().mockReturnValue("blob:mock-url");
+    vi.stubGlobal("URL", { ...URL, createObjectURL });
+    const windowOpen = vi.spyOn(window, "open").mockImplementation(() => null);
+
+    renderPage();
+    await screen.findByText("paper.pdf");
+    fireEvent.click(screen.getByRole("button", { name: /view \/ download/i }));
+
+    await waitFor(() =>
+      expect(mockedApi.fetchFullTextFile).toHaveBeenCalledWith("1", "c1")
+    );
+    expect(createObjectURL).toHaveBeenCalledWith(blob);
+    expect(windowOpen).toHaveBeenCalledWith("blob:mock-url", "_blank", "noreferrer");
+
+    vi.unstubAllGlobals();
+  });
+
+  it("shows an error when fetching the Full Text file fails", async () => {
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+      screening_decision: null,
+      full_text: {
+        original_filename: "paper.pdf",
+        parse_status: "parsed",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+    });
+    mockedApi.fetchFullTextFile.mockRejectedValue(new Error("nope"));
+
+    renderPage();
+    await screen.findByText("paper.pdf");
+    fireEvent.click(screen.getByRole("button", { name: /view \/ download/i }));
+
+    expect(await screen.findByText(/failed to load full text/i)).toBeInTheDocument();
+  });
+
   it("does not show a Full-Text Decision form when there is no Full Text yet", async () => {
     mockedApi.getCitation.mockResolvedValue({
       ...baseCitation,

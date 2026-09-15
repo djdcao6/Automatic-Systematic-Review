@@ -38,6 +38,31 @@ def client():
     app.dependency_overrides.clear()
 
 
+def auth_headers_for(client, email: str) -> dict[str, str]:
+    """Registers (if needed) and logs in `email`, returning its auth header.
+
+    Shared by tests that need more than one distinct Reviewer identity (e.g.
+    an owner and a non-owner) to check #24's ownership scoping.
+    """
+    client.post("/register", json={"email": email, "password": "correcthorse"})
+    token = client.post(
+        "/login", json={"email": email, "password": "correcthorse"}
+    ).json()["access_token"]
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+def authed_client(client):
+    """A client pre-authenticated as its own Reviewer, for endpoints gated by #24.
+
+    Tests exercising the gate itself (missing/invalid token, wrong-owner
+    access) use the plain `client` fixture and manage tokens explicitly.
+    """
+    headers = auth_headers_for(client, "owner@example.com")
+    client.headers["Authorization"] = headers["Authorization"]
+    return client
+
+
 @pytest.fixture
 def db_session():
     db = TestSessionLocal()

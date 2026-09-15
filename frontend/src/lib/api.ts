@@ -1,3 +1,5 @@
+import { clearToken, getToken } from "@/lib/auth";
+
 export type Reviewer = {
   id: string;
   email: string;
@@ -198,6 +200,34 @@ export type ConflictResolutionChoiceInput = {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
+function redirectToLogin(): void {
+  clearToken();
+  if (typeof window !== "undefined") {
+    // This module sits below React (no router instance available here), so
+    // a hard navigation is the only option for routing an expired session
+    // to login regardless of which page/component triggered the request.
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+    window.location.href = "/login";
+  }
+}
+
+// Every endpoint below except register/login requires a JWT (#24). This
+// wrapper attaches the stored token to each request and, on a 401 (missing,
+// invalid, or expired token), clears it and routes the Reviewer to login
+// instead of letting each call site handle that individually.
+async function authorizedFetch(input: string, init: RequestInit = {}): Promise<Response> {
+  const token = getToken();
+  const headers = new Headers(init.headers);
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+  const response = await fetch(input, { ...init, headers });
+  if (response.status === 401) {
+    redirectToLogin();
+  }
+  return response;
+}
+
 async function errorMessage(response: Response, fallback: string): Promise<string> {
   try {
     const body = await response.json();
@@ -233,7 +263,7 @@ export async function loginReviewer(payload: ReviewerInput): Promise<AuthToken> 
 }
 
 export async function listReviewProjects(): Promise<ReviewProject[]> {
-  const response = await fetch(`${API_URL}/review-projects`);
+  const response = await authorizedFetch(`${API_URL}/review-projects`);
   if (!response.ok) {
     throw new Error("Failed to load review projects");
   }
@@ -243,7 +273,7 @@ export async function listReviewProjects(): Promise<ReviewProject[]> {
 export async function createReviewProject(
   payload: ReviewProjectInput
 ): Promise<ReviewProject> {
-  const response = await fetch(`${API_URL}/review-projects`, {
+  const response = await authorizedFetch(`${API_URL}/review-projects`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -255,7 +285,7 @@ export async function createReviewProject(
 }
 
 export async function getReviewProject(id: string): Promise<ReviewProjectDetail> {
-  const response = await fetch(`${API_URL}/review-projects/${id}`);
+  const response = await authorizedFetch(`${API_URL}/review-projects/${id}`);
   if (!response.ok) {
     throw new Error("Failed to load review project");
   }
@@ -263,7 +293,7 @@ export async function getReviewProject(id: string): Promise<ReviewProjectDetail>
 }
 
 export async function saveCriteria(id: string, payload: CriteriaInput): Promise<Criteria> {
-  const response = await fetch(`${API_URL}/review-projects/${id}/criteria`, {
+  const response = await authorizedFetch(`${API_URL}/review-projects/${id}/criteria`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -277,7 +307,7 @@ export async function saveCriteria(id: string, payload: CriteriaInput): Promise<
 export async function listExtractionFields(
   reviewProjectId: string
 ): Promise<ExtractionField[]> {
-  const response = await fetch(`${API_URL}/review-projects/${reviewProjectId}/extraction-fields`);
+  const response = await authorizedFetch(`${API_URL}/review-projects/${reviewProjectId}/extraction-fields`);
   if (!response.ok) {
     throw new Error("Failed to load extraction fields");
   }
@@ -288,7 +318,7 @@ export async function createExtractionField(
   reviewProjectId: string,
   payload: ExtractionFieldInput
 ): Promise<ExtractionField> {
-  const response = await fetch(
+  const response = await authorizedFetch(
     `${API_URL}/review-projects/${reviewProjectId}/extraction-fields`,
     {
       method: "POST",
@@ -307,7 +337,7 @@ export async function updateExtractionField(
   extractionFieldId: string,
   payload: ExtractionFieldInput
 ): Promise<ExtractionField> {
-  const response = await fetch(
+  const response = await authorizedFetch(
     `${API_URL}/review-projects/${reviewProjectId}/extraction-fields/${extractionFieldId}`,
     {
       method: "PUT",
@@ -325,7 +355,7 @@ export async function archiveExtractionField(
   reviewProjectId: string,
   extractionFieldId: string
 ): Promise<ExtractionField> {
-  const response = await fetch(
+  const response = await authorizedFetch(
     `${API_URL}/review-projects/${reviewProjectId}/extraction-fields/${extractionFieldId}/archive`,
     { method: "POST" }
   );
@@ -336,7 +366,7 @@ export async function archiveExtractionField(
 }
 
 export async function listCitations(reviewProjectId: string): Promise<Citation[]> {
-  const response = await fetch(`${API_URL}/review-projects/${reviewProjectId}/citations`);
+  const response = await authorizedFetch(`${API_URL}/review-projects/${reviewProjectId}/citations`);
   if (!response.ok) {
     throw new Error("Failed to load citations");
   }
@@ -349,7 +379,7 @@ export async function uploadCitations(
 ): Promise<CitationUploadResult> {
   const formData = new FormData();
   formData.append("file", file);
-  const response = await fetch(`${API_URL}/review-projects/${reviewProjectId}/citations`, {
+  const response = await authorizedFetch(`${API_URL}/review-projects/${reviewProjectId}/citations`, {
     method: "POST",
     body: formData,
   });
@@ -363,7 +393,7 @@ export async function getCitation(
   reviewProjectId: string,
   citationId: string
 ): Promise<CitationDetail> {
-  const response = await fetch(
+  const response = await authorizedFetch(
     `${API_URL}/review-projects/${reviewProjectId}/citations/${citationId}`
   );
   if (!response.ok) {
@@ -378,7 +408,7 @@ export type ExportedFile = {
 };
 
 export async function exportReviewProject(reviewProjectId: string): Promise<ExportedFile> {
-  const response = await fetch(`${API_URL}/review-projects/${reviewProjectId}/export`);
+  const response = await authorizedFetch(`${API_URL}/review-projects/${reviewProjectId}/export`);
   if (!response.ok) {
     throw new Error("Failed to export review project");
   }
@@ -397,7 +427,7 @@ export async function uploadFullText(
 ): Promise<FullText> {
   const formData = new FormData();
   formData.append("file", file);
-  const response = await fetch(
+  const response = await authorizedFetch(
     `${API_URL}/review-projects/${reviewProjectId}/citations/${citationId}/full-text`,
     { method: "POST", body: formData }
   );
@@ -407,8 +437,20 @@ export async function uploadFullText(
   return response.json();
 }
 
-export function fullTextFileUrl(reviewProjectId: string, citationId: string): string {
-  return `${API_URL}/review-projects/${reviewProjectId}/citations/${citationId}/full-text/file`;
+// A plain <a href> can't carry the Authorization header this endpoint now
+// requires (#24), so the file is fetched and handed to the caller as a Blob
+// to open via an object URL instead.
+export async function fetchFullTextFile(
+  reviewProjectId: string,
+  citationId: string
+): Promise<Blob> {
+  const response = await authorizedFetch(
+    `${API_URL}/review-projects/${reviewProjectId}/citations/${citationId}/full-text/file`
+  );
+  if (!response.ok) {
+    throw new Error("Failed to load full text file");
+  }
+  return response.blob();
 }
 
 export async function recordScreeningDecision(
@@ -416,7 +458,7 @@ export async function recordScreeningDecision(
   citationId: string,
   payload: ScreeningDecisionInput
 ): Promise<ScreeningDecision> {
-  const response = await fetch(
+  const response = await authorizedFetch(
     `${API_URL}/review-projects/${reviewProjectId}/citations/${citationId}/decision`,
     {
       method: "POST",
@@ -435,7 +477,7 @@ export async function recordFullTextDecision(
   citationId: string,
   payload: FullTextDecisionInput
 ): Promise<FullTextDecision> {
-  const response = await fetch(
+  const response = await authorizedFetch(
     `${API_URL}/review-projects/${reviewProjectId}/citations/${citationId}/full-text-decision`,
     {
       method: "POST",
@@ -452,7 +494,7 @@ export async function recordFullTextDecision(
 export async function listPossibleDuplicates(
   reviewProjectId: string
 ): Promise<PossibleDuplicate[]> {
-  const response = await fetch(
+  const response = await authorizedFetch(
     `${API_URL}/review-projects/${reviewProjectId}/possible-duplicates`
   );
   if (!response.ok) {
@@ -466,7 +508,7 @@ export async function resolvePossibleDuplicate(
   possibleDuplicateId: string,
   choices: ConflictResolutionChoiceInput[]
 ): Promise<Citation> {
-  const response = await fetch(
+  const response = await authorizedFetch(
     `${API_URL}/review-projects/${reviewProjectId}/possible-duplicates/${possibleDuplicateId}/resolve`,
     {
       method: "POST",
@@ -484,7 +526,7 @@ export async function dismissPossibleDuplicate(
   reviewProjectId: string,
   possibleDuplicateId: string
 ): Promise<void> {
-  const response = await fetch(
+  const response = await authorizedFetch(
     `${API_URL}/review-projects/${reviewProjectId}/possible-duplicates/${possibleDuplicateId}/dismiss`,
     { method: "POST" }
   );
@@ -499,7 +541,7 @@ export async function recordExtractionValue(
   extractionFieldId: string,
   payload: ExtractionValueInput
 ): Promise<ExtractionValue> {
-  const response = await fetch(
+  const response = await authorizedFetch(
     `${API_URL}/review-projects/${reviewProjectId}/citations/${citationId}` +
       `/extraction-fields/${extractionFieldId}/value`,
     {
