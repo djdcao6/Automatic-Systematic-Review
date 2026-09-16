@@ -15,7 +15,7 @@ class ChoicesMismatchError(ValueError):
 
 
 @dataclass(frozen=True)
-class Conflict:
+class FieldConflict:
     field: schemas.ConflictFieldName
     extraction_field_id: uuid.UUID | None = None
 
@@ -35,7 +35,7 @@ def is_match(a: models.Citation, b: models.Citation) -> bool:
     return normalize_title(a.title) == normalize_title(b.title)
 
 
-def find_conflicts(a: models.Citation, b: models.Citation) -> list[Conflict]:
+def find_conflicts(a: models.Citation, b: models.Citation) -> list[FieldConflict]:
     """Every field on which a matched pair already carries conflicting Reviewer-entered data.
 
     Checked field-by-field (Screening Decision, Full-Text Decision, each
@@ -43,26 +43,26 @@ def find_conflicts(a: models.Citation, b: models.Citation) -> list[Conflict]:
     resolving a Possible Duplicate can pick a winner per conflicting field
     instead of for the pair as a whole.
     """
-    conflicts: list[Conflict] = []
+    conflicts: list[FieldConflict] = []
     if (
         a.owner_screening_decision is not None
         and b.owner_screening_decision is not None
         and a.owner_screening_decision.decision != b.owner_screening_decision.decision
     ):
-        conflicts.append(Conflict(field="screening_decision"))
+        conflicts.append(FieldConflict(field="screening_decision"))
     if (
         a.full_text_decision is not None
         and b.full_text_decision is not None
         and a.full_text_decision.decision != b.full_text_decision.decision
     ):
-        conflicts.append(Conflict(field="full_text_decision"))
+        conflicts.append(FieldConflict(field="full_text_decision"))
     if a.full_text is not None and b.full_text is not None:
-        conflicts.append(Conflict(field="full_text"))
+        conflicts.append(FieldConflict(field="full_text"))
     a_values = {value.extraction_field_id: value.value for value in a.extraction_values}
     b_values = {value.extraction_field_id: value.value for value in b.extraction_values}
     for field_id, value in a_values.items():
         if field_id in b_values and b_values[field_id] != value:
-            conflicts.append(Conflict(field="extraction_value", extraction_field_id=field_id))
+            conflicts.append(FieldConflict(field="extraction_value", extraction_field_id=field_id))
     return conflicts
 
 
@@ -89,15 +89,22 @@ def _combine_bibliographic_fields(survivor: models.Citation, loser: models.Citat
     survivor.source = merged_sources
 
 
-def _transfer_reviewer_data(
-    db: Session, project: models.ReviewProject, survivor: models.Citation, loser: models.Citation
+def _copy_field(
+    db: Session,
+    project: models.ReviewProject,
+    survivor: models.Citation,
+    loser: models.Citation,
+    field: schemas.ConflictFieldName,
+    extraction_field_id: uuid.UUID | None = None,
 ) -> None:
-    """Copies Reviewer-entered data the loser has and the survivor lacks.
+    """Copies the loser's value for one Reviewer-entered field onto the survivor.
 
-    Always a copy onto a new row keyed to the survivor, never a reassignment
-    of the loser's own row, so the archived Citation keeps its original data.
+    Shared by Duplicate merge (looped once per field the survivor is missing)
+    and Possible Duplicate resolution (called once per Reviewer-picked field),
+    so a fix to how one field is copied can't land in one path without the
+    other.
     """
-    if survivor.owner_screening_decision is None and loser.owner_screening_decision is not None:
+    if field == "screening_decision":
         crud.upsert_screening_decision(
             db,
             project,
@@ -108,7 +115,7 @@ def _transfer_reviewer_data(
                 reason=loser.owner_screening_decision.reason,
             ),
         )
-    if survivor.full_text is None and loser.full_text is not None:
+    elif field == "full_text":
         crud.upsert_full_text(
             db,
             survivor.id,
@@ -117,7 +124,7 @@ def _transfer_reviewer_data(
             parsed_text=loser.full_text.parsed_text,
             parse_status=loser.full_text.parse_status,
         )
-    if survivor.full_text_decision is None and loser.full_text_decision is not None:
+    elif field == "full_text_decision":
         crud.upsert_full_text_decision(
             db,
             survivor.id,
@@ -126,15 +133,33 @@ def _transfer_reviewer_data(
                 reason=loser.full_text_decision.reason,
             ),
         )
+    elif field == "extraction_value":
+        crud.upsert_extraction_value(
+            db,
+            survivor.id,
+            extraction_field_id,
+            schemas.ExtractionValueCreate(value=loser.extraction_value_for(extraction_field_id)),
+        )
+
+
+def _transfer_reviewer_data(
+    db: Session, project: models.ReviewProject, survivor: models.Citation, loser: models.Citation
+) -> None:
+    """Copies Reviewer-entered data the loser has and the survivor lacks.
+
+    Always a copy onto a new row keyed to the survivor, never a reassignment
+    of the loser's own row, so the archived Citation keeps its original data.
+    """
+    if survivor.owner_screening_decision is None and loser.owner_screening_decision is not None:
+        _copy_field(db, project, survivor, loser, "screening_decision")
+    if survivor.full_text is None and loser.full_text is not None:
+        _copy_field(db, project, survivor, loser, "full_text")
+    if survivor.full_text_decision is None and loser.full_text_decision is not None:
+        _copy_field(db, project, survivor, loser, "full_text_decision")
     survivor_field_ids = {value.extraction_field_id for value in survivor.extraction_values}
     for value in loser.extraction_values:
         if value.extraction_field_id not in survivor_field_ids:
-            crud.upsert_extraction_value(
-                db,
-                survivor.id,
-                value.extraction_field_id,
-                schemas.ExtractionValueCreate(value=value.value),
-            )
+            _copy_field(db, project, survivor, loser, "extraction_value", value.extraction_field_id)
 
 
 def merge_pair(
@@ -206,46 +231,11 @@ def _apply_resolution_choice(
     """
     if choice.winner == "survivor":
         return
-    if choice.field == "screening_decision":
-        crud.upsert_screening_decision(
-            db,
-            project,
-            survivor.id,
-            project.owner_reviewer_id,
-            schemas.ScreeningDecisionCreate(
-                decision=loser.owner_screening_decision.decision,
-                reason=loser.owner_screening_decision.reason,
-            ),
-        )
-    elif choice.field == "full_text_decision":
-        crud.upsert_full_text_decision(
-            db,
-            survivor.id,
-            schemas.FullTextDecisionCreate(
-                decision=loser.full_text_decision.decision,
-                reason=loser.full_text_decision.reason,
-            ),
-        )
-    elif choice.field == "full_text":
-        crud.upsert_full_text(
-            db,
-            survivor.id,
-            original_filename=loser.full_text.original_filename,
-            file_path=loser.full_text.file_path,
-            parsed_text=loser.full_text.parsed_text,
-            parse_status=loser.full_text.parse_status,
-        )
-    elif choice.field == "extraction_value":
-        crud.upsert_extraction_value(
-            db,
-            survivor.id,
-            choice.extraction_field_id,
-            schemas.ExtractionValueCreate(value=loser.extraction_value_for(choice.extraction_field_id)),
-        )
+    _copy_field(db, project, survivor, loser, choice.field, choice.extraction_field_id)
 
 
 def _validate_choices_match_conflicts(
-    conflicts: list[Conflict], choices: list[schemas.ConflictResolutionChoice]
+    conflicts: list[FieldConflict], choices: list[schemas.ConflictResolutionChoice]
 ) -> None:
     conflict_keys = {(conflict.field, conflict.extraction_field_id) for conflict in conflicts}
     choice_keys = {(choice.field, choice.extraction_field_id) for choice in choices}
@@ -283,7 +273,7 @@ def resolve_possible_duplicate(
 
 
 def _conflict_field_read(
-    conflict: Conflict, extraction_fields_by_id: dict[uuid.UUID, models.ExtractionField]
+    conflict: FieldConflict, extraction_fields_by_id: dict[uuid.UUID, models.ExtractionField]
 ) -> schemas.ConflictFieldRead:
     extraction_field_name = None
     if conflict.extraction_field_id is not None:
