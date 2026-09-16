@@ -826,6 +826,20 @@ export async function createCheckoutSession(): Promise<CheckoutSession> {
   return response.json();
 }
 
+export type PortalSession = {
+  url: string;
+};
+
+export async function createPortalSession(): Promise<PortalSession> {
+  const response = await authorizedFetch(`${API_URL}/billing/portal-session`, {
+    method: "POST",
+  });
+  if (!response.ok) {
+    throw new Error(await errorMessage(response, "Failed to open billing portal"));
+  }
+  return response.json();
+}
+
 export async function recordExtractionValue(
   reviewProjectId: string,
   citationId: string,

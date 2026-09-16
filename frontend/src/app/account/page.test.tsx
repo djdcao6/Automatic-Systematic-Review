@@ -72,4 +72,50 @@ describe("AccountPage", () => {
 
     expect(await screen.findByText(/failed to start checkout/i)).toBeInTheDocument();
   });
+
+  it("shows a Manage subscription action for a Paid plan", async () => {
+    mockedApi.getMySubscription.mockResolvedValue({ plan: "paid", status: "active" });
+
+    render(<AccountPage />);
+
+    expect(
+      await screen.findByRole("button", { name: /manage subscription/i })
+    ).toBeInTheDocument();
+  });
+
+  it("does not show a Manage subscription action for a Free plan", async () => {
+    mockedApi.getMySubscription.mockResolvedValue({ plan: "free", status: null });
+
+    render(<AccountPage />);
+
+    await screen.findByRole("button", { name: /upgrade/i });
+    expect(
+      screen.queryByRole("button", { name: /manage subscription/i })
+    ).not.toBeInTheDocument();
+  });
+
+  it("opens the Stripe portal on Manage subscription", async () => {
+    mockedApi.getMySubscription.mockResolvedValue({ plan: "paid", status: "active" });
+    mockedApi.createPortalSession.mockResolvedValue({
+      url: "https://stripe.test/portal/session_123",
+    });
+
+    render(<AccountPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /manage subscription/i }));
+
+    await waitFor(() => expect(mockedApi.createPortalSession).toHaveBeenCalled());
+    expect(window.location.href).toBe("https://stripe.test/portal/session_123");
+  });
+
+  it("shows an error when the billing portal fails to open", async () => {
+    mockedApi.getMySubscription.mockResolvedValue({ plan: "paid", status: "active" });
+    mockedApi.createPortalSession.mockRejectedValue(new Error("boom"));
+
+    render(<AccountPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /manage subscription/i }));
+
+    expect(await screen.findByText(/failed to open billing portal/i)).toBeInTheDocument();
+  });
 });

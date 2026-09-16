@@ -30,6 +30,15 @@ class WebhookSignatureError(Exception):
     """Raised when a webhook payload's Stripe-Signature header fails verification."""
 
 
+class PlanNotPaidError(Exception):
+    """Raised when a Reviewer without an active Paid Plan attempts a Paid-only billing action."""
+
+
+def require_paid_plan(subscription: models.Subscription | None) -> None:
+    if derive_plan(subscription) != "paid":
+        raise PlanNotPaidError
+
+
 class StripeGateway:
     """Thin wrapper around the Stripe SDK, mirroring AISuggester's client boundary.
 

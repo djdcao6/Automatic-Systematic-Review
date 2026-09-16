@@ -127,6 +127,30 @@ def create_checkout_session(
     return schemas.CheckoutSessionRead(url=session.url)
 
 
+@app.post(
+    "/billing/portal-session",
+    response_model=schemas.PortalSessionRead,
+    dependencies=[Depends(require_billing_enabled)],
+)
+def create_portal_session(
+    reviewer: models.Reviewer = Depends(auth.get_current_reviewer),
+    db: Session = Depends(get_db),
+    gateway: billing.StripeGateway = Depends(billing.get_stripe_gateway),
+) -> schemas.PortalSessionRead:
+    subscription = crud.get_subscription(db, reviewer.id)
+    try:
+        billing.require_paid_plan(subscription)
+    except billing.PlanNotPaidError as exc:
+        raise HTTPException(
+            status_code=403, detail="Only a Paid Reviewer can manage their subscription"
+        ) from exc
+    session = gateway.create_portal_session(
+        customer_id=subscription.stripe_customer_id,
+        return_url=f"{settings.frontend_origin}/account",
+    )
+    return schemas.PortalSessionRead(url=session.url)
+
+
 @app.post("/billing/webhook", status_code=204)
 async def stripe_webhook(
     request: Request,

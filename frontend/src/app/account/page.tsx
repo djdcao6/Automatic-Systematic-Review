@@ -3,7 +3,12 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
-import { createCheckoutSession, getMySubscription, type Subscription } from "@/lib/api";
+import {
+  createCheckoutSession,
+  createPortalSession,
+  getMySubscription,
+  type Subscription,
+} from "@/lib/api";
 
 export default function AccountPage() {
   const [subscription, setSubscription] = useState<Subscription | null | undefined>(undefined);
@@ -24,6 +29,15 @@ export default function AccountPage() {
     }
   }
 
+  async function handleManageSubscription() {
+    try {
+      const { url } = await createPortalSession();
+      window.location.href = url;
+    } catch {
+      setError("Failed to open billing portal.");
+    }
+  }
+
   if (subscription === undefined) {
     return error ? <p role="alert">{error}</p> : <p>Loading...</p>;
   }
@@ -41,6 +55,11 @@ export default function AccountPage() {
       {subscription.plan === "free" && (
         <button type="button" onClick={handleUpgrade}>
           Upgrade
+        </button>
+      )}
+      {subscription.plan === "paid" && (
+        <button type="button" onClick={handleManageSubscription}>
+          Manage subscription
         </button>
       )}
     </main>

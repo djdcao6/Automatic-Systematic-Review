@@ -61,6 +61,10 @@ class CheckoutSessionRead(BaseModel):
     url: str
 
 
+class PortalSessionRead(BaseModel):
+    url: str
+
+
 class ReviewProjectCreate(BaseModel):
     name: str
     merge_mode: Literal["combine", "keep_first"]
