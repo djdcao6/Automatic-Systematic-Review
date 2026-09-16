@@ -71,6 +71,44 @@ def upsert_criteria(
     )
 
 
+def get_search_terms(
+    db: Session, review_project_id: uuid.UUID
+) -> models.SearchTerms | None:
+    return (
+        db.query(models.SearchTerms)
+        .filter(models.SearchTerms.review_project_id == review_project_id)
+        .one_or_none()
+    )
+
+
+def upsert_search_terms(
+    db: Session, review_project: models.ReviewProject, payload: schemas.SearchTermsUpdate
+) -> models.SearchTerms:
+    values = {
+        "review_project_id": review_project.id,
+        "population_terms": payload.population_terms,
+        "intervention_terms": payload.intervention_terms,
+        "comparison_terms": payload.comparison_terms,
+        "outcome_terms": payload.outcome_terms,
+    }
+    stmt = pg_insert(models.SearchTerms).values(**values)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=[models.SearchTerms.review_project_id],
+        set_={
+            key: stmt.excluded[key] for key in values if key != "review_project_id"
+        },
+    )
+    # Same atomic INSERT ... ON CONFLICT DO UPDATE pattern as upsert_criteria,
+    # so a regenerate racing an edit can't land as a read-then-write.
+    db.execute(stmt)
+    db.commit()
+    return (
+        db.query(models.SearchTerms)
+        .filter(models.SearchTerms.review_project_id == review_project.id)
+        .one()
+    )
+
+
 def create_review_project(
     db: Session, owner_reviewer_id: uuid.UUID, payload: schemas.ReviewProjectCreate
 ) -> models.ReviewProject:

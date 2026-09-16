@@ -80,6 +80,21 @@ class CriteriaRead(BaseModel):
     notes: str | None
 
 
+class SearchTermsUpdate(BaseModel):
+    population_terms: list[str] = []
+    intervention_terms: list[str] = []
+    comparison_terms: list[str] = []
+    outcome_terms: list[str] = []
+
+
+class SearchTermsRead(BaseModel):
+    population_terms: list[str]
+    intervention_terms: list[str]
+    comparison_terms: list[str]
+    outcome_terms: list[str]
+    combined_query: str
+
+
 class ReviewProjectRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

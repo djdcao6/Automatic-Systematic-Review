@@ -50,6 +50,9 @@ class ReviewProject(Base):
     criteria: Mapped["Criteria | None"] = relationship(
         back_populates="review_project", uselist=False, cascade="all, delete-orphan"
     )
+    search_terms: Mapped["SearchTerms | None"] = relationship(
+        back_populates="review_project", uselist=False, cascade="all, delete-orphan"
+    )
     citations: Mapped[list["Citation"]] = relationship(
         back_populates="review_project", cascade="all, delete-orphan"
     )
@@ -98,6 +101,28 @@ class Criteria(Base):
     notes: Mapped[str | None] = mapped_column(String, nullable=True)
 
     review_project: Mapped[ReviewProject] = relationship(back_populates="criteria")
+
+
+class SearchTerms(Base):
+    __tablename__ = "search_terms"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    review_project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("review_projects.id"), unique=True, nullable=False
+    )
+    # One list per PICO concept, term lists only (#36) — the combined boolean
+    # query is derived on read (search_terms.compute_combined_query), never
+    # stored, so editing a term list can't leave a stale combined string behind.
+    population_terms: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, default=list)
+    intervention_terms: Mapped[list[str]] = mapped_column(
+        ARRAY(String), nullable=False, default=list
+    )
+    comparison_terms: Mapped[list[str]] = mapped_column(
+        ARRAY(String), nullable=False, default=list
+    )
+    outcome_terms: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, default=list)
+
+    review_project: Mapped[ReviewProject] = relationship(back_populates="search_terms")
 
 
 class ExtractionField(Base):

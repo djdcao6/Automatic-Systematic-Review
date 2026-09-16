@@ -19,9 +19,16 @@ from asr_backend import (
     models,
     schemas,
     screening,
+    search_terms,
 )
 from asr_backend.ai_suggestion import AISuggester, get_ai_suggester
 from asr_backend.db import get_db
+from asr_backend.search_terms import (
+    NoPicoFieldPopulatedError,
+    SearchTermsGenerationError,
+    SearchTermsGenerator,
+    get_search_terms_generator,
+)
 from asr_backend.settings import settings
 
 app = FastAPI(title="Automatic Systematic Review API")
@@ -272,6 +279,54 @@ def save_criteria(
             detail="Criteria are locked after the first Screening Decision",
         )
     return crud.upsert_criteria(db, project, payload)
+
+
+@app.post(
+    "/review-projects/{review_project_id}/search-terms",
+    response_model=schemas.SearchTermsRead,
+    status_code=201,
+)
+async def generate_search_terms(
+    project: models.ReviewProject = Depends(get_review_project_or_404),
+    generator: SearchTermsGenerator = Depends(get_search_terms_generator),
+    db: Session = Depends(get_db),
+) -> schemas.SearchTermsRead:
+    # Available regardless of criteria_locked (#36) — unlike Criteria itself,
+    # Search Terms have no lock of their own to check.
+    try:
+        record = await search_terms.generate_and_persist(db, project, generator)
+    except NoPicoFieldPopulatedError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except SearchTermsGenerationError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return search_terms.to_read_schema(record)
+
+
+@app.get(
+    "/review-projects/{review_project_id}/search-terms",
+    response_model=schemas.SearchTermsRead,
+)
+def get_search_terms(
+    project: models.ReviewProject = Depends(get_review_project_or_404),
+    db: Session = Depends(get_db),
+) -> schemas.SearchTermsRead:
+    record = crud.get_search_terms(db, project.id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Search terms not found")
+    return search_terms.to_read_schema(record)
+
+
+@app.put(
+    "/review-projects/{review_project_id}/search-terms",
+    response_model=schemas.SearchTermsRead,
+)
+def update_search_terms(
+    payload: schemas.SearchTermsUpdate,
+    project: models.ReviewProject = Depends(get_review_project_or_404),
+    db: Session = Depends(get_db),
+) -> schemas.SearchTermsRead:
+    record = crud.upsert_search_terms(db, project, payload)
+    return search_terms.to_read_schema(record)
 
 
 @app.post(
