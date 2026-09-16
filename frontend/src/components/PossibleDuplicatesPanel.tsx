@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import {
   dismissPossibleDuplicate,
@@ -12,6 +12,7 @@ import {
   type PossibleDuplicate,
   type PossibleDuplicateCitation,
 } from "@/lib/api";
+import { useListResource } from "@/lib/useListResource";
 
 function conflictKey(field: ConflictField): string {
   return `${field.field}:${field.extraction_field_id ?? ""}`;
@@ -157,22 +158,18 @@ export function PossibleDuplicatesPanel({
   reviewProjectId: string;
   onChanged?: () => void;
 }) {
-  const [possibleDuplicates, setPossibleDuplicates] = useState<PossibleDuplicate[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const {
+    data: possibleDuplicates,
+    error,
+    refresh,
+  } = useListResource(
+    () => listPossibleDuplicates(reviewProjectId),
+    [reviewProjectId],
+    "Failed to load possible duplicates."
+  );
 
-  useEffect(() => {
-    listPossibleDuplicates(reviewProjectId)
-      .then(setPossibleDuplicates)
-      .catch(() => setError("Failed to load possible duplicates."));
-  }, [reviewProjectId]);
-
-  async function refresh() {
-    try {
-      setPossibleDuplicates(await listPossibleDuplicates(reviewProjectId));
-      setError(null);
-    } catch {
-      setError("Failed to load possible duplicates.");
-    }
+  async function handleItemChanged() {
+    await refresh();
     onChanged?.();
   }
 
@@ -189,7 +186,7 @@ export function PossibleDuplicatesPanel({
               key={possibleDuplicate.id}
               reviewProjectId={reviewProjectId}
               possibleDuplicate={possibleDuplicate}
-              onChanged={refresh}
+              onChanged={handleItemChanged}
             />
           ))}
         </ul>

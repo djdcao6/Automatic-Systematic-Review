@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { listConflicts, resolveConflict, type Conflict, type Decision } from "@/lib/api";
+import { useListResource } from "@/lib/useListResource";
 
 type Pick = "owner" | "co_reviewer" | "custom";
 
@@ -143,22 +144,18 @@ export function ConflictsPanel({
   isOwner: boolean;
   onChanged?: () => void;
 }) {
-  const [conflicts, setConflicts] = useState<Conflict[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const {
+    data: conflicts,
+    error,
+    refresh,
+  } = useListResource(
+    () => listConflicts(reviewProjectId),
+    [reviewProjectId],
+    "Failed to load conflicts."
+  );
 
-  useEffect(() => {
-    listConflicts(reviewProjectId)
-      .then(setConflicts)
-      .catch(() => setError("Failed to load conflicts."));
-  }, [reviewProjectId]);
-
-  async function refresh() {
-    try {
-      setConflicts(await listConflicts(reviewProjectId));
-      setError(null);
-    } catch {
-      setError("Failed to load conflicts.");
-    }
+  async function handleItemChanged() {
+    await refresh();
     onChanged?.();
   }
 
@@ -176,7 +173,7 @@ export function ConflictsPanel({
               reviewProjectId={reviewProjectId}
               conflict={conflict}
               isOwner={isOwner}
-              onChanged={refresh}
+              onChanged={handleItemChanged}
             />
           ))}
         </ul>
