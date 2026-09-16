@@ -74,6 +74,21 @@ export type ExtractionFieldInput = {
   description: string | null;
 };
 
+export type SearchTerms = {
+  population_terms: string[];
+  intervention_terms: string[];
+  comparison_terms: string[];
+  outcome_terms: string[];
+  combined_query: string;
+};
+
+export type SearchTermsInput = {
+  population_terms: string[];
+  intervention_terms: string[];
+  comparison_terms: string[];
+  outcome_terms: string[];
+};
+
 export type Citation = {
   id: string;
   title: string;
@@ -363,6 +378,48 @@ export async function saveCriteria(id: string, payload: CriteriaInput): Promise<
   });
   if (!response.ok) {
     throw new Error("Failed to save criteria");
+  }
+  return response.json();
+}
+
+export async function generateSearchTerms(reviewProjectId: string): Promise<SearchTerms> {
+  const response = await authorizedFetch(
+    `${API_URL}/review-projects/${reviewProjectId}/search-terms`,
+    { method: "POST" }
+  );
+  if (!response.ok) {
+    throw new Error(await errorMessage(response, "Failed to generate search terms"));
+  }
+  return response.json();
+}
+
+// Returns null when no Search Terms have been generated yet (backend 404),
+// rather than treating "none generated yet" as a load failure.
+export async function getSearchTerms(reviewProjectId: string): Promise<SearchTerms | null> {
+  const response = await authorizedFetch(
+    `${API_URL}/review-projects/${reviewProjectId}/search-terms`
+  );
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    throw new Error(await errorMessage(response, "Failed to load search terms"));
+  }
+  return response.json();
+}
+
+export async function updateSearchTerms(
+  reviewProjectId: string,
+  payload: SearchTermsInput
+): Promise<SearchTerms> {
+  const response = await authorizedFetch(
+    `${API_URL}/review-projects/${reviewProjectId}/search-terms`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }
+  );
+  if (!response.ok) {
+    throw new Error(await errorMessage(response, "Failed to update search terms"));
   }
   return response.json();
 }

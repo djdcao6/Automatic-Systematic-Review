@@ -8,6 +8,7 @@ import { ConflictsPanel } from "@/components/ConflictsPanel";
 import { ExtractionFieldsPanel } from "@/components/ExtractionFieldsPanel";
 import { InvitationsPanel } from "@/components/InvitationsPanel";
 import { PossibleDuplicatesPanel } from "@/components/PossibleDuplicatesPanel";
+import { SearchTermsPanel } from "@/components/SearchTermsPanel";
 import {
   exportReviewProject,
   getMe,
@@ -179,6 +180,8 @@ export default function ReviewProjectDetailPage({
 
         <button type="submit">Save Criteria</button>
       </form>
+
+      <SearchTermsPanel reviewProjectId={project.id} />
 
       {project.review_mode === "dual" && isOwner && (
         <InvitationsPanel

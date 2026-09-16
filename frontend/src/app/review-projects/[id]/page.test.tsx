@@ -40,6 +40,7 @@ describe("ReviewProjectDetailPage", () => {
     mockedApi.listPossibleDuplicates.mockResolvedValue([]);
     mockedApi.listConflicts.mockResolvedValue([]);
     mockedApi.listInvitations.mockResolvedValue([]);
+    mockedApi.getSearchTerms.mockResolvedValue(null);
     mockedApi.getMe.mockResolvedValue({
       id: "owner-1",
       email: "owner@example.com",
@@ -217,6 +218,21 @@ describe("ReviewProjectDetailPage", () => {
 
     await waitFor(() => expect(mockedApi.getMe).toHaveBeenCalled());
     expect(screen.queryByRole("heading", { name: /co-reviewer/i })).not.toBeInTheDocument();
+  });
+
+  it("shows the Search Terms section whether Criteria is locked or unlocked", async () => {
+    mockedApi.getReviewProject.mockResolvedValue({
+      ...baseProject,
+      criteria_locked: true,
+      criteria: null,
+    });
+
+    renderPage();
+
+    expect(await screen.findByRole("heading", { name: /search terms/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /suggest search terms/i })
+    ).not.toBeDisabled();
   });
 
   it("hides the Co-Reviewer panel from a Co-Reviewer, even on a Dual Review Project", async () => {
