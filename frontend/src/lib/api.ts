@@ -308,44 +308,63 @@ async function errorMessage(response: Response, fallback: string): Promise<strin
   return fallback;
 }
 
-export async function registerReviewer(payload: ReviewerInput): Promise<Reviewer> {
-  const response = await fetch(`${API_URL}/register`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+// The one seam every request response passes through before its body is
+// touched: whatever the backend sent as `detail` on a non-2xx response is
+// what callers see, instead of each call site deciding for itself whether to
+// bother reading it.
+async function ensureOk(response: Response, fallback: string): Promise<Response> {
   if (!response.ok) {
-    throw new Error(await errorMessage(response, "Failed to register"));
+    throw new Error(await errorMessage(response, fallback));
   }
+  return response;
+}
+
+// Convenience for the common case (authenticated endpoint, JSON body, JSON
+// response) that most exported functions below reduce to.
+async function request<T>(input: string, init: RequestInit, fallback: string): Promise<T> {
+  const response = await ensureOk(await authorizedFetch(input, init), fallback);
   return response.json();
+}
+
+// Same as `request`, but for the handful of endpoints a Reviewer hits before
+// they're authenticated (register/login/invitation acceptance), which use
+// plain fetch rather than authorizedFetch so a 401 there (e.g. a wrong
+// password) never triggers the token-expiry redirect.
+async function publicRequest<T>(input: string, init: RequestInit, fallback: string): Promise<T> {
+  const response = await ensureOk(await fetch(input, init), fallback);
+  return response.json();
+}
+
+export async function registerReviewer(payload: ReviewerInput): Promise<Reviewer> {
+  return publicRequest(
+    `${API_URL}/register`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+    "Failed to register"
+  );
 }
 
 export async function loginReviewer(payload: ReviewerInput): Promise<AuthToken> {
-  const response = await fetch(`${API_URL}/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!response.ok) {
-    throw new Error(await errorMessage(response, "Failed to log in"));
-  }
-  return response.json();
+  return publicRequest(
+    `${API_URL}/login`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+    "Failed to log in"
+  );
 }
 
 export async function getMe(): Promise<Reviewer> {
-  const response = await authorizedFetch(`${API_URL}/me`);
-  if (!response.ok) {
-    throw new Error("Failed to load current reviewer");
-  }
-  return response.json();
+  return request(`${API_URL}/me`, {}, "Failed to load current reviewer");
 }
 
 export async function listReviewProjects(): Promise<ReviewProject[]> {
-  const response = await authorizedFetch(`${API_URL}/review-projects`);
-  if (!response.ok) {
-    throw new Error("Failed to load review projects");
-  }
-  return response.json();
+  return request(`${API_URL}/review-projects`, {}, "Failed to load review projects");
 }
 
 // Thrown instead of a plain Error when creation is blocked by the Free
@@ -366,41 +385,31 @@ export async function createReviewProject(
       await errorMessage(response, "Free Plan is limited to 1 Review Project.")
     );
   }
-  if (!response.ok) {
-    throw new Error("Failed to create review project");
-  }
-  return response.json();
+  return (await ensureOk(response, "Failed to create review project")).json();
 }
 
 export async function getReviewProject(id: string): Promise<ReviewProjectDetail> {
-  const response = await authorizedFetch(`${API_URL}/review-projects/${id}`);
-  if (!response.ok) {
-    throw new Error("Failed to load review project");
-  }
-  return response.json();
+  return request(`${API_URL}/review-projects/${id}`, {}, "Failed to load review project");
 }
 
 export async function saveCriteria(id: string, payload: CriteriaInput): Promise<Criteria> {
-  const response = await authorizedFetch(`${API_URL}/review-projects/${id}/criteria`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!response.ok) {
-    throw new Error("Failed to save criteria");
-  }
-  return response.json();
+  return request(
+    `${API_URL}/review-projects/${id}/criteria`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+    "Failed to save criteria"
+  );
 }
 
 export async function generateSearchTerms(reviewProjectId: string): Promise<SearchTerms> {
-  const response = await authorizedFetch(
+  return request(
     `${API_URL}/review-projects/${reviewProjectId}/search-terms`,
-    { method: "POST" }
+    { method: "POST" },
+    "Failed to generate search terms"
   );
-  if (!response.ok) {
-    throw new Error(await errorMessage(response, "Failed to generate search terms"));
-  }
-  return response.json();
 }
 
 // Returns null when no Search Terms have been generated yet (backend 404),
@@ -410,56 +419,47 @@ export async function getSearchTerms(reviewProjectId: string): Promise<SearchTer
     `${API_URL}/review-projects/${reviewProjectId}/search-terms`
   );
   if (response.status === 404) return null;
-  if (!response.ok) {
-    throw new Error(await errorMessage(response, "Failed to load search terms"));
-  }
-  return response.json();
+  return (await ensureOk(response, "Failed to load search terms")).json();
 }
 
 export async function updateSearchTerms(
   reviewProjectId: string,
   payload: SearchTermsInput
 ): Promise<SearchTerms> {
-  const response = await authorizedFetch(
+  return request(
     `${API_URL}/review-projects/${reviewProjectId}/search-terms`,
     {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
-    }
+    },
+    "Failed to update search terms"
   );
-  if (!response.ok) {
-    throw new Error(await errorMessage(response, "Failed to update search terms"));
-  }
-  return response.json();
 }
 
 export async function listExtractionFields(
   reviewProjectId: string
 ): Promise<ExtractionField[]> {
-  const response = await authorizedFetch(`${API_URL}/review-projects/${reviewProjectId}/extraction-fields`);
-  if (!response.ok) {
-    throw new Error("Failed to load extraction fields");
-  }
-  return response.json();
+  return request(
+    `${API_URL}/review-projects/${reviewProjectId}/extraction-fields`,
+    {},
+    "Failed to load extraction fields"
+  );
 }
 
 export async function createExtractionField(
   reviewProjectId: string,
   payload: ExtractionFieldInput
 ): Promise<ExtractionField> {
-  const response = await authorizedFetch(
+  return request(
     `${API_URL}/review-projects/${reviewProjectId}/extraction-fields`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
-    }
+    },
+    "Failed to create extraction field"
   );
-  if (!response.ok) {
-    throw new Error("Failed to create extraction field");
-  }
-  return response.json();
 }
 
 export async function updateExtractionField(
@@ -467,40 +467,34 @@ export async function updateExtractionField(
   extractionFieldId: string,
   payload: ExtractionFieldInput
 ): Promise<ExtractionField> {
-  const response = await authorizedFetch(
+  return request(
     `${API_URL}/review-projects/${reviewProjectId}/extraction-fields/${extractionFieldId}`,
     {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
-    }
+    },
+    "Failed to update extraction field"
   );
-  if (!response.ok) {
-    throw new Error("Failed to update extraction field");
-  }
-  return response.json();
 }
 
 export async function archiveExtractionField(
   reviewProjectId: string,
   extractionFieldId: string
 ): Promise<ExtractionField> {
-  const response = await authorizedFetch(
+  return request(
     `${API_URL}/review-projects/${reviewProjectId}/extraction-fields/${extractionFieldId}/archive`,
-    { method: "POST" }
+    { method: "POST" },
+    "Failed to archive extraction field"
   );
-  if (!response.ok) {
-    throw new Error("Failed to archive extraction field");
-  }
-  return response.json();
 }
 
 export async function listCitations(reviewProjectId: string): Promise<Citation[]> {
-  const response = await authorizedFetch(`${API_URL}/review-projects/${reviewProjectId}/citations`);
-  if (!response.ok) {
-    throw new Error("Failed to load citations");
-  }
-  return response.json();
+  return request(
+    `${API_URL}/review-projects/${reviewProjectId}/citations`,
+    {},
+    "Failed to load citations"
+  );
 }
 
 export async function uploadCitations(
@@ -509,27 +503,22 @@ export async function uploadCitations(
 ): Promise<CitationUploadResult> {
   const formData = new FormData();
   formData.append("file", file);
-  const response = await authorizedFetch(`${API_URL}/review-projects/${reviewProjectId}/citations`, {
-    method: "POST",
-    body: formData,
-  });
-  if (!response.ok) {
-    throw new Error("Failed to upload citations");
-  }
-  return response.json();
+  return request(
+    `${API_URL}/review-projects/${reviewProjectId}/citations`,
+    { method: "POST", body: formData },
+    "Failed to upload citations"
+  );
 }
 
 export async function getCitation(
   reviewProjectId: string,
   citationId: string
 ): Promise<CitationDetail> {
-  const response = await authorizedFetch(
-    `${API_URL}/review-projects/${reviewProjectId}/citations/${citationId}`
+  return request(
+    `${API_URL}/review-projects/${reviewProjectId}/citations/${citationId}`,
+    {},
+    "Failed to load citation"
   );
-  if (!response.ok) {
-    throw new Error("Failed to load citation");
-  }
-  return response.json();
 }
 
 export type FlowDiagram = {
@@ -546,13 +535,11 @@ export type FlowDiagram = {
 };
 
 export async function getFlowDiagram(reviewProjectId: string): Promise<FlowDiagram> {
-  const response = await authorizedFetch(
-    `${API_URL}/review-projects/${reviewProjectId}/flow-diagram`
+  return request(
+    `${API_URL}/review-projects/${reviewProjectId}/flow-diagram`,
+    {},
+    "Failed to load flow diagram"
   );
-  if (!response.ok) {
-    throw new Error("Failed to load flow diagram");
-  }
-  return response.json();
 }
 
 export type ExportedFile = {
@@ -561,10 +548,10 @@ export type ExportedFile = {
 };
 
 export async function exportReviewProject(reviewProjectId: string): Promise<ExportedFile> {
-  const response = await authorizedFetch(`${API_URL}/review-projects/${reviewProjectId}/export`);
-  if (!response.ok) {
-    throw new Error("Failed to export review project");
-  }
+  const response = await ensureOk(
+    await authorizedFetch(`${API_URL}/review-projects/${reviewProjectId}/export`),
+    "Failed to export review project"
+  );
   const disposition = response.headers.get("Content-Disposition") ?? "";
   const filenameMatch = disposition.match(/filename="([^"]+)"/);
   return {
@@ -580,14 +567,11 @@ export async function uploadFullText(
 ): Promise<FullText> {
   const formData = new FormData();
   formData.append("file", file);
-  const response = await authorizedFetch(
+  return request(
     `${API_URL}/review-projects/${reviewProjectId}/citations/${citationId}/full-text`,
-    { method: "POST", body: formData }
+    { method: "POST", body: formData },
+    "Failed to upload full text"
   );
-  if (!response.ok) {
-    throw new Error("Failed to upload full text");
-  }
-  return response.json();
 }
 
 // A plain <a href> can't carry the Authorization header this endpoint now
@@ -597,12 +581,12 @@ export async function fetchFullTextFile(
   reviewProjectId: string,
   citationId: string
 ): Promise<Blob> {
-  const response = await authorizedFetch(
-    `${API_URL}/review-projects/${reviewProjectId}/citations/${citationId}/full-text/file`
+  const response = await ensureOk(
+    await authorizedFetch(
+      `${API_URL}/review-projects/${reviewProjectId}/citations/${citationId}/full-text/file`
+    ),
+    "Failed to load full text file"
   );
-  if (!response.ok) {
-    throw new Error("Failed to load full text file");
-  }
   return response.blob();
 }
 
@@ -611,18 +595,15 @@ export async function recordScreeningDecision(
   citationId: string,
   payload: ScreeningDecisionInput
 ): Promise<ScreeningDecision> {
-  const response = await authorizedFetch(
+  return request(
     `${API_URL}/review-projects/${reviewProjectId}/citations/${citationId}/decision`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
-    }
+    },
+    "Failed to record screening decision"
   );
-  if (!response.ok) {
-    throw new Error("Failed to record screening decision");
-  }
-  return response.json();
 }
 
 export async function recordFullTextDecision(
@@ -630,30 +611,25 @@ export async function recordFullTextDecision(
   citationId: string,
   payload: FullTextDecisionInput
 ): Promise<FullTextDecision> {
-  const response = await authorizedFetch(
+  return request(
     `${API_URL}/review-projects/${reviewProjectId}/citations/${citationId}/full-text-decision`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
-    }
+    },
+    "Failed to record full-text decision"
   );
-  if (!response.ok) {
-    throw new Error("Failed to record full-text decision");
-  }
-  return response.json();
 }
 
 export async function listPossibleDuplicates(
   reviewProjectId: string
 ): Promise<PossibleDuplicate[]> {
-  const response = await authorizedFetch(
-    `${API_URL}/review-projects/${reviewProjectId}/possible-duplicates`
+  return request(
+    `${API_URL}/review-projects/${reviewProjectId}/possible-duplicates`,
+    {},
+    "Failed to load possible duplicates"
   );
-  if (!response.ok) {
-    throw new Error("Failed to load possible duplicates");
-  }
-  return response.json();
 }
 
 export async function resolvePossibleDuplicate(
@@ -661,39 +637,36 @@ export async function resolvePossibleDuplicate(
   possibleDuplicateId: string,
   choices: ConflictResolutionChoiceInput[]
 ): Promise<Citation> {
-  const response = await authorizedFetch(
+  return request(
     `${API_URL}/review-projects/${reviewProjectId}/possible-duplicates/${possibleDuplicateId}/resolve`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ choices }),
-    }
+    },
+    "Failed to resolve possible duplicate"
   );
-  if (!response.ok) {
-    throw new Error("Failed to resolve possible duplicate");
-  }
-  return response.json();
 }
 
 export async function dismissPossibleDuplicate(
   reviewProjectId: string,
   possibleDuplicateId: string
 ): Promise<void> {
-  const response = await authorizedFetch(
-    `${API_URL}/review-projects/${reviewProjectId}/possible-duplicates/${possibleDuplicateId}/dismiss`,
-    { method: "POST" }
+  await ensureOk(
+    await authorizedFetch(
+      `${API_URL}/review-projects/${reviewProjectId}/possible-duplicates/${possibleDuplicateId}/dismiss`,
+      { method: "POST" }
+    ),
+    "Failed to dismiss possible duplicate"
   );
-  if (!response.ok) {
-    throw new Error("Failed to dismiss possible duplicate");
-  }
 }
 
 export async function listConflicts(reviewProjectId: string): Promise<Conflict[]> {
-  const response = await authorizedFetch(`${API_URL}/review-projects/${reviewProjectId}/conflicts`);
-  if (!response.ok) {
-    throw new Error("Failed to load conflicts");
-  }
-  return response.json();
+  return request(
+    `${API_URL}/review-projects/${reviewProjectId}/conflicts`,
+    {},
+    "Failed to load conflicts"
+  );
 }
 
 export async function resolveConflict(
@@ -701,64 +674,50 @@ export async function resolveConflict(
   conflictId: string,
   payload: ConflictResolveInput
 ): Promise<ConflictResolved> {
-  const response = await authorizedFetch(
+  return request(
     `${API_URL}/review-projects/${reviewProjectId}/conflicts/${conflictId}/resolve`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
-    }
+    },
+    "Failed to resolve conflict"
   );
-  if (!response.ok) {
-    throw new Error(await errorMessage(response, "Failed to resolve conflict"));
-  }
-  return response.json();
 }
 
 export async function listInvitations(reviewProjectId: string): Promise<Invitation[]> {
-  const response = await authorizedFetch(
-    `${API_URL}/review-projects/${reviewProjectId}/invitations`
+  return request(
+    `${API_URL}/review-projects/${reviewProjectId}/invitations`,
+    {},
+    "Failed to load invitations"
   );
-  if (!response.ok) {
-    throw new Error("Failed to load invitations");
-  }
-  return response.json();
 }
 
 export async function createInvitation(reviewProjectId: string): Promise<Invitation> {
-  const response = await authorizedFetch(
+  return request(
     `${API_URL}/review-projects/${reviewProjectId}/invitations`,
-    { method: "POST" }
+    { method: "POST" },
+    "Failed to generate invitation"
   );
-  if (!response.ok) {
-    throw new Error(await errorMessage(response, "Failed to generate invitation"));
-  }
-  return response.json();
 }
 
 export async function revokeInvitation(
   reviewProjectId: string,
   invitationId: string
 ): Promise<Invitation> {
-  const response = await authorizedFetch(
+  return request(
     `${API_URL}/review-projects/${reviewProjectId}/invitations/${invitationId}/revoke`,
-    { method: "POST" }
+    { method: "POST" },
+    "Failed to revoke invitation"
   );
-  if (!response.ok) {
-    throw new Error("Failed to revoke invitation");
-  }
-  return response.json();
 }
 
 export async function removeCoReviewer(reviewProjectId: string): Promise<ReviewProject> {
-  const response = await authorizedFetch(
+  return request(
     `${API_URL}/review-projects/${reviewProjectId}/co-reviewer/remove`,
-    { method: "POST" }
+    { method: "POST" },
+    "Failed to remove Co-Reviewer"
   );
-  if (!response.ok) {
-    throw new Error(await errorMessage(response, "Failed to remove Co-Reviewer"));
-  }
-  return response.json();
 }
 
 // Unauthenticated: the recipient doesn't have an account yet when they open
@@ -766,41 +725,37 @@ export async function removeCoReviewer(reviewProjectId: string): Promise<ReviewP
 // file) don't go through authorizedFetch.
 
 export async function getInvitationPublic(token: string): Promise<InvitationPublic> {
-  const response = await fetch(`${API_URL}/invitations/${token}`);
-  if (!response.ok) {
-    throw new Error(await errorMessage(response, "Failed to load invitation"));
-  }
-  return response.json();
+  return publicRequest(`${API_URL}/invitations/${token}`, {}, "Failed to load invitation");
 }
 
 export async function acceptInvitationByRegistering(
   token: string,
   payload: ReviewerInput
 ): Promise<InvitationAcceptResult> {
-  const response = await fetch(`${API_URL}/invitations/${token}/accept-register`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!response.ok) {
-    throw new Error(await errorMessage(response, "Failed to accept invitation"));
-  }
-  return response.json();
+  return publicRequest(
+    `${API_URL}/invitations/${token}/accept-register`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+    "Failed to accept invitation"
+  );
 }
 
 export async function acceptInvitationByLoggingIn(
   token: string,
   payload: ReviewerInput
 ): Promise<InvitationAcceptResult> {
-  const response = await fetch(`${API_URL}/invitations/${token}/accept-login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!response.ok) {
-    throw new Error(await errorMessage(response, "Failed to accept invitation"));
-  }
-  return response.json();
+  return publicRequest(
+    `${API_URL}/invitations/${token}/accept-login`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+    "Failed to accept invitation"
+  );
 }
 
 export type Plan = "free" | "paid";
@@ -816,10 +771,7 @@ export type Subscription = {
 export async function getMySubscription(): Promise<Subscription | null> {
   const response = await authorizedFetch(`${API_URL}/me/subscription`);
   if (response.status === 404) return null;
-  if (!response.ok) {
-    throw new Error("Failed to load subscription");
-  }
-  return response.json();
+  return (await ensureOk(response, "Failed to load subscription")).json();
 }
 
 export type CheckoutSession = {
@@ -827,13 +779,11 @@ export type CheckoutSession = {
 };
 
 export async function createCheckoutSession(): Promise<CheckoutSession> {
-  const response = await authorizedFetch(`${API_URL}/billing/checkout-session`, {
-    method: "POST",
-  });
-  if (!response.ok) {
-    throw new Error(await errorMessage(response, "Failed to start checkout"));
-  }
-  return response.json();
+  return request(
+    `${API_URL}/billing/checkout-session`,
+    { method: "POST" },
+    "Failed to start checkout"
+  );
 }
 
 export type PortalSession = {
@@ -841,13 +791,11 @@ export type PortalSession = {
 };
 
 export async function createPortalSession(): Promise<PortalSession> {
-  const response = await authorizedFetch(`${API_URL}/billing/portal-session`, {
-    method: "POST",
-  });
-  if (!response.ok) {
-    throw new Error(await errorMessage(response, "Failed to open billing portal"));
-  }
-  return response.json();
+  return request(
+    `${API_URL}/billing/portal-session`,
+    { method: "POST" },
+    "Failed to open billing portal"
+  );
 }
 
 export async function recordExtractionValue(
@@ -856,17 +804,14 @@ export async function recordExtractionValue(
   extractionFieldId: string,
   payload: ExtractionValueInput
 ): Promise<ExtractionValue> {
-  const response = await authorizedFetch(
+  return request(
     `${API_URL}/review-projects/${reviewProjectId}/citations/${citationId}` +
       `/extraction-fields/${extractionFieldId}/value`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
-    }
+    },
+    "Failed to record extraction value"
   );
-  if (!response.ok) {
-    throw new Error("Failed to record extraction value");
-  }
-  return response.json();
 }

@@ -8,6 +8,9 @@ const mockedAuth = vi.mocked(auth);
 
 import {
   createReviewProject,
+  dismissPossibleDuplicate,
+  getMySubscription,
+  getReviewProject,
   listReviewProjects,
   loginReviewer,
   registerReviewer,
@@ -131,5 +134,46 @@ describe("api authorization handling", () => {
     expect((error as Error).message).toBe(
       "Free Plan is limited to 1 Review Project. Upgrade to create more."
     );
+  });
+
+  it("surfaces the backend's real detail even for endpoints that used to throw a generic string", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ detail: "Review project belongs to a different Reviewer" }),
+        { status: 403 }
+      )
+    );
+    global.fetch = fetchMock;
+
+    await expect(getReviewProject("proj-1")).rejects.toThrow(
+      "Review project belongs to a different Reviewer"
+    );
+  });
+
+  it("falls back to a generic message when the backend response has no detail", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 500 }));
+    global.fetch = fetchMock;
+
+    await expect(getReviewProject("proj-1")).rejects.toThrow("Failed to load review project");
+  });
+
+  it("surfaces real detail for void-returning endpoints too", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ detail: "Possible duplicate already resolved" }), {
+        status: 409,
+      })
+    );
+    global.fetch = fetchMock;
+
+    await expect(dismissPossibleDuplicate("proj-1", "dup-1")).rejects.toThrow(
+      "Possible duplicate already resolved"
+    );
+  });
+
+  it("still returns null for a 404 on getMySubscription rather than throwing", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 404 }));
+    global.fetch = fetchMock;
+
+    await expect(getMySubscription()).resolves.toBeNull();
   });
 });
