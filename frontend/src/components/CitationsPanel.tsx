@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, type ChangeEvent } from "react";
+import { useState, type ChangeEvent } from "react";
 
-import { listCitations, uploadCitations, type Citation } from "@/lib/api";
+import { listCitations, uploadCitations } from "@/lib/api";
+import { useListResource } from "@/lib/useListResource";
 
 export function CitationsPanel({
   reviewProjectId,
@@ -14,14 +15,17 @@ export function CitationsPanel({
   onCitationsChanged?: () => void;
   refreshToken?: number;
 }) {
-  const [citations, setCitations] = useState<Citation[]>([]);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    listCitations(reviewProjectId)
-      .then(setCitations)
-      .catch(() => setError("Failed to load citations."));
-  }, [reviewProjectId, refreshToken]);
+  const {
+    data: citations,
+    error: loadError,
+    refresh,
+  } = useListResource(
+    () => listCitations(reviewProjectId),
+    [reviewProjectId, refreshToken],
+    "Failed to load citations."
+  );
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const error = uploadError ?? loadError;
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -29,11 +33,11 @@ export function CitationsPanel({
 
     try {
       await uploadCitations(reviewProjectId, file);
-      setCitations(await listCitations(reviewProjectId));
-      setError(null);
+      setUploadError(null);
+      await refresh();
       onCitationsChanged?.();
     } catch {
-      setError("Failed to upload citations.");
+      setUploadError("Failed to upload citations.");
     } finally {
       event.target.value = "";
     }

@@ -1,13 +1,22 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as api from "@/lib/api";
+import type { ExtractionField } from "@/lib/api";
 
 import { ExtractionFieldsPanel } from "./ExtractionFieldsPanel";
 
 vi.mock("@/lib/api");
 
 const mockedApi = vi.mocked(api);
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
 
 const sampleSizeField = {
   id: "f1",
@@ -138,5 +147,26 @@ describe("ExtractionFieldsPanel", () => {
       expect(mockedApi.archiveExtractionField).toHaveBeenCalledWith("1", "f1")
     );
     await waitFor(() => expect(screen.queryByText("Sample size")).not.toBeInTheDocument());
+  });
+
+  it("ignores a stale response after reviewProjectId changes before it resolves", async () => {
+    const first = deferred<ExtractionField[]>();
+    const second = deferred<ExtractionField[]>();
+    mockedApi.listExtractionFields
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
+
+    const { rerender } = render(<ExtractionFieldsPanel reviewProjectId="1" />);
+    rerender(<ExtractionFieldsPanel reviewProjectId="2" />);
+
+    await act(async () => {
+      second.resolve([{ ...sampleSizeField, id: "b", name: "Project B Field" }]);
+    });
+    expect(await screen.findByText("Project B Field")).toBeInTheDocument();
+
+    await act(async () => {
+      first.resolve([{ ...sampleSizeField, id: "a", name: "Project A Field" }]);
+    });
+    expect(screen.queryByText("Project A Field")).not.toBeInTheDocument();
   });
 });

@@ -1,13 +1,35 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as api from "@/lib/api";
+import type { Citation } from "@/lib/api";
 
 import { CitationsPanel } from "./CitationsPanel";
 
 vi.mock("@/lib/api");
 
 const mockedApi = vi.mocked(api);
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
+
+function citation(id: string, title: string): Citation {
+  return {
+    id,
+    title,
+    abstract: "Abstract",
+    authors: [],
+    year: 2022,
+    source: [],
+    needs_abstract: false,
+    blocked_pending_co_reviewer: false,
+  };
+}
 
 describe("CitationsPanel", () => {
   beforeEach(() => {
@@ -139,5 +161,24 @@ describe("CitationsPanel", () => {
     });
 
     await waitFor(() => expect(onCitationsChanged).toHaveBeenCalledTimes(1));
+  });
+
+  it("ignores a stale response after reviewProjectId changes before it resolves", async () => {
+    const first = deferred<Citation[]>();
+    const second = deferred<Citation[]>();
+    mockedApi.listCitations.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+
+    const { rerender } = render(<CitationsPanel reviewProjectId="1" />);
+    rerender(<CitationsPanel reviewProjectId="2" />);
+
+    await act(async () => {
+      second.resolve([citation("b", "Project B Citation")]);
+    });
+    expect(await screen.findByText("Project B Citation")).toBeInTheDocument();
+
+    await act(async () => {
+      first.resolve([citation("a", "Project A Citation")]);
+    });
+    expect(screen.queryByText("Project A Citation")).not.toBeInTheDocument();
   });
 });

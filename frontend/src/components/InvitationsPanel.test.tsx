@@ -1,13 +1,22 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as api from "@/lib/api";
+import type { Invitation } from "@/lib/api";
 
 import { InvitationsPanel } from "./InvitationsPanel";
 
 vi.mock("@/lib/api");
 
 const mockedApi = vi.mocked(api);
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
 
 const pendingInvitation = {
   id: "inv-1",
@@ -138,5 +147,24 @@ describe("InvitationsPanel", () => {
     expect(
       await screen.findByText(/review project has no co-reviewer to remove/i)
     ).toBeInTheDocument();
+  });
+
+  it("ignores a stale response after reviewProjectId changes before it resolves", async () => {
+    const first = deferred<Invitation[]>();
+    const second = deferred<Invitation[]>();
+    mockedApi.listInvitations.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+
+    const { rerender } = render(<InvitationsPanel reviewProjectId="1" hasCoReviewer={false} />);
+    rerender(<InvitationsPanel reviewProjectId="2" hasCoReviewer={false} />);
+
+    await act(async () => {
+      second.resolve([{ ...pendingInvitation, id: "b", token: "token-b" }]);
+    });
+    expect(await screen.findByDisplayValue(/\/invitations\/token-b$/)).toBeInTheDocument();
+
+    await act(async () => {
+      first.resolve([{ ...pendingInvitation, id: "a", token: "token-a" }]);
+    });
+    expect(screen.queryByDisplayValue(/\/invitations\/token-a$/)).not.toBeInTheDocument();
   });
 });

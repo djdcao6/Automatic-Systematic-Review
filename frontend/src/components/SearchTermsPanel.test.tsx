@@ -1,13 +1,22 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as api from "@/lib/api";
+import type { SearchTerms } from "@/lib/api";
 
 import { SearchTermsPanel } from "./SearchTermsPanel";
 
 vi.mock("@/lib/api");
 
 const mockedApi = vi.mocked(api);
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
 
 const sampleTerms = {
   population_terms: ["adults", "elderly"],
@@ -157,5 +166,24 @@ describe("SearchTermsPanel", () => {
     render(<SearchTermsPanel reviewProjectId="1" />);
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/failed to load/i);
+  });
+
+  it("ignores a stale response after reviewProjectId changes before it resolves", async () => {
+    const first = deferred<SearchTerms | null>();
+    const second = deferred<SearchTerms | null>();
+    mockedApi.getSearchTerms.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+
+    const { rerender } = render(<SearchTermsPanel reviewProjectId="1" />);
+    rerender(<SearchTermsPanel reviewProjectId="2" />);
+
+    await act(async () => {
+      second.resolve({ ...sampleTerms, population_terms: ["project-b-term"] });
+    });
+    expect(await screen.findByText("project-b-term")).toBeInTheDocument();
+
+    await act(async () => {
+      first.resolve({ ...sampleTerms, population_terms: ["project-a-term"] });
+    });
+    expect(screen.queryByText("project-a-term")).not.toBeInTheDocument();
   });
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 
 import {
   archiveExtractionField,
@@ -10,6 +10,7 @@ import {
   type ExtractionField,
   type ExtractionFieldInput,
 } from "@/lib/api";
+import { useListResource } from "@/lib/useListResource";
 
 function blankOrValue(value: string): string | null {
   const trimmed = value.trim();
@@ -58,21 +59,20 @@ function EditFieldForm({
 }
 
 export function ExtractionFieldsPanel({ reviewProjectId }: { reviewProjectId: string }) {
-  const [fields, setFields] = useState<ExtractionField[]>([]);
+  const {
+    data: fields,
+    error: loadError,
+    refresh,
+  } = useListResource(
+    () => listExtractionFields(reviewProjectId),
+    [reviewProjectId],
+    "Failed to load extraction fields."
+  );
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    listExtractionFields(reviewProjectId)
-      .then(setFields)
-      .catch(() => setError("Failed to load extraction fields."));
-  }, [reviewProjectId]);
-
-  async function refresh() {
-    setFields(await listExtractionFields(reviewProjectId));
-  }
+  const [actionError, setActionError] = useState<string | null>(null);
+  const error = actionError ?? loadError;
 
   async function handleAddField(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -84,10 +84,10 @@ export function ExtractionFieldsPanel({ reviewProjectId }: { reviewProjectId: st
       });
       setName("");
       setDescription("");
-      setError(null);
+      setActionError(null);
       await refresh();
     } catch {
-      setError("Failed to add extraction field.");
+      setActionError("Failed to add extraction field.");
     }
   }
 
@@ -95,20 +95,20 @@ export function ExtractionFieldsPanel({ reviewProjectId }: { reviewProjectId: st
     try {
       await updateExtractionField(reviewProjectId, fieldId, input);
       setEditingId(null);
-      setError(null);
+      setActionError(null);
       await refresh();
     } catch {
-      setError("Failed to update extraction field.");
+      setActionError("Failed to update extraction field.");
     }
   }
 
   async function handleArchive(fieldId: string) {
     try {
       await archiveExtractionField(reviewProjectId, fieldId);
-      setError(null);
+      setActionError(null);
       await refresh();
     } catch {
-      setError("Failed to archive extraction field.");
+      setActionError("Failed to archive extraction field.");
     }
   }
 

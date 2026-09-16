@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   createInvitation,
@@ -26,20 +26,41 @@ export function InvitationsPanel({
 }) {
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // Not useListResource: the fetch is conditionally skipped entirely while
+  // hasCoReviewer is true, which the hook's always-fetch shape doesn't
+  // support. Guards the same reviewProjectId-change race with the same
+  // monotonic-token approach, just inlined.
+  const latestRequest = useRef(0);
 
   useEffect(() => {
     if (hasCoReviewer) return;
+    const requestId = ++latestRequest.current;
     listInvitations(reviewProjectId)
-      .then(setInvitations)
-      .catch(() => setError("Failed to load invitations."));
+      .then((result) => {
+        if (requestId === latestRequest.current) {
+          setInvitations(result);
+          setError(null);
+        }
+      })
+      .catch(() => {
+        if (requestId === latestRequest.current) {
+          setError("Failed to load invitations.");
+        }
+      });
   }, [reviewProjectId, hasCoReviewer]);
 
   async function refresh() {
+    const requestId = ++latestRequest.current;
     try {
-      setInvitations(await listInvitations(reviewProjectId));
-      setError(null);
+      const result = await listInvitations(reviewProjectId);
+      if (requestId === latestRequest.current) {
+        setInvitations(result);
+        setError(null);
+      }
     } catch {
-      setError("Failed to load invitations.");
+      if (requestId === latestRequest.current) {
+        setError("Failed to load invitations.");
+      }
     }
   }
 

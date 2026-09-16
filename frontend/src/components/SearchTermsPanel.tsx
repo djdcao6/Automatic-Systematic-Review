@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 
 import {
   generateSearchTerms,
@@ -80,11 +80,26 @@ export function SearchTermsPanel({ reviewProjectId }: { reviewProjectId: string 
   // response could overwrite the first edit. Disabling the controls while a
   // request is in flight serializes edits and avoids that race.
   const [isSaving, setIsSaving] = useState(false);
+  // Not useListResource: this is a singular resource (SearchTerms | null),
+  // not a list, and already has its own isSaving guard for concurrent
+  // mutations. Guards the reviewProjectId-change race on the initial load
+  // only, with the same monotonic-token approach the hook uses.
+  const latestRequest = useRef(0);
 
   useEffect(() => {
+    const requestId = ++latestRequest.current;
     getSearchTerms(reviewProjectId)
-      .then(setSearchTerms)
-      .catch(() => setError("Failed to load search terms."));
+      .then((result) => {
+        if (requestId === latestRequest.current) {
+          setSearchTerms(result);
+          setError(null);
+        }
+      })
+      .catch(() => {
+        if (requestId === latestRequest.current) {
+          setError("Failed to load search terms.");
+        }
+      });
   }, [reviewProjectId]);
 
   async function handleGenerate() {
