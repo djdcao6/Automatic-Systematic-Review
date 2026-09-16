@@ -79,3 +79,7 @@ _Avoid_: Second reviewer, Collaborator
 **PRISMA Flow Diagram**:
 A per-Review-Project report of the screening funnel — records identified (per source, counted before deduplication), duplicates removed, screened, excluded, full-text assessed, excluded with itemized reasons, and included — computed live from current data and viewable at any point in a review, with a plain numeric summary alongside the visual. Adapted rather than a literal reproduction of the official PRISMA 2020 template: omits stages this tool has no data for (records marked ineligible by automation, reports sought but not retrieved) and the qualitative/quantitative synthesis split.
 _Avoid_: Report, Chart, PRISMA diagram
+
+**Search Terms**:
+A Reviewer-editable set of AI-suggested search terms for a Review Project, generated on demand from its Criteria's PICO fields: terms grouped by PICO concept (Population, Intervention, Comparison, Outcome), plus a combined boolean query string always derived from those groups (terms within a concept OR'd, concepts AND'd together). Purely advisory — the Reviewer copies it into their own database search and uploads results through the existing Citation upload flow; nothing here executes a search or imports Citations automatically. Regenerable at any time, overwriting the prior result in place, independent of whether the Review Project's Criteria has locked. Requires at least one PICO field filled in to generate.
+_Avoid_: Query, Search String, Boolean Query, Database Query
