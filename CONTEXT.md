@@ -60,6 +60,14 @@ _Avoid_: AI extraction, Auto-extraction
 A free-text data point a Reviewer defines per Review Project to capture from a Citation's Full Text (e.g. sample size, methodology). Unlike Criteria, not locked once in use — a Reviewer can keep editing the field list through a review. Deleting a field that already has recorded values archives it rather than discarding the data.
 _Avoid_: Data point, Schema field
 
+**Subscription**:
+The Stripe-backed record of a Reviewer's paid billing relationship. Exists only once a Reviewer has started checkout; its status (active, canceled, past due, etc.) is kept in sync via Stripe webhooks and determines whether that Reviewer is on the Paid Plan. A Reviewer with no Subscription, or one that's canceled/expired, is on the Free Plan.
+_Avoid_: Billing record, Payment
+
+**Plan**:
+A Reviewer's current capability level — Free or Paid — derived live from their Subscription's status, never stored independently of it. Paid removes the Free Plan's cap on how many Review Projects a Reviewer may own. A Reviewer's Plan only ever affects Review Projects they own; participating as a Co-Reviewer on someone else's Review Project is unaffected by either Reviewer's own Plan.
+_Avoid_: Tier, Subscription level
+
 **Reviewer**:
 An authenticated account (email + password) that can create Review Projects and record Screening Decisions. A Review Project has one Reviewer (Solo Review Mode) or two — its Owner and a Co-Reviewer (Dual Review Mode).
 _Avoid_: User, Screener, Account
