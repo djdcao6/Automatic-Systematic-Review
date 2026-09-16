@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useId, useState, type FormEvent } from "react";
 
 import {
   generateSearchTerms,
@@ -33,7 +33,7 @@ function ConceptTerms({
   onRemove: (term: string) => void;
 }) {
   const [newTerm, setNewTerm] = useState("");
-  const inputId = `search-term-${label.toLowerCase()}`;
+  const inputId = useId();
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
