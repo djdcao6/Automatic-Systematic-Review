@@ -12,6 +12,7 @@ const mockedApi = vi.mocked(api);
 describe("Home", () => {
   beforeEach(() => {
     mockedApi.listReviewProjects.mockResolvedValue([]);
+    mockedApi.getMySubscription.mockResolvedValue(null);
     mockedApi.createReviewProject.mockResolvedValue({
       id: "1",
       name: "New Review",
@@ -97,5 +98,23 @@ describe("Home", () => {
     fireEvent.click(screen.getByRole("button", { name: /create review project/i }));
 
     await waitFor(() => expect(mockedApi.createReviewProject).not.toHaveBeenCalled());
+  });
+
+  it("hides the Account/Billing link while billing is disabled", async () => {
+    render(<Home />);
+
+    await waitFor(() => expect(mockedApi.getMySubscription).toHaveBeenCalled());
+    expect(screen.queryByRole("link", { name: /account.*billing/i })).not.toBeInTheDocument();
+  });
+
+  it("shows the Account/Billing link once billing is enabled", async () => {
+    mockedApi.getMySubscription.mockResolvedValue({ plan: "free", status: null });
+
+    render(<Home />);
+
+    expect(await screen.findByRole("link", { name: /account.*billing/i })).toHaveAttribute(
+      "href",
+      "/account"
+    );
   });
 });

@@ -49,6 +49,18 @@ class Token(BaseModel):
     token_type: Literal["bearer"] = "bearer"
 
 
+Plan = Literal["free", "paid"]
+
+
+class SubscriptionRead(BaseModel):
+    plan: Plan
+    status: str | None
+
+
+class CheckoutSessionRead(BaseModel):
+    url: str
+
+
 class ReviewProjectCreate(BaseModel):
     name: str
     merge_mode: Literal["combine", "keep_first"]

@@ -1,12 +1,13 @@
 import uuid
 
-from fastapi import Depends, FastAPI, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session
 
 from asr_backend import (
     auth,
+    billing,
     citation_import,
     conflicts,
     crud,
@@ -74,6 +75,70 @@ def get_me(
     reviewer: models.Reviewer = Depends(auth.get_current_reviewer),
 ) -> models.Reviewer:
     return reviewer
+
+
+def require_billing_enabled() -> None:
+    """Gates every Reviewer-facing billing endpoint per #39's dark launch.
+
+    While `billing_enabled` is False, these 404 exactly like a route that
+    doesn't exist, rather than exposing Plan/Subscription state, so the
+    Account/Billing page has nothing to show. The webhook endpoint is
+    intentionally not gated by this — it's server-to-server, verified by
+    Stripe's signature rather than a Reviewer session.
+    """
+    if not settings.billing_enabled:
+        raise HTTPException(status_code=404, detail="Not Found")
+
+
+@app.get(
+    "/me/subscription",
+    response_model=schemas.SubscriptionRead,
+    dependencies=[Depends(require_billing_enabled)],
+)
+def get_my_subscription(
+    reviewer: models.Reviewer = Depends(auth.get_current_reviewer),
+    db: Session = Depends(get_db),
+) -> schemas.SubscriptionRead:
+    subscription = crud.get_subscription(db, reviewer.id)
+    return schemas.SubscriptionRead(
+        plan=billing.derive_plan(subscription),
+        status=subscription.status if subscription else None,
+    )
+
+
+@app.post(
+    "/billing/checkout-session",
+    response_model=schemas.CheckoutSessionRead,
+    dependencies=[Depends(require_billing_enabled)],
+)
+def create_checkout_session(
+    reviewer: models.Reviewer = Depends(auth.get_current_reviewer),
+    db: Session = Depends(get_db),
+    gateway: billing.StripeGateway = Depends(billing.get_stripe_gateway),
+) -> schemas.CheckoutSessionRead:
+    existing = crud.get_subscription(db, reviewer.id)
+    session = gateway.create_checkout_session(
+        reviewer_id=reviewer.id,
+        reviewer_email=reviewer.email,
+        customer_id=existing.stripe_customer_id if existing else None,
+        success_url=f"{settings.frontend_origin}/account?checkout=success",
+        cancel_url=f"{settings.frontend_origin}/account?checkout=cancel",
+    )
+    return schemas.CheckoutSessionRead(url=session.url)
+
+
+@app.post("/billing/webhook", status_code=204)
+async def stripe_webhook(
+    request: Request,
+    db: Session = Depends(get_db),
+    gateway: billing.StripeGateway = Depends(billing.get_stripe_gateway),
+) -> None:
+    payload = await request.body()
+    sig_header = request.headers.get("stripe-signature", "")
+    try:
+        billing.handle_webhook_event(db, gateway, payload, sig_header)
+    except billing.WebhookSignatureError as exc:
+        raise HTTPException(status_code=400, detail="Invalid webhook signature") from exc
 
 
 def get_invitation_by_token_or_404(

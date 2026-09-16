@@ -793,6 +793,39 @@ export async function acceptInvitationByLoggingIn(
   return response.json();
 }
 
+export type Plan = "free" | "paid";
+
+export type Subscription = {
+  plan: Plan;
+  status: string | null;
+};
+
+// Returns null when billing is disabled (backend 404) rather than treating
+// the dark-launch flag-off state as a load failure — callers use null to
+// keep all billing UI hidden, per #39.
+export async function getMySubscription(): Promise<Subscription | null> {
+  const response = await authorizedFetch(`${API_URL}/me/subscription`);
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    throw new Error("Failed to load subscription");
+  }
+  return response.json();
+}
+
+export type CheckoutSession = {
+  url: string;
+};
+
+export async function createCheckoutSession(): Promise<CheckoutSession> {
+  const response = await authorizedFetch(`${API_URL}/billing/checkout-session`, {
+    method: "POST",
+  });
+  if (!response.ok) {
+    throw new Error(await errorMessage(response, "Failed to start checkout"));
+  }
+  return response.json();
+}
+
 export async function recordExtractionValue(
   reviewProjectId: string,
   citationId: string,

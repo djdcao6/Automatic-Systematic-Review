@@ -712,3 +712,48 @@ def revoke_invitation(db: Session, invitation: models.Invitation) -> models.Invi
     db.commit()
     db.refresh(invitation)
     return invitation
+
+
+def get_subscription(db: Session, reviewer_id: uuid.UUID) -> models.Subscription | None:
+    return (
+        db.query(models.Subscription)
+        .filter(models.Subscription.reviewer_id == reviewer_id)
+        .one_or_none()
+    )
+
+
+def upsert_subscription(
+    db: Session,
+    *,
+    reviewer_id: uuid.UUID,
+    stripe_customer_id: str,
+    stripe_subscription_id: str,
+    status: str,
+    current_period_end: datetime | None,
+) -> models.Subscription:
+    values = {
+        "reviewer_id": reviewer_id,
+        "stripe_customer_id": stripe_customer_id,
+        "stripe_subscription_id": stripe_subscription_id,
+        "status": status,
+        "current_period_end": current_period_end,
+    }
+    stmt = pg_insert(models.Subscription).values(**values)
+    stmt = stmt.on_conflict_do_update(
+        index_elements=[models.Subscription.reviewer_id],
+        set_={
+            "stripe_customer_id": stmt.excluded.stripe_customer_id,
+            "stripe_subscription_id": stmt.excluded.stripe_subscription_id,
+            "status": stmt.excluded.status,
+            "current_period_end": stmt.excluded.current_period_end,
+            "updated_at": func.now(),
+        },
+    )
+    # Same atomic INSERT ... ON CONFLICT DO UPDATE pattern as upsert_full_text,
+    # since a webhook retried or delivered out of order races a concurrent
+    # delivery of the same or a later event for the same Reviewer.
+    db.execute(stmt)
+    db.commit()
+    return db.query(models.Subscription).filter(
+        models.Subscription.reviewer_id == reviewer_id
+    ).one()

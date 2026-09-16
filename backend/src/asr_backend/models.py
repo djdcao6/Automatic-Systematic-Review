@@ -21,6 +21,37 @@ class Reviewer(Base):
     )
 
 
+class Subscription(Base):
+    """A Reviewer's Stripe-backed billing relationship, per ADR 0007.
+
+    At most one per Reviewer. `status` mirrors Stripe's subscription status
+    verbatim (active, past_due, canceled, ...); Plan is derived from it live
+    (billing.derive_plan) rather than stored here, per CONTEXT.md's Plan
+    definition. A Reviewer with no row is on the Free Plan.
+    """
+
+    __tablename__ = "subscriptions"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    reviewer_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("reviewers.id"), unique=True, nullable=False
+    )
+    stripe_customer_id: Mapped[str] = mapped_column(String, nullable=False)
+    stripe_subscription_id: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    current_period_end: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+
 class ReviewProject(Base):
     __tablename__ = "review_projects"
 

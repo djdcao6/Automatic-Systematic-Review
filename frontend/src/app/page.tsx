@@ -6,6 +6,7 @@ import Link from "next/link";
 
 import {
   createReviewProject,
+  getMySubscription,
   listReviewProjects,
   type MergeMode,
   type ReviewMode,
@@ -18,11 +19,21 @@ export default function Home() {
   const [mergeMode, setMergeMode] = useState<MergeMode | "">("");
   const [reviewMode, setReviewMode] = useState<ReviewMode | "">("");
   const [error, setError] = useState<string | null>(null);
+  const [billingEnabled, setBillingEnabled] = useState(false);
 
   useEffect(() => {
     listReviewProjects()
       .then(setProjects)
       .catch(() => setError("Failed to load review projects."));
+  }, []);
+
+  // getMySubscription 404s (resolves to null) while `billing_enabled` is
+  // off, per #39's dark launch — the Account/Billing link stays hidden
+  // rather than pointing at a page with nothing to show.
+  useEffect(() => {
+    getMySubscription()
+      .then((subscription) => setBillingEnabled(subscription !== null))
+      .catch(() => setBillingEnabled(false));
   }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -49,6 +60,7 @@ export default function Home() {
   return (
     <main>
       <h1>Review Projects</h1>
+      {billingEnabled && <Link href="/account">Account / Billing</Link>}
       {error && <p role="alert">{error}</p>}
       <form onSubmit={handleSubmit}>
         <label htmlFor="project-name">Project name</label>

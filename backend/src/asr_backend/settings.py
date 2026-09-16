@@ -11,6 +11,11 @@ class Settings(BaseSettings):
     anthropic_model: str = "claude-haiku-4-5"
     full_text_storage_path: str = "./storage/full_texts"
     jwt_secret_key: str
+    billing_enabled: bool = False
+    stripe_secret_key: str
+    stripe_publishable_key: str
+    stripe_webhook_secret: str
+    stripe_price_id: str
 
 
 settings = Settings()
