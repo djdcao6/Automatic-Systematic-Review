@@ -6,7 +6,13 @@ vi.mock("@/lib/auth");
 
 const mockedAuth = vi.mocked(auth);
 
-import { listReviewProjects, loginReviewer, registerReviewer } from "@/lib/api";
+import {
+  createReviewProject,
+  listReviewProjects,
+  loginReviewer,
+  registerReviewer,
+  ReviewProjectCapError,
+} from "@/lib/api";
 
 function stubLocation() {
   Object.defineProperty(window, "location", {
@@ -102,5 +108,28 @@ describe("api authorization handling", () => {
 
     expect(mockedAuth.clearToken).not.toHaveBeenCalled();
     expect(window.location.href).toBe("");
+  });
+
+  it("throws a ReviewProjectCapError carrying the backend's message on a 403 (#41)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          detail: "Free Plan is limited to 1 Review Project. Upgrade to create more.",
+        }),
+        { status: 403 }
+      )
+    );
+    global.fetch = fetchMock;
+
+    const error: unknown = await createReviewProject({
+      name: "Second Review",
+      merge_mode: "combine",
+      review_mode: "solo",
+    }).catch((caught) => caught);
+
+    expect(error).toBeInstanceOf(ReviewProjectCapError);
+    expect((error as Error).message).toBe(
+      "Free Plan is limited to 1 Review Project. Upgrade to create more."
+    );
   });
 });

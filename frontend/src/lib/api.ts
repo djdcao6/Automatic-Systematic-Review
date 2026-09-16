@@ -348,6 +348,11 @@ export async function listReviewProjects(): Promise<ReviewProject[]> {
   return response.json();
 }
 
+// Thrown instead of a plain Error when creation is blocked by the Free
+// Plan's Review-Project cap (#41), so callers can point the Reviewer at the
+// Account/Billing page rather than showing a generic failure message.
+export class ReviewProjectCapError extends Error {}
+
 export async function createReviewProject(
   payload: ReviewProjectInput
 ): Promise<ReviewProject> {
@@ -356,6 +361,11 @@ export async function createReviewProject(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
+  if (response.status === 403) {
+    throw new ReviewProjectCapError(
+      await errorMessage(response, "Free Plan is limited to 1 Review Project.")
+    );
+  }
   if (!response.ok) {
     throw new Error("Failed to create review project");
   }

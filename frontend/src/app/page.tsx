@@ -8,23 +8,28 @@ import {
   createReviewProject,
   getMySubscription,
   listReviewProjects,
+  ReviewProjectCapError,
   type MergeMode,
   type ReviewMode,
   type ReviewProject,
 } from "@/lib/api";
+
+// message and isCapError always change together (see #41's code review),
+// so they're one state value rather than two that could drift out of sync.
+type FormError = { message: string; isCapError: boolean };
 
 export default function Home() {
   const [projects, setProjects] = useState<ReviewProject[]>([]);
   const [name, setName] = useState("");
   const [mergeMode, setMergeMode] = useState<MergeMode | "">("");
   const [reviewMode, setReviewMode] = useState<ReviewMode | "">("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<FormError | null>(null);
   const [billingEnabled, setBillingEnabled] = useState(false);
 
   useEffect(() => {
     listReviewProjects()
       .then(setProjects)
-      .catch(() => setError("Failed to load review projects."));
+      .catch(() => setError({ message: "Failed to load review projects.", isCapError: false }));
   }, []);
 
   // getMySubscription 404s (resolves to null) while `billing_enabled` is
@@ -52,8 +57,12 @@ export default function Home() {
       setMergeMode("");
       setReviewMode("");
       setError(null);
-    } catch {
-      setError("Failed to create review project.");
+    } catch (err) {
+      if (err instanceof ReviewProjectCapError) {
+        setError({ message: err.message, isCapError: true });
+      } else {
+        setError({ message: "Failed to create review project.", isCapError: false });
+      }
     }
   }
 
@@ -61,7 +70,12 @@ export default function Home() {
     <main>
       <h1>Review Projects</h1>
       {billingEnabled && <Link href="/account">Account / Billing</Link>}
-      {error && <p role="alert">{error}</p>}
+      {error && (
+        <p role="alert">
+          {error.message}
+          {error.isCapError && <> <Link href="/account">Go to Account/Billing</Link></>}
+        </p>
+      )}
       <form onSubmit={handleSubmit}>
         <label htmlFor="project-name">Project name</label>
         <input

@@ -1,11 +1,24 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as api from "@/lib/api";
+import { ReviewProjectCapError } from "@/lib/api";
 
 import Home from "./page";
 
-vi.mock("@/lib/api");
+// Automocking would also replace ReviewProjectCapError's constructor, so a
+// mock-thrown instance would lose its message (#41's tests construct one
+// directly to simulate the API layer's rejection) — keep the real class,
+// mock only the functions.
+vi.mock("@/lib/api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/api")>();
+  return {
+    ...actual,
+    listReviewProjects: vi.fn(),
+    createReviewProject: vi.fn(),
+    getMySubscription: vi.fn(),
+  };
+});
 
 const mockedApi = vi.mocked(api);
 
@@ -116,5 +129,57 @@ describe("Home", () => {
       "href",
       "/account"
     );
+  });
+
+  it("shows the cap error message with a link to Account/Billing when blocked", async () => {
+    mockedApi.getMySubscription.mockResolvedValue({ plan: "free", status: null });
+    mockedApi.createReviewProject.mockRejectedValue(
+      new ReviewProjectCapError(
+        "Free Plan is limited to 1 Review Project. Upgrade on the Account/Billing page to create more."
+      )
+    );
+
+    render(<Home />);
+
+    await waitFor(() => expect(mockedApi.listReviewProjects).toHaveBeenCalled());
+    fireEvent.change(screen.getByLabelText(/project name/i), {
+      target: { value: "Second Review" },
+    });
+    fireEvent.change(screen.getByLabelText(/merge mode/i), {
+      target: { value: "combine" },
+    });
+    fireEvent.change(screen.getByLabelText(/review mode/i), {
+      target: { value: "solo" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /create review project/i }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/free plan is limited to 1 review project/i);
+    expect(within(alert).getByRole("link", { name: /account.*billing/i })).toHaveAttribute(
+      "href",
+      "/account"
+    );
+  });
+
+  it("shows a generic error, with no Account/Billing link, for a non-cap failure", async () => {
+    mockedApi.createReviewProject.mockRejectedValue(new Error("boom"));
+
+    render(<Home />);
+
+    await waitFor(() => expect(mockedApi.listReviewProjects).toHaveBeenCalled());
+    fireEvent.change(screen.getByLabelText(/project name/i), {
+      target: { value: "New Review" },
+    });
+    fireEvent.change(screen.getByLabelText(/merge mode/i), {
+      target: { value: "combine" },
+    });
+    fireEvent.change(screen.getByLabelText(/review mode/i), {
+      target: { value: "solo" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /create review project/i }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/failed to create review project/i);
+    expect(within(alert).queryByRole("link")).not.toBeInTheDocument();
   });
 });

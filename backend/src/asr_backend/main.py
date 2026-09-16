@@ -249,6 +249,16 @@ def create_review_project(
     reviewer: models.Reviewer = Depends(auth.get_current_reviewer),
     db: Session = Depends(get_db),
 ) -> models.ReviewProject:
+    try:
+        billing.check_review_project_cap(db, reviewer.id)
+    except billing.ReviewProjectCapError as exc:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Free Plan is limited to 1 Review Project. "
+                "Upgrade on the Account/Billing page to create more."
+            ),
+        ) from exc
     return crud.create_review_project(db, reviewer.id, payload)
 
 

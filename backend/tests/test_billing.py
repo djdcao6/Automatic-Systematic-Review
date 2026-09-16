@@ -1,12 +1,14 @@
 """Subscribe via Stripe Checkout & see Plan status (#39)."""
 
+import uuid
 from types import SimpleNamespace
 
 import pytest
 from conftest import auth_headers_for
 
-from asr_backend import billing, models
+from asr_backend import billing, crud, models
 from asr_backend.main import app
+from asr_backend.schemas import ReviewProjectCreate
 from asr_backend.settings import settings
 
 # --- Plan derivation ---
@@ -41,6 +43,70 @@ def test_require_paid_plan_raises_when_canceled():
 def test_require_paid_plan_allows_active_subscription():
     subscription = models.Subscription(status="active")
     billing.require_paid_plan(subscription)
+
+
+# --- Review Project cap (#41) ---
+
+
+def _own_projects(db_session, reviewer_id, count):
+    for i in range(count):
+        crud.create_review_project(
+            db_session,
+            reviewer_id,
+            ReviewProjectCreate(name=f"Project {i}", merge_mode="combine", review_mode="solo"),
+        )
+
+
+def test_review_project_cap_is_noop_while_billing_disabled(client, db_session):
+    headers = auth_headers_for(client, "owner@example.com")
+    reviewer_id = uuid.UUID(client.get("/me", headers=headers).json()["id"])
+    _own_projects(db_session, reviewer_id, 5)
+
+    billing.check_review_project_cap(db_session, reviewer_id)
+
+
+def test_review_project_cap_allows_free_reviewer_under_cap(client, billing_enabled, db_session):
+    headers = auth_headers_for(client, "owner@example.com")
+    reviewer_id = uuid.UUID(client.get("/me", headers=headers).json()["id"])
+
+    billing.check_review_project_cap(db_session, reviewer_id)
+
+
+def test_review_project_cap_blocks_free_reviewer_at_cap(client, billing_enabled, db_session):
+    headers = auth_headers_for(client, "owner@example.com")
+    reviewer_id = uuid.UUID(client.get("/me", headers=headers).json()["id"])
+    _own_projects(db_session, reviewer_id, 1)
+
+    with pytest.raises(billing.ReviewProjectCapError):
+        billing.check_review_project_cap(db_session, reviewer_id)
+
+
+def test_review_project_cap_blocks_free_reviewer_already_over_cap(
+    client, billing_enabled, db_session
+):
+    headers = auth_headers_for(client, "owner@example.com")
+    reviewer_id = uuid.UUID(client.get("/me", headers=headers).json()["id"])
+    _own_projects(db_session, reviewer_id, 3)
+
+    with pytest.raises(billing.ReviewProjectCapError):
+        billing.check_review_project_cap(db_session, reviewer_id)
+
+
+def test_review_project_cap_never_blocks_paid_reviewer(client, billing_enabled, db_session):
+    headers = auth_headers_for(client, "owner@example.com")
+    reviewer_id = uuid.UUID(client.get("/me", headers=headers).json()["id"])
+    _own_projects(db_session, reviewer_id, 3)
+    db_session.add(
+        models.Subscription(
+            reviewer_id=reviewer_id,
+            stripe_customer_id="cus_1",
+            stripe_subscription_id="sub_1",
+            status="active",
+        )
+    )
+    db_session.commit()
+
+    billing.check_review_project_cap(db_session, reviewer_id)
 
 
 # --- Flag-off hidden state ---

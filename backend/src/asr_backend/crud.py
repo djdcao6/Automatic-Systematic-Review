@@ -124,6 +124,16 @@ def create_review_project(
     return project
 
 
+def count_owned_review_projects(db: Session, reviewer_id: uuid.UUID) -> int:
+    """Only Review Projects this Reviewer owns count (#41) — Co-Reviewer
+    participation on someone else's project is excluded, per ADR 0007."""
+    return (
+        db.query(models.ReviewProject)
+        .filter(models.ReviewProject.owner_reviewer_id == reviewer_id)
+        .count()
+    )
+
+
 def list_review_projects(db: Session, reviewer_id: uuid.UUID) -> list[models.ReviewProject]:
     return list(
         db.query(models.ReviewProject)

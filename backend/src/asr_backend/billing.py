@@ -39,6 +39,34 @@ def require_paid_plan(subscription: models.Subscription | None) -> None:
         raise PlanNotPaidError
 
 
+FREE_PLAN_REVIEW_PROJECT_CAP = 1
+
+
+class ReviewProjectCapError(Exception):
+    """Raised when a Free Reviewer at the cap attempts to create another Review Project."""
+
+
+def check_review_project_cap(db: Session, reviewer_id: uuid.UUID) -> None:
+    """Blocks creating a new Review Project past the Free Plan cap, per ADR 0007.
+
+    A no-op entirely while `billing_enabled` is False, so no Reviewer is ever
+    blocked before the flag flips on. Paid Reviewers are never blocked. Only
+    counts Review Projects this Reviewer *owns* — Co-Reviewer participation
+    on someone else's project never counts here, and this is never called
+    against a Co-Reviewer's own Plan. A Reviewer who already owns more than
+    the cap (grandfathered, or after downgrading) is only blocked from
+    creating another; every Review Project they already own stays reachable,
+    since this check sits solely on the create path.
+    """
+    if not settings.billing_enabled:
+        return
+    subscription = crud.get_subscription(db, reviewer_id)
+    if derive_plan(subscription) == "paid":
+        return
+    if crud.count_owned_review_projects(db, reviewer_id) >= FREE_PLAN_REVIEW_PROJECT_CAP:
+        raise ReviewProjectCapError
+
+
 class StripeGateway:
     """Thin wrapper around the Stripe SDK, mirroring AISuggester's client boundary.
 
