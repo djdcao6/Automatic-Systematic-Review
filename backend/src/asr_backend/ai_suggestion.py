@@ -157,18 +157,16 @@ class AISuggester:
         raise SuggestionGenerationError("Anthropic response did not include the expected tool call")
 
 
-def _build_user_message(
+def _format_criteria_lines(
     *,
-    title: str,
-    abstract: str,
     population: str | None,
     intervention: str | None,
     comparison: str | None,
     outcome: str | None,
     exclusion_rules: list[str],
     notes: str | None,
-) -> str:
-    lines = [f"Title: {title}", f"Abstract: {abstract}", "", "Criteria:"]
+) -> list[str]:
+    lines = []
     if population:
         lines.append(f"- Population: {population}")
     if intervention:
@@ -181,6 +179,31 @@ def _build_user_message(
         lines.append(f"- Exclusion rules: {', '.join(exclusion_rules)}")
     if notes:
         lines.append(f"- Notes: {notes}")
+    return lines
+
+
+def _build_user_message(
+    *,
+    title: str,
+    abstract: str,
+    population: str | None,
+    intervention: str | None,
+    comparison: str | None,
+    outcome: str | None,
+    exclusion_rules: list[str],
+    notes: str | None,
+) -> str:
+    lines = [f"Title: {title}", f"Abstract: {abstract}", "", "Criteria:"]
+    lines.extend(
+        _format_criteria_lines(
+            population=population,
+            intervention=intervention,
+            comparison=comparison,
+            outcome=outcome,
+            exclusion_rules=exclusion_rules,
+            notes=notes,
+        )
+    )
     return "\n".join(lines)
 
 
@@ -235,18 +258,16 @@ def _build_full_text_user_message(
     notes: str | None,
 ) -> str:
     lines = ["Full text:", full_text, "", "Criteria:"]
-    if population:
-        lines.append(f"- Population: {population}")
-    if intervention:
-        lines.append(f"- Intervention: {intervention}")
-    if comparison:
-        lines.append(f"- Comparison: {comparison}")
-    if outcome:
-        lines.append(f"- Outcome: {outcome}")
-    if exclusion_rules:
-        lines.append(f"- Exclusion rules: {', '.join(exclusion_rules)}")
-    if notes:
-        lines.append(f"- Notes: {notes}")
+    lines.extend(
+        _format_criteria_lines(
+            population=population,
+            intervention=intervention,
+            comparison=comparison,
+            outcome=outcome,
+            exclusion_rules=exclusion_rules,
+            notes=notes,
+        )
+    )
     if extraction_fields:
         lines.append("")
         lines.append("Extraction fields to propose values for:")

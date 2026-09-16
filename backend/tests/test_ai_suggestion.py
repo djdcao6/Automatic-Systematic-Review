@@ -9,6 +9,7 @@ from asr_backend.ai_suggestion import (
     SuggestionGenerationError,
     _build_full_text_user_message,
     _build_user_message,
+    _format_criteria_lines,
 )
 
 
@@ -121,6 +122,52 @@ def test_user_message_includes_only_populated_criteria_fields():
     assert "- Exclusion rules: Animal studies" in message
     assert "Intervention" not in message
     assert "Notes" not in message
+
+
+def test_format_criteria_lines_returns_nothing_when_all_fields_blank():
+    lines = _format_criteria_lines(
+        population=None,
+        intervention=None,
+        comparison=None,
+        outcome=None,
+        exclusion_rules=[],
+        notes=None,
+    )
+
+    assert lines == []
+
+
+def test_format_criteria_lines_includes_every_populated_field_in_order():
+    lines = _format_criteria_lines(
+        population="Adults",
+        intervention="Metformin",
+        comparison="Placebo",
+        outcome="HbA1c reduction",
+        exclusion_rules=["Animal studies", "Non-English"],
+        notes="Prefer RCTs",
+    )
+
+    assert lines == [
+        "- Population: Adults",
+        "- Intervention: Metformin",
+        "- Comparison: Placebo",
+        "- Outcome: HbA1c reduction",
+        "- Exclusion rules: Animal studies, Non-English",
+        "- Notes: Prefer RCTs",
+    ]
+
+
+def test_format_criteria_lines_skips_blank_fields_individually():
+    lines = _format_criteria_lines(
+        population="Adults",
+        intervention=None,
+        comparison=None,
+        outcome="HbA1c reduction",
+        exclusion_rules=[],
+        notes=None,
+    )
+
+    assert lines == ["- Population: Adults", "- Outcome: HbA1c reduction"]
 
 
 def _full_text_tool_response(decision: str, reason: str, extraction_values: dict) -> SimpleNamespace:

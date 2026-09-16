@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from asr_backend import crud, models, schemas
+from asr_backend.ai_suggestion import _format_criteria_lines
 from asr_backend.settings import settings
 
 _TOOL_NAME = "propose_search_terms"
@@ -111,14 +112,19 @@ def _build_user_message(
     outcome: str | None,
 ) -> str:
     lines = ["Criteria:"]
-    if population:
-        lines.append(f"- Population: {population}")
-    if intervention:
-        lines.append(f"- Intervention: {intervention}")
-    if comparison:
-        lines.append(f"- Comparison: {comparison}")
-    if outcome:
-        lines.append(f"- Outcome: {outcome}")
+    lines.extend(
+        _format_criteria_lines(
+            population=population,
+            intervention=intervention,
+            comparison=comparison,
+            outcome=outcome,
+            # Search Terms generation is PICO-only by design (see CONTEXT.md's
+            # Search Terms entry) — exclusion rules/notes are deliberately
+            # never surfaced here, not an oversight.
+            exclusion_rules=[],
+            notes=None,
+        )
+    )
     return "\n".join(lines)
 
 
