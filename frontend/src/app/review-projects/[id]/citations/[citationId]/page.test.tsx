@@ -1216,6 +1216,28 @@ describe("CitationScreeningPage", () => {
     expect(mockedApi.generateFullTextSuggestion).toHaveBeenCalledTimes(2);
   });
 
+  it("ends the loading state when the replacement refresh fails", async () => {
+    mockedApi.getCitation
+      .mockResolvedValueOnce({
+        ...baseCitation,
+        suggestion: null,
+        suggestion_unavailable_reason: null,
+        screening_decision: null,
+        full_text: parsedFullText,
+        full_text_suggestion_needs_generation: true,
+      })
+      .mockRejectedValueOnce(new Error("network"));
+    mockedApi.generateFullTextSuggestion.mockResolvedValue({
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+    });
+
+    renderPage();
+
+    expect(await screen.findByText(/generating a full-text suggestion failed/i)).toBeInTheDocument();
+    expect(screen.queryByText(/preparing a full-text suggestion/i)).not.toBeInTheDocument();
+  });
+
   it("leaves the Full-Text Decision unchosen even when a Full-Text Suggestion exists", async () => {
     mockedApi.getCitation.mockResolvedValue({
       ...baseCitation,

@@ -1,3 +1,6 @@
+import asyncio
+
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from asr_backend import crud, models
@@ -7,6 +10,7 @@ from asr_backend.full_text import PARSED
 NO_FULL_TEXT = "no_full_text"
 PARSE_FAILED = "parse_failed"
 GENERATION_FAILED = "generation_failed"
+GENERATION_WAIT_SECONDS = 0.1
 
 
 def read_full_text_suggestion(
@@ -42,11 +46,34 @@ async def get_or_generate_full_text_suggestion(
     prior Suggestion (asr_backend.crud.delete_full_text_suggestion, called
     from the full-text upload route), so the next access here regenerates it.
     """
-    existing, unavailable_reason, needs_generation = read_full_text_suggestion(
-        db, citation, full_text
-    )
-    if not needs_generation:
-        return existing, unavailable_reason
+    while True:
+        existing, unavailable_reason, needs_generation = read_full_text_suggestion(
+            db, citation, full_text
+        )
+        if not needs_generation:
+            return existing, unavailable_reason
+
+        # Generating can take seconds. A transaction-scoped advisory lock gives
+        # one request the work without blocking the event loop: followers poll
+        # for its persisted answer, then retry if that request failed.
+        has_generation_lock = db.scalar(
+            select(func.pg_try_advisory_xact_lock(func.hashtext(str(citation.id))))
+        )
+        if not has_generation_lock:
+            db.rollback()
+            await asyncio.sleep(GENERATION_WAIT_SECONDS)
+            full_text = crud.get_full_text(db, citation.id)
+            continue
+
+        # Re-check after winning the lock: another request might have saved the
+        # answer between our first read and acquiring it.
+        existing, unavailable_reason, needs_generation = read_full_text_suggestion(
+            db, citation, full_text
+        )
+        if not needs_generation:
+            db.rollback()
+            return existing, unavailable_reason
+        break
 
     review_project = citation.review_project
     criteria = review_project.criteria
@@ -72,6 +99,7 @@ async def get_or_generate_full_text_suggestion(
             notes=criteria.notes if criteria else None,
         )
     except SuggestionGenerationError:
+        db.rollback()
         return None, GENERATION_FAILED
 
     suggestion = crud.create_full_text_suggestion(

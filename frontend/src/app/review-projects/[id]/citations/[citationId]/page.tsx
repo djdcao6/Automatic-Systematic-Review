@@ -277,7 +277,10 @@ function CitationScreening({
           // if a suggestion is still needed.
           const refreshed = await getCitation(reviewProjectId, citationId).catch(() => null);
           fullTextGeneration.current = null;
-          if (!refreshed) return;
+          if (!refreshed) {
+            setFullTextOutcome({ suggestion: null, suggestion_unavailable_reason: "generation_failed" });
+            return;
+          }
           setCitation(refreshed);
           if (refreshed.full_text_suggestion_needs_generation) {
             fullTextGeneration.current = request();

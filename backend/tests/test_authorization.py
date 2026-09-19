@@ -66,6 +66,11 @@ def _representative_requests(project_id, citation_id, extraction_field_id):
         ("post", f"/review-projects/{project_id}/citations/{citation_id}/suggestion", None),
         (
             "post",
+            f"/review-projects/{project_id}/citations/{citation_id}/full-text-suggestion",
+            None,
+        ),
+        (
+            "post",
             f"/review-projects/{project_id}/citations/{citation_id}/decision",
             {"decision": "include"},
         ),
