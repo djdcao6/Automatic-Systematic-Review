@@ -20,6 +20,7 @@ function blankOrValue(value: string): string | null {
 export function CriteriaPanel() {
   const { project, refreshProject } = useReviewProject();
   const criteria = project.criteria;
+  const locked = project.criteria_locked;
   const [population, setPopulation] = useState(criteria?.population ?? "");
   const [intervention, setIntervention] = useState(criteria?.intervention ?? "");
   const [comparison, setComparison] = useState(criteria?.comparison ?? "");
@@ -54,6 +55,9 @@ export function CriteriaPanel() {
     <section>
       <h2>Criteria</h2>
       {error && <p role="alert">{error}</p>}
+      {locked && (
+        <p role="status">Criteria are locked once the first Screening Decision is recorded.</p>
+      )}
       <form onSubmit={handleSubmit} className="panel">
         <div className="field-grid">
           <div>
@@ -61,6 +65,7 @@ export function CriteriaPanel() {
             <input
               id="population"
               value={population}
+              disabled={locked}
               onChange={(event) => setPopulation(event.target.value)}
             />
           </div>
@@ -69,6 +74,7 @@ export function CriteriaPanel() {
             <input
               id="intervention"
               value={intervention}
+              disabled={locked}
               onChange={(event) => setIntervention(event.target.value)}
             />
           </div>
@@ -77,6 +83,7 @@ export function CriteriaPanel() {
             <input
               id="comparison"
               value={comparison}
+              disabled={locked}
               onChange={(event) => setComparison(event.target.value)}
             />
           </div>
@@ -85,6 +92,7 @@ export function CriteriaPanel() {
             <input
               id="outcome"
               value={outcome}
+              disabled={locked}
               onChange={(event) => setOutcome(event.target.value)}
             />
           </div>
@@ -94,14 +102,22 @@ export function CriteriaPanel() {
         <textarea
           id="exclusion-rules"
           value={exclusionRules}
+          disabled={locked}
           onChange={(event) => setExclusionRules(event.target.value)}
         />
 
         <label htmlFor="notes">Notes</label>
-        <textarea id="notes" value={notes} onChange={(event) => setNotes(event.target.value)} />
+        <textarea
+          id="notes"
+          value={notes}
+          disabled={locked}
+          onChange={(event) => setNotes(event.target.value)}
+        />
 
         <div className="form-actions">
-          <button type="submit">Save Criteria</button>
+          <button type="submit" disabled={locked}>
+            Save Criteria
+          </button>
         </div>
       </form>
     </section>
