@@ -53,7 +53,7 @@ The three-state outcome — Include, Exclude, or Maybe — that a Reviewer recor
 _Avoid_: Full-text screening result, Second decision
 
 **Full-Text Suggestion**:
-An AI-proposed Full-Text Decision plus reason, and AI-proposed values for a Review Project's Extraction Fields, generated once a Citation's Full Text is attached. Unlike an AI Suggestion, regenerates if the Full Text is replaced — a new PDF is new source content, not just a repeat view.
+An AI-proposed Full-Text Decision plus reason, and AI-proposed values for a Review Project's Extraction Fields, generated once a Citation's Full Text is attached. It is asked for after the Citation page has loaded, never while it loads, and it fills nothing a Reviewer owns: the Full-Text Decision starts with no choice, and each Extraction Value starts empty with the AI's value beside it for the Reviewer to use. Unlike an AI Suggestion, regenerates if the Full Text is replaced — a new PDF is new source content, not just a repeat view — and a suggestion still being written for the old PDF is discarded.
 _Avoid_: AI extraction, Auto-extraction
 
 **Extraction Field**:
