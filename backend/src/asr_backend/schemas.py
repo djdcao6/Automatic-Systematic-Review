@@ -244,6 +244,13 @@ class FullTextSuggestionRead(BaseModel):
     extraction_values: list[ExtractionValueSuggestionRead]
 
 
+class FullTextSuggestionOutcomeRead(BaseModel):
+    """What generating a Full-Text Suggestion on demand produced, for the Reviewer asking."""
+
+    suggestion: FullTextSuggestionRead | None = None
+    suggestion_unavailable_reason: str | None = None
+
+
 class ExtractionValueCreate(BaseModel):
     value: str
 
@@ -392,5 +399,6 @@ class CitationDetailRead(CitationRead):
     full_text_decision: FullTextDecisionRead | None = None
     full_text_suggestion: FullTextSuggestionRead | None = None
     full_text_suggestion_unavailable_reason: str | None = None
+    full_text_suggestion_needs_generation: bool = False
     extraction_fields: list[ExtractionFieldRead] = []
     extraction_values: list[ExtractionValueRead] = []

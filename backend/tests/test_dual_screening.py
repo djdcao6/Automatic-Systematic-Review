@@ -1,9 +1,12 @@
 """Independent per-reviewer Screening Decisions with blinding (#27)."""
 
+import io
+
+import pymupdf
 import pytest
 from conftest import auth_headers_for
 
-from asr_backend.ai_suggestion import SuggestionResult, get_ai_suggester
+from asr_backend.ai_suggestion import FullTextSuggestionResult, SuggestionResult, get_ai_suggester
 from asr_backend.main import app
 
 CSV_SAMPLE = "title,abstract,authors,year,source\nStudy,An abstract,Author,2020,PubMed\n"
@@ -51,10 +54,17 @@ class _FakeSuggester:
         self.decision = decision
         self.reason = reason
         self.calls = 0
+        self.full_text_calls = 0
 
     async def suggest_screening_decision(self, **kwargs) -> SuggestionResult:
         self.calls += 1
         return SuggestionResult(decision=self.decision, reason=self.reason)
+
+    async def suggest_full_text_decision(self, **kwargs) -> FullTextSuggestionResult:
+        self.full_text_calls += 1
+        return FullTextSuggestionResult(
+            decision=self.decision, reason=self.reason, extraction_values={}
+        )
 
 
 @pytest.fixture
@@ -128,6 +138,29 @@ def test_blind_reviewer_generating_a_suggestion_gets_no_content(client, dual_set
 
     assert response.status_code == 200
     assert response.json() == {"suggestion": None, "suggestion_unavailable_reason": None}
+
+
+def test_both_reviewers_get_the_same_full_text_suggestion_before_either_has_decided(
+    client, dual_setup, override_suggester
+):
+    """The Full-Text Decision is one shared record per Citation, so nothing is withheld."""
+    d = dual_setup
+    doc = pymupdf.open()
+    doc.new_page().insert_text((72, 72), "Sample paper text")
+    client.post(
+        f"/review-projects/{d['project_id']}/citations/{d['citation_id']}/full-text",
+        files={"file": ("paper.pdf", io.BytesIO(doc.tobytes()), "application/pdf")},
+        headers=d["owner_headers"],
+    )
+    url = f"/review-projects/{d['project_id']}/citations/{d['citation_id']}/full-text-suggestion"
+
+    owner_outcome = client.post(url, headers=d["owner_headers"])
+    co_reviewer_outcome = client.post(url, headers=d["co_reviewer_headers"])
+
+    assert owner_outcome.status_code == co_reviewer_outcome.status_code == 200
+    assert owner_outcome.json()["suggestion"]["reason"] == "Matches criteria."
+    assert co_reviewer_outcome.json() == owner_outcome.json()
+    assert override_suggester.full_text_calls == 1
 
 
 def test_first_opener_is_blind_even_when_no_one_has_decided_yet(client, dual_setup):

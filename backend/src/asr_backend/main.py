@@ -543,12 +543,11 @@ def get_citation_or_404(
     "/review-projects/{review_project_id}/citations/{citation_id}",
     response_model=schemas.CitationDetailRead,
 )
-async def get_citation_detail(
+def get_citation_detail(
     citation: models.Citation = Depends(get_citation_or_404),
     project: models.ReviewProject = Depends(get_review_project_or_404),
     reviewer: models.Reviewer = Depends(auth.get_current_reviewer),
     db: Session = Depends(get_db),
-    suggester: AISuggester = Depends(get_ai_suggester),
 ) -> schemas.CitationDetailRead:
     suggestion, unavailable_reason, needs_generation = screening.read_suggestion(db, citation)
     own_decision, peer_decision, is_blind = screening.resolve_screening_view(
@@ -556,8 +555,8 @@ async def get_citation_detail(
     )
     existing_full_text = crud.get_full_text(db, citation.id)
     full_text_decision = crud.get_full_text_decision(db, citation.id)
-    ft_suggestion, ft_unavailable_reason = await full_text_suggestion.get_or_generate_full_text_suggestion(
-        db, citation, existing_full_text, suggester
+    ft_suggestion, ft_unavailable_reason, ft_needs_generation = (
+        full_text_suggestion.read_full_text_suggestion(db, citation, existing_full_text)
     )
     extraction_values = crud.get_extraction_values(db, citation.id)
     place = crud.get_citation_place(db, project.id, citation)
@@ -585,6 +584,7 @@ async def get_citation_detail(
         full_text_decision=full_text_decision,
         full_text_suggestion=ft_suggestion,
         full_text_suggestion_unavailable_reason=ft_unavailable_reason,
+        full_text_suggestion_needs_generation=ft_needs_generation,
         extraction_fields=citation.review_project.active_extraction_fields,
         extraction_values=extraction_values,
     )
@@ -610,6 +610,23 @@ async def generate_citation_suggestion(
     if is_blind:
         return schemas.SuggestionOutcomeRead()
     return schemas.SuggestionOutcomeRead(
+        suggestion=suggestion, suggestion_unavailable_reason=unavailable_reason
+    )
+
+
+@app.post(
+    "/review-projects/{review_project_id}/citations/{citation_id}/full-text-suggestion",
+    response_model=schemas.FullTextSuggestionOutcomeRead,
+)
+async def generate_full_text_suggestion(
+    citation: models.Citation = Depends(get_citation_or_404),
+    db: Session = Depends(get_db),
+    suggester: AISuggester = Depends(get_ai_suggester),
+) -> schemas.FullTextSuggestionOutcomeRead:
+    suggestion, unavailable_reason = await full_text_suggestion.get_or_generate_full_text_suggestion(
+        db, citation, crud.get_full_text(db, citation.id), suggester
+    )
+    return schemas.FullTextSuggestionOutcomeRead(
         suggestion=suggestion, suggestion_unavailable_reason=unavailable_reason
     )
 
@@ -655,7 +672,7 @@ async def upload_full_text(
         parse_status=parse_status,
     )
     # A new PDF is new source content, so any prior Full-Text Suggestion is
-    # stale; clearing it here lets the next citation detail view regenerate.
+    # stale; clearing it here lets the next request for one regenerate it.
     crud.delete_full_text_suggestion(db, citation.id)
     return result
 

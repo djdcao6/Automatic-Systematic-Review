@@ -9,6 +9,25 @@ PARSE_FAILED = "parse_failed"
 GENERATION_FAILED = "generation_failed"
 
 
+def read_full_text_suggestion(
+    db: Session, citation: models.Citation, full_text: models.FullText | None
+) -> tuple[models.FullTextSuggestion | None, str | None, bool]:
+    """Reads a Citation's Full-Text Suggestion state without generating anything.
+
+    Returns (the persisted suggestion, why none can exist, whether one still
+    needs generating). Cheap enough for the Citation detail view, which must
+    not wait on the model.
+    """
+    existing = crud.get_full_text_suggestion(db, citation.id)
+    if existing is not None:
+        return existing, None, False
+    if full_text is None:
+        return None, NO_FULL_TEXT, False
+    if full_text.parse_status != PARSED:
+        return None, PARSE_FAILED, False
+    return None, None, True
+
+
 async def get_or_generate_full_text_suggestion(
     db: Session,
     citation: models.Citation,
@@ -23,18 +42,18 @@ async def get_or_generate_full_text_suggestion(
     prior Suggestion (asr_backend.crud.delete_full_text_suggestion, called
     from the full-text upload route), so the next access here regenerates it.
     """
-    existing = crud.get_full_text_suggestion(db, citation.id)
-    if existing is not None:
-        return existing, None
-
-    if full_text is None:
-        return None, NO_FULL_TEXT
-    if full_text.parse_status != PARSED:
-        return None, PARSE_FAILED
+    existing, unavailable_reason, needs_generation = read_full_text_suggestion(
+        db, citation, full_text
+    )
+    if not needs_generation:
+        return existing, unavailable_reason
 
     review_project = citation.review_project
     criteria = review_project.criteria
     active_fields = review_project.active_extraction_fields
+    # Which version of the PDF the model is about to read, checked again when
+    # the answer is saved (see crud.create_full_text_suggestion).
+    full_text_stamp = full_text.updated_at
 
     try:
         result = await suggester.suggest_full_text_decision(
@@ -62,5 +81,9 @@ async def get_or_generate_full_text_suggestion(
         reason=result.reason,
         extraction_values=result.extraction_values,
         active_fields=active_fields,
+        full_text_stamp=full_text_stamp,
     )
+    # None means the PDF was replaced while the model was reading the old one:
+    # nothing was saved, and the caller is told neither a suggestion nor a
+    # reason, so it looks again.
     return suggestion, None

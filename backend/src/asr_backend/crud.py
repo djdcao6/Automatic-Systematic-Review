@@ -500,12 +500,41 @@ def create_full_text_suggestion(
     reason: str,
     extraction_values: dict[str, str],
     active_fields: list[models.ExtractionField],
-) -> models.FullTextSuggestion:
-    suggestion = models.FullTextSuggestion(
-        citation_id=citation_id, decision=decision, reason=reason
+    full_text_stamp: datetime,
+) -> models.FullTextSuggestion | None:
+    """Persists a Citation's Full-Text Suggestion, or returns the one a concurrent request saved first.
+
+    Same race and same answer as create_ai_suggestion: the atomic INSERT ...
+    ON CONFLICT DO NOTHING lets the first save win. Only the winner writes the
+    Extraction Value rows, so the suggestion and its values always come from
+    one generation.
+
+    Generating takes seconds, and the PDF can be replaced meanwhile. The
+    suggestion was written from the Full Text as of `full_text_stamp`, so it is
+    kept only if that is still the current version, and returns None if not.
+    The read takes a FOR SHARE lock held until the commit below, so a
+    replacement that starts after the check waits, and the upload route's
+    delete_full_text_suggestion then removes what was just saved.
+    """
+    current_stamp = db.execute(
+        select(models.FullText.updated_at)
+        .where(models.FullText.citation_id == citation_id)
+        .with_for_update(read=True)
+    ).scalar_one_or_none()
+    if current_stamp != full_text_stamp:
+        db.rollback()
+        return None
+
+    stmt = (
+        pg_insert(models.FullTextSuggestion)
+        .values(citation_id=citation_id, decision=decision, reason=reason)
+        .on_conflict_do_nothing(index_elements=[models.FullTextSuggestion.citation_id])
+        .returning(models.FullTextSuggestion.id)
     )
-    db.add(suggestion)
-    db.flush()
+    inserted_id = db.execute(stmt).scalar_one_or_none()
+    if inserted_id is None:
+        db.rollback()
+        return get_full_text_suggestion(db, citation_id)
 
     # Keyed by field id, not name, since Extraction Field names aren't
     # unique — see the matching note in asr_backend.ai_suggestion.
@@ -516,15 +545,14 @@ def create_full_text_suggestion(
             continue
         db.add(
             models.FullTextSuggestionValue(
-                full_text_suggestion_id=suggestion.id,
+                full_text_suggestion_id=inserted_id,
                 extraction_field_id=field.id,
                 value=value,
             )
         )
 
     db.commit()
-    db.refresh(suggestion)
-    return suggestion
+    return db.get(models.FullTextSuggestion, inserted_id)
 
 
 def delete_full_text_suggestion(db: Session, citation_id: uuid.UUID) -> None:
