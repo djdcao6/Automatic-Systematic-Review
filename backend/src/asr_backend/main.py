@@ -550,9 +550,7 @@ async def get_citation_detail(
     db: Session = Depends(get_db),
     suggester: AISuggester = Depends(get_ai_suggester),
 ) -> schemas.CitationDetailRead:
-    suggestion, unavailable_reason = await screening.get_or_generate_suggestion(
-        db, citation, suggester
-    )
+    suggestion, unavailable_reason, needs_generation = screening.read_suggestion(db, citation)
     own_decision, peer_decision, is_blind = screening.resolve_screening_view(
         db, project, citation, reviewer
     )
@@ -578,6 +576,7 @@ async def get_citation_detail(
         next_citation_id=place.next_id,
         suggestion=suggestion if not is_blind else None,
         suggestion_unavailable_reason=unavailable_reason if not is_blind else None,
+        suggestion_needs_generation=needs_generation,
         screening_decision=own_decision,
         peer_screening_decision=peer_decision,
         screening_blind=is_blind,
@@ -588,6 +587,30 @@ async def get_citation_detail(
         full_text_suggestion_unavailable_reason=ft_unavailable_reason,
         extraction_fields=citation.review_project.active_extraction_fields,
         extraction_values=extraction_values,
+    )
+
+
+@app.post(
+    "/review-projects/{review_project_id}/citations/{citation_id}/suggestion",
+    response_model=schemas.SuggestionOutcomeRead,
+)
+async def generate_citation_suggestion(
+    citation: models.Citation = Depends(get_citation_or_404),
+    project: models.ReviewProject = Depends(get_review_project_or_404),
+    reviewer: models.Reviewer = Depends(auth.get_current_reviewer),
+    db: Session = Depends(get_db),
+    suggester: AISuggester = Depends(get_ai_suggester),
+) -> schemas.SuggestionOutcomeRead:
+    suggestion, unavailable_reason = await screening.get_or_generate_suggestion(
+        db, citation, suggester
+    )
+    # A blind Reviewer's request still generates and keeps the suggestion, so it
+    # is ready when they reveal, but nothing about it is sent back (#27, ADR 0006).
+    _, _, is_blind = screening.resolve_screening_view(db, project, citation, reviewer)
+    if is_blind:
+        return schemas.SuggestionOutcomeRead()
+    return schemas.SuggestionOutcomeRead(
+        suggestion=suggestion, suggestion_unavailable_reason=unavailable_reason
     )
 
 

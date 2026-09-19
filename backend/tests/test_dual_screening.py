@@ -86,6 +86,12 @@ def _get_citation(client, project_id, citation_id, headers):
     ).json()
 
 
+def _generate_suggestion(client, project_id, citation_id, headers):
+    return client.post(
+        f"/review-projects/{project_id}/citations/{citation_id}/suggestion", headers=headers
+    ).json()
+
+
 def _record_decision(client, project_id, citation_id, headers, decision, reason=None):
     return client.post(
         f"/review-projects/{project_id}/citations/{citation_id}/decision",
@@ -112,6 +118,18 @@ def test_reviewer_who_has_not_decided_is_blind_to_suggestion_and_peer(client, du
     assert body["peer_screening_decision"] is None
 
 
+def test_blind_reviewer_generating_a_suggestion_gets_no_content(client, dual_setup):
+    d = dual_setup
+
+    response = client.post(
+        f"/review-projects/{d['project_id']}/citations/{d['citation_id']}/suggestion",
+        headers=d["owner_headers"],
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"suggestion": None, "suggestion_unavailable_reason": None}
+
+
 def test_first_opener_is_blind_even_when_no_one_has_decided_yet(client, dual_setup):
     """Per ADR 0006: the first Reviewer to open a Citation gets no exception."""
     d = dual_setup
@@ -124,8 +142,11 @@ def test_first_opener_is_blind_even_when_no_one_has_decided_yet(client, dual_set
     assert body["peer_screening_decision"] is None
 
 
-def test_recording_own_decision_reveals_suggestion(client, dual_setup):
+def test_recording_own_decision_reveals_the_suggestion_generated_while_blind(
+    client, dual_setup, override_suggester
+):
     d = dual_setup
+    _generate_suggestion(client, d["project_id"], d["citation_id"], d["owner_headers"])
 
     body = _record_decision(
         client, d["project_id"], d["citation_id"], d["owner_headers"], "include", "Looks relevant"
@@ -135,8 +156,10 @@ def test_recording_own_decision_reveals_suggestion(client, dual_setup):
     detail = _get_citation(client, d["project_id"], d["citation_id"], d["owner_headers"])
     assert detail["screening_blind"] is False
     assert detail["suggestion"] == {"decision": "include", "reason": "Matches criteria."}
+    assert detail["suggestion_needs_generation"] is False
     assert detail["screening_decision"]["decision"] == "include"
     assert detail["screening_decision"]["reason"] == "Looks relevant"
+    assert override_suggester.calls == 1
 
 
 def test_revealed_view_shows_peer_decision_once_both_have_recorded(client, dual_setup):
@@ -159,6 +182,7 @@ def test_revealed_view_shows_peer_decision_once_both_have_recorded(client, dual_
 
 def test_revealed_before_peer_decides_shows_own_decision_and_no_peer_yet(client, dual_setup):
     d = dual_setup
+    _generate_suggestion(client, d["project_id"], d["citation_id"], d["owner_headers"])
     _record_decision(client, d["project_id"], d["citation_id"], d["owner_headers"], "include")
 
     detail = _get_citation(client, d["project_id"], d["citation_id"], d["owner_headers"])
@@ -172,8 +196,8 @@ def test_revealed_before_peer_decides_shows_own_decision_and_no_peer_yet(client,
 def test_suggestion_is_generated_once_regardless_of_when_it_is_revealed(client, dual_setup, override_suggester):
     d = dual_setup
 
-    _get_citation(client, d["project_id"], d["citation_id"], d["owner_headers"])
-    _get_citation(client, d["project_id"], d["citation_id"], d["co_reviewer_headers"])
+    _generate_suggestion(client, d["project_id"], d["citation_id"], d["owner_headers"])
+    _generate_suggestion(client, d["project_id"], d["citation_id"], d["co_reviewer_headers"])
     _record_decision(client, d["project_id"], d["citation_id"], d["owner_headers"], "include")
     revealed = _get_citation(client, d["project_id"], d["citation_id"], d["owner_headers"])
 
@@ -221,9 +245,11 @@ def test_solo_project_screening_view_is_unchanged(client, override_suggester):
     owner_headers = auth_headers_for(client, "owner@example.com")
     project_id = _create_solo_project(client, owner_headers)
     citation_id = _upload_one_citation(client, owner_headers, project_id)
+    generated = _generate_suggestion(client, project_id, citation_id, owner_headers)
 
     body = _get_citation(client, project_id, citation_id, owner_headers)
 
+    assert generated["suggestion"] == {"decision": "include", "reason": "Matches criteria."}
     assert body["screening_blind"] is False
     assert body["suggestion"] == {"decision": "include", "reason": "Matches criteria."}
     assert body["peer_screening_decision"] is None

@@ -184,6 +184,13 @@ class SuggestionRead(BaseModel):
     reason: str
 
 
+class SuggestionOutcomeRead(BaseModel):
+    """What generating an AI Suggestion on demand produced, for the Reviewer asking."""
+
+    suggestion: SuggestionRead | None = None
+    suggestion_unavailable_reason: str | None = None
+
+
 class ScreeningDecisionCreate(BaseModel):
     decision: Literal["include", "exclude", "maybe"]
     reason: str | None = None
@@ -376,6 +383,7 @@ class CitationDetailRead(CitationRead):
     next_citation_id: uuid.UUID | None = None
     suggestion: SuggestionRead | None = None
     suggestion_unavailable_reason: str | None = None
+    suggestion_needs_generation: bool = False
     screening_decision: ScreeningDecisionRead | None = None
     peer_screening_decision: ScreeningDecisionRead | None = None
     screening_blind: bool = False

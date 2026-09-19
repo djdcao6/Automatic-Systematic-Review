@@ -63,6 +63,7 @@ def _representative_requests(project_id, citation_id, extraction_field_id):
         ("put", f"/review-projects/{project_id}/criteria", {"population": "Adults"}),
         ("get", f"/review-projects/{project_id}/citations", None),
         ("get", f"/review-projects/{project_id}/citations/{citation_id}", None),
+        ("post", f"/review-projects/{project_id}/citations/{citation_id}/suggestion", None),
         (
             "post",
             f"/review-projects/{project_id}/citations/{citation_id}/decision",
