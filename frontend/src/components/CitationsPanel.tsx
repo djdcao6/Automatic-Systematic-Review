@@ -36,8 +36,8 @@ export function CitationsPanel({
       setUploadError(null);
       await refresh();
       onCitationsChanged?.();
-    } catch {
-      setUploadError("Failed to upload citations.");
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Failed to upload citations.");
     } finally {
       event.target.value = "";
     }
