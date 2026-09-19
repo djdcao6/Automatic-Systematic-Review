@@ -163,6 +163,25 @@ describe("CitationsPanel", () => {
     await waitFor(() => expect(onCitationsChanged).toHaveBeenCalledTimes(1));
   });
 
+  // Regression: ISSUE-003 — the panel's catch block replaced the backend's
+  // reason ("File must be .ris or .csv") with a hardcoded generic string.
+  // Found by /qa on 2026-09-19
+  // Report: .gstack/qa-reports/qa-report-localhost-2026-09-19.md
+  it("shows the backend's reason when an upload is rejected", async () => {
+    mockedApi.listCitations.mockResolvedValue([]);
+    mockedApi.uploadCitations.mockRejectedValue(new Error("File must be .ris or .csv"));
+
+    render(<CitationsPanel reviewProjectId="1" />);
+    await waitFor(() => expect(mockedApi.listCitations).toHaveBeenCalledTimes(1));
+
+    const file = new File(["not a citation file"], "notes.txt", { type: "text/plain" });
+    fireEvent.change(screen.getByLabelText(/upload ris or csv file/i), {
+      target: { files: [file] },
+    });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("File must be .ris or .csv");
+  });
+
   it("ignores a stale response after reviewProjectId changes before it resolves", async () => {
     const first = deferred<Citation[]>();
     const second = deferred<Citation[]>();
