@@ -372,7 +372,8 @@ def test_accepted_invitation_shows_accepted_status(client):
     assert response.json()["status"] == "accepted"
 
 
-# --- Co-Reviewer access parity (Criteria, Citations, Extraction Fields, Full Text) ---
+# --- Co-Reviewer access parity (Citations, Extraction Fields, Full Text) ---
+# Criteria are the exception: only the Owner may edit them (see the test below).
 
 CSV_SAMPLE = "title,abstract,authors,year,source\nStudy,An abstract,Author,2020,PubMed\n"
 
@@ -391,14 +392,6 @@ def test_co_reviewer_has_owner_level_access_to_project_resources(client):
 
     assert (
         client.get(f"/review-projects/{project_id}", headers=co_reviewer_headers).status_code
-        == 200
-    )
-    assert (
-        client.put(
-            f"/review-projects/{project_id}/criteria",
-            json={"population": "Adults"},
-            headers=co_reviewer_headers,
-        ).status_code
         == 200
     )
     assert (
@@ -423,6 +416,55 @@ def test_co_reviewer_has_owner_level_access_to_project_resources(client):
         ).status_code
         == 201
     )
+
+
+def test_co_reviewer_cannot_edit_criteria_but_can_read_them(client):
+    owner_headers = auth_headers_for(client, "owner@example.com")
+    project_id = _create_dual_project(client, owner_headers)
+    client.put(
+        f"/review-projects/{project_id}/criteria",
+        json={"population": "Adults"},
+        headers=owner_headers,
+    )
+    token = client.post(
+        f"/review-projects/{project_id}/invitations", headers=owner_headers
+    ).json()["token"]
+    co_reviewer_token = client.post(
+        f"/invitations/{token}/accept-register",
+        json={"email": "co-reviewer@example.com", "password": "correcthorse"},
+    ).json()["access_token"]
+    co_reviewer_headers = {"Authorization": f"Bearer {co_reviewer_token}"}
+
+    response = client.put(
+        f"/review-projects/{project_id}/criteria",
+        json={"population": "Children"},
+        headers=co_reviewer_headers,
+    )
+    project = client.get(f"/review-projects/{project_id}", headers=co_reviewer_headers)
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Only the Owner can perform this action"
+    assert project.json()["criteria"]["population"] == "Adults"
+
+
+def test_owner_can_still_edit_criteria_after_a_co_reviewer_joins(client):
+    owner_headers = auth_headers_for(client, "owner@example.com")
+    project_id = _create_dual_project(client, owner_headers)
+    token = client.post(
+        f"/review-projects/{project_id}/invitations", headers=owner_headers
+    ).json()["token"]
+    client.post(
+        f"/invitations/{token}/accept-register",
+        json={"email": "co-reviewer@example.com", "password": "correcthorse"},
+    )
+
+    response = client.put(
+        f"/review-projects/{project_id}/criteria",
+        json={"population": "Adults"},
+        headers=owner_headers,
+    )
+
+    assert response.status_code == 200
 
 
 def test_co_reviewer_cannot_generate_or_revoke_invitations(client):

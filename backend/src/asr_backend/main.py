@@ -287,7 +287,7 @@ def require_owner(
     project: models.ReviewProject = Depends(get_review_project_or_404),
     reviewer: models.Reviewer = Depends(auth.get_current_reviewer),
 ) -> models.ReviewProject:
-    """Narrows access to the Owner alone, e.g. for managing Invitations (#26)."""
+    """Narrows access to the Owner alone, e.g. for managing Invitations (#26) or editing Criteria."""
     if reviewer.id != project.owner_reviewer_id:
         raise HTTPException(status_code=403, detail="Only the Owner can perform this action")
     return project
@@ -369,7 +369,7 @@ def remove_co_reviewer(
 )
 def save_criteria(
     payload: schemas.CriteriaUpdate,
-    project: models.ReviewProject = Depends(get_review_project_or_404),
+    project: models.ReviewProject = Depends(require_owner),
     db: Session = Depends(get_db),
 ) -> models.Criteria:
     if project.criteria_locked:

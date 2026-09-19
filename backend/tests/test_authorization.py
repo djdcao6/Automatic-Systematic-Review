@@ -159,6 +159,9 @@ def test_co_reviewer_passes_the_representative_endpoints_gate(client, owner_head
     for method, path, payload in _representative_requests(
         dual_project_id, citation_id, extraction_field_id
     ):
+        if method == "put" and path.endswith("/criteria"):
+            # Owner-only; test_co_reviewer_cannot_edit_criteria_but_can_read_them covers it.
+            continue
         response = client.request(
             method.upper(), path, json=payload, headers=co_reviewer_headers
         )
