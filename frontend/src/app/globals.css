@@ -853,6 +853,11 @@
   .decide .form-actions button {
     margin: 0;
   }
+  /* A pre-filled reason can run past five lines; grow the field instead of clipping one. */
+  .decide textarea {
+    field-sizing: content;
+    max-height: 16rem;
+  }
   .hint {
     margin: 0;
     color: var(--text-muted);
