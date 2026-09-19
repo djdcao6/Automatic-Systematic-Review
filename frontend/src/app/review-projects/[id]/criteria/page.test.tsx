@@ -99,6 +99,28 @@ describe("CriteriaPage", () => {
     expect(screen.getByRole("button", { name: /save criteria/i })).toBeDisabled();
   });
 
+  it("shows the Criteria read-only to the Co-Reviewer and says only the Owner edits them", () => {
+    renderWithProject(<CriteriaPage />, {
+      isOwner: false,
+      project: {
+        review_mode: "dual",
+        criteria: {
+          population: "Adults with diabetes",
+          intervention: null,
+          comparison: null,
+          outcome: null,
+          exclusion_rules: ["Non-English"],
+          notes: null,
+        },
+      },
+    });
+
+    expect(screen.getByRole("status")).toHaveTextContent(/only the owner can edit the criteria/i);
+    expect(screen.getByDisplayValue("Adults with diabetes")).toBeDisabled();
+    expect(screen.getByLabelText(/exclusion rules/i)).toBeDisabled();
+    expect(screen.getByRole("button", { name: /save criteria/i })).toBeDisabled();
+  });
+
   it("does not show the locked notice while the Criteria can still be edited", () => {
     renderWithProject(<CriteriaPage />);
 

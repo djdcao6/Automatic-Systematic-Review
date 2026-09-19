@@ -18,9 +18,9 @@ function blankOrValue(value: string): string | null {
 }
 
 export function CriteriaPanel() {
-  const { project, refreshProject } = useReviewProject();
+  const { project, isOwner, refreshProject } = useReviewProject();
   const criteria = project.criteria;
-  const locked = project.criteria_locked;
+  const readOnly = !isOwner || project.criteria_locked;
   const [population, setPopulation] = useState(criteria?.population ?? "");
   const [intervention, setIntervention] = useState(criteria?.intervention ?? "");
   const [comparison, setComparison] = useState(criteria?.comparison ?? "");
@@ -55,8 +55,12 @@ export function CriteriaPanel() {
     <section>
       <h2>Criteria</h2>
       {error && <p role="alert">{error}</p>}
-      {locked && (
-        <p role="status">Criteria are locked once the first Screening Decision is recorded.</p>
+      {!isOwner ? (
+        <p role="status">Only the Owner can edit the Criteria.</p>
+      ) : (
+        project.criteria_locked && (
+          <p role="status">Criteria are locked once the first Screening Decision is recorded.</p>
+        )
       )}
       <form onSubmit={handleSubmit} className="panel">
         <div className="field-grid">
@@ -65,7 +69,7 @@ export function CriteriaPanel() {
             <input
               id="population"
               value={population}
-              disabled={locked}
+              disabled={readOnly}
               onChange={(event) => setPopulation(event.target.value)}
             />
           </div>
@@ -74,7 +78,7 @@ export function CriteriaPanel() {
             <input
               id="intervention"
               value={intervention}
-              disabled={locked}
+              disabled={readOnly}
               onChange={(event) => setIntervention(event.target.value)}
             />
           </div>
@@ -83,7 +87,7 @@ export function CriteriaPanel() {
             <input
               id="comparison"
               value={comparison}
-              disabled={locked}
+              disabled={readOnly}
               onChange={(event) => setComparison(event.target.value)}
             />
           </div>
@@ -92,7 +96,7 @@ export function CriteriaPanel() {
             <input
               id="outcome"
               value={outcome}
-              disabled={locked}
+              disabled={readOnly}
               onChange={(event) => setOutcome(event.target.value)}
             />
           </div>
@@ -102,7 +106,7 @@ export function CriteriaPanel() {
         <textarea
           id="exclusion-rules"
           value={exclusionRules}
-          disabled={locked}
+          disabled={readOnly}
           onChange={(event) => setExclusionRules(event.target.value)}
         />
 
@@ -110,12 +114,12 @@ export function CriteriaPanel() {
         <textarea
           id="notes"
           value={notes}
-          disabled={locked}
+          disabled={readOnly}
           onChange={(event) => setNotes(event.target.value)}
         />
 
         <div className="form-actions">
-          <button type="submit" disabled={locked}>
+          <button type="submit" disabled={readOnly}>
             Save Criteria
           </button>
         </div>
