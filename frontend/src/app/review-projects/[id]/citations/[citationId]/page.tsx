@@ -92,7 +92,7 @@ export default function CitationScreeningPage({
 }: {
   params: Promise<{ id: string; citationId: string }>;
 }) {
-  const { project, refreshProject } = useReviewProject();
+  const { project, isOwner, refreshProject } = useReviewProject();
   const [citationId, setCitationId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -108,6 +108,7 @@ export default function CitationScreeningPage({
         reviewProjectId={project.id}
         citationId={citationId}
         project={project}
+        isOwner={isOwner}
         onDecisionRecorded={refreshProject}
       />
     </main>
@@ -118,11 +119,13 @@ function CitationScreening({
   reviewProjectId,
   citationId,
   project,
+  isOwner,
   onDecisionRecorded,
 }: {
   reviewProjectId: string;
   citationId: string;
   project: ReviewProjectDetail;
+  isOwner: boolean;
   onDecisionRecorded: () => void;
 }) {
   const [citation, setCitation] = useState<CitationDetail | null>(null);
@@ -622,7 +625,7 @@ function CitationScreening({
 
           {reviewMode === "dual" && (
             <section>
-              <h2>Co-Reviewer&apos;s Decision</h2>
+              <h2>{isOwner ? "Co-Reviewer" : "Owner"}&apos;s Decision</h2>
               {citation.screening_blind ? (
                 <div className="sealed tab">
                   <p>Sealed until you record your own Screening Decision.</p>
