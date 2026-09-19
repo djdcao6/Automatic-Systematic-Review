@@ -1040,9 +1040,7 @@
     margin-top: 0;
     padding-top: 0.5rem;
     border-top: 1px solid var(--border);
-    font-family: var(--font-plex-mono), ui-monospace, monospace;
     font-size: 0.6875rem;
-    letter-spacing: 0.04em;
   }
   .margin dd {
     margin: 0 0 0.5rem;
