@@ -298,10 +298,27 @@ async function authorizedFetch(input: string, init: RequestInit = {}): Promise<R
   return response;
 }
 
+// FastAPI reports request-validation failures (422) as a list of
+// { loc, msg } objects instead of a string; label each message with the
+// field it's about (the last `loc` entry, skipping the leading "body").
+function validationMessage(detail: unknown[]): string | null {
+  const messages = detail.flatMap((issue) => {
+    const { loc, msg } = (issue ?? {}) as { loc?: unknown; msg?: unknown };
+    if (typeof msg !== "string") return [];
+    const field = Array.isArray(loc) ? loc.filter((part) => part !== "body").at(-1) : undefined;
+    return [field === undefined ? msg : `${field}: ${msg}`];
+  });
+  return messages.length > 0 ? messages.join("; ") : null;
+}
+
 async function errorMessage(response: Response, fallback: string): Promise<string> {
   try {
     const body = await response.json();
     if (typeof body?.detail === "string") return body.detail;
+    if (Array.isArray(body?.detail)) {
+      const message = validationMessage(body.detail);
+      if (message) return message;
+    }
   } catch {
     // response body wasn't JSON; fall through to the generic message
   }
