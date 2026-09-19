@@ -1,11 +1,15 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { ProjectShell } from "@/components/ProjectShell";
 import * as api from "@/lib/api";
 
 import CitationScreeningPage from "./page";
 
 vi.mock("@/lib/api");
+vi.mock("next/navigation", () => ({
+  useSelectedLayoutSegment: () => "citations",
+}));
 
 const mockedApi = vi.mocked(api);
 
@@ -52,14 +56,22 @@ const dualReviewProject = {
   citations_needing_decision: 0,
 };
 
+// The page sits inside the project's shell, which supplies the project.
 function renderPage() {
   return render(
-    <CitationScreeningPage params={Promise.resolve({ id: "1", citationId: "c1" })} />
+    <ProjectShell reviewProjectId="1">
+      <CitationScreeningPage params={Promise.resolve({ id: "1", citationId: "c1" })} />
+    </ProjectShell>
   );
 }
 
 describe("CitationScreeningPage", () => {
   beforeEach(() => {
+    mockedApi.getMe.mockResolvedValue({
+      id: "owner-1",
+      email: "owner@example.com",
+      created_at: "2026-01-01T00:00:00Z",
+    });
     mockedApi.recordScreeningDecision.mockResolvedValue({
       decision: "include",
       reason: "Confirmed",

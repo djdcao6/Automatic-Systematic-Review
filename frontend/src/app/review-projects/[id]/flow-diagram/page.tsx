@@ -1,33 +1,19 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { FlowDiagramView } from "@/components/FlowDiagramView";
 import { PageStatus } from "@/components/PageStatus";
-import { getFlowDiagram, getReviewProject, type FlowDiagram } from "@/lib/api";
+import { getFlowDiagram, type FlowDiagram } from "@/lib/api";
+import { useReviewProject } from "@/lib/ReviewProjectContext";
 
-export default function FlowDiagramPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const [id, setId] = useState<string | null>(null);
-  const [projectName, setProjectName] = useState("");
+export default function FlowDiagramPage() {
+  const { project } = useReviewProject();
+  const id = project.id;
   const [diagram, setDiagram] = useState<FlowDiagram | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    params.then((resolved) => setId(resolved.id));
-  }, [params]);
-
-  useEffect(() => {
-    if (!id) return;
-    getReviewProject(id)
-      .then((project) => setProjectName(project.name))
-      .catch(() => {
-        // Best-effort; the page still works without the project's name in the heading.
-      });
     getFlowDiagram(id)
       .then(setDiagram)
       .catch(() => setError("Failed to load PRISMA Flow Diagram."));
@@ -39,12 +25,7 @@ export default function FlowDiagramPage({
 
   return (
     <main className="page">
-      {id && (
-        <Link href={`/review-projects/${id}`} className="crumb">
-          Back to project
-        </Link>
-      )}
-      <h1>PRISMA Flow Diagram{projectName ? `: ${projectName}` : ""}</h1>
+      <h1>PRISMA Flow Diagram: {project.name}</h1>
       {error && <p role="alert">{error}</p>}
       <FlowDiagramView diagram={diagram} />
     </main>

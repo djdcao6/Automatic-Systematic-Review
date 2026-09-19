@@ -1,11 +1,16 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { ProjectShell } from "@/components/ProjectShell";
 import * as api from "@/lib/api";
+import { renderWithProject } from "@/test/renderWithProject";
 
 import CitationScreeningPage from "./page";
 
 vi.mock("@/lib/api");
+vi.mock("next/navigation", () => ({
+  useSelectedLayoutSegment: () => "citations",
+}));
 
 const mockedApi = vi.mocked(api);
 
@@ -76,12 +81,21 @@ const decisionRecord = (decision: "include" | "exclude" | "maybe") => ({
   updated_at: stamp,
 });
 
+// The page sits inside the project's shell, which supplies the project.
+function inShell(citationId: string) {
+  return (
+    <ProjectShell reviewProjectId="1">
+      <CitationScreeningPage params={Promise.resolve({ id: "1", citationId })} />
+    </ProjectShell>
+  );
+}
+
 function renderPage(citationId = "c1") {
-  return render(<CitationScreeningPage params={Promise.resolve({ id: "1", citationId })} />);
+  return render(inShell(citationId));
 }
 
 function renderNext(rerender: ReturnType<typeof render>["rerender"], citationId: string) {
-  rerender(<CitationScreeningPage params={Promise.resolve({ id: "1", citationId })} />);
+  rerender(inShell(citationId));
 }
 
 describe("CitationScreeningPage screening frame", () => {
@@ -90,6 +104,11 @@ describe("CitationScreeningPage screening frame", () => {
     mockedApi.getCitation.mockReset();
     mockedApi.listCitations.mockReset();
     mockedApi.recordScreeningDecision.mockReset();
+    mockedApi.getMe.mockResolvedValue({
+      id: "owner-1",
+      email: "owner@example.com",
+      created_at: "2026-01-01T00:00:00Z",
+    });
     mockedApi.getReviewProject.mockResolvedValue(project);
     mockedApi.getCitation.mockResolvedValue(detail());
     mockedApi.recordScreeningDecision.mockResolvedValue(decisionRecord("include"));
@@ -175,13 +194,18 @@ describe("CitationScreeningPage screening frame", () => {
       expect(await screen.findByRole("heading", { name: "Metformin RCT" })).toBeInTheDocument();
       expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
     });
+  });
 
-    it("leaves the folio out, and the page working, until the project has loaded", async () => {
-      mockedApi.getReviewProject.mockRejectedValue(new Error("down"));
+  describe("getting back to the project", () => {
+    it("leaves that to the project rail instead of a link of its own", async () => {
       renderPage();
 
-      expect(await screen.findByRole("heading", { name: "Metformin RCT" })).toBeInTheDocument();
-      expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+      await screen.findByRole("heading", { name: "Metformin RCT" });
+      expect(screen.queryByRole("link", { name: /back to project/i })).not.toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "Citations" })).toHaveAttribute(
+        "href",
+        "/review-projects/1/citations"
+      );
     });
   });
 
@@ -433,7 +457,7 @@ describe("CitationScreeningPage screening frame", () => {
   });
   describe("before the page has anything to show", () => {
     it("keeps the loading message inside main while the route params resolve", () => {
-      render(<CitationScreeningPage params={new Promise(() => {})} />);
+      renderWithProject(<CitationScreeningPage params={new Promise(() => {})} />);
 
       expect(screen.getByRole("main")).toHaveTextContent("Loading...");
     });
