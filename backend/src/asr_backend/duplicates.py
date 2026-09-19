@@ -1,5 +1,6 @@
 import re
 import uuid
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
@@ -73,6 +74,73 @@ def find_match(
         if is_match(citation, candidate):
             return candidate
     return None
+
+
+class MatchIndex:
+    """Finds the earliest Citation that `is_match` would pick, without scanning them all.
+
+    Holds only ids and match keys (DOI, normalized title), never ORM objects:
+    every commit expires whatever the Session still holds strongly, so a pool
+    of live Citation rows would cost O(pool) per commit and force a refresh
+    query per row on the next read.
+
+    Add Citations in creation order — the earliest-added match wins, mirroring
+    `find_match` over a created_at-ordered pool. Mirrors `is_match`: two DOIs
+    compare on DOI alone (titles are ignored); otherwise normalized titles are
+    compared, so a DOI-bearing Citation can match a DOI-less one on title but
+    never a different-DOI one.
+    """
+
+    def __init__(self, citations: Iterable[models.Citation] = ()) -> None:
+        self._entries: dict[uuid.UUID, tuple[int, str | None, str]] = {}
+        self._by_doi: dict[str, dict[uuid.UUID, int]] = {}
+        self._by_title: dict[str, dict[uuid.UUID, int]] = {}
+        self._by_title_without_doi: dict[str, dict[uuid.UUID, int]] = {}
+        self._next_position = 0
+        for citation in citations:
+            self.add(citation)
+
+    def add(self, citation: models.Citation) -> None:
+        self.remove(citation.id)
+        position = self._next_position
+        self._next_position += 1
+        doi = citation.doi or None
+        title = normalize_title(citation.title)
+        self._entries[citation.id] = (position, doi, title)
+        self._by_title.setdefault(title, {})[citation.id] = position
+        if doi is None:
+            self._by_title_without_doi.setdefault(title, {})[citation.id] = position
+        else:
+            self._by_doi.setdefault(doi, {})[citation.id] = position
+
+    def remove(self, citation_id: uuid.UUID) -> None:
+        entry = self._entries.pop(citation_id, None)
+        if entry is None:
+            return
+        _, doi, title = entry
+        self._by_title[title].pop(citation_id, None)
+        if doi is None:
+            self._by_title_without_doi[title].pop(citation_id, None)
+        else:
+            self._by_doi[doi].pop(citation_id, None)
+
+    def find_match(self, citation: models.Citation) -> uuid.UUID | None:
+        """The earliest indexed Citation (other than `citation` itself) that matches it."""
+        doi = citation.doi or None
+        title = normalize_title(citation.title)
+        if doi is None:
+            candidates = [self._by_title.get(title, {})]
+        else:
+            candidates = [self._by_doi.get(doi, {}), self._by_title_without_doi.get(title, {})]
+        best_id, best_position = None, None
+        for group in candidates:
+            for candidate_id, position in group.items():
+                if candidate_id == citation.id:
+                    continue
+                if best_position is None or position < best_position:
+                    best_id, best_position = candidate_id, position
+                break
+        return best_id
 
 
 def _combine_bibliographic_fields(survivor: models.Citation, loser: models.Citation) -> None:
@@ -177,6 +245,39 @@ def merge_pair(
     db.commit()
 
 
+def _build_match_index(db: Session, project: models.ReviewProject) -> MatchIndex:
+    """Indexes the Review Project's active Citations, minus any held in a Possible Duplicate.
+
+    A held Citation is excluded from matching so a later upload can't
+    auto-merge it away out from under the pending hold (ticket #21).
+    """
+    held = crud.held_citation_ids(db, project.id)
+    return MatchIndex(c for c in crud.list_citations(db, project.id) if c.id not in held)
+
+
+def _match_and_merge(
+    db: Session, project: models.ReviewProject, index: MatchIndex, citation: models.Citation
+) -> bool:
+    """Matches one Citation against the index; merges or holds it, keeping the index current.
+
+    Returns whether it matched anything. On a merge the loser is archived, and
+    on a hold both sides are excluded from later matching — the same pool
+    `crud.list_citations` minus `crud.held_citation_ids` would yield next time.
+    """
+    match_id = index.find_match(citation)
+    if match_id is None:
+        return False
+    match = db.get(models.Citation, match_id)
+    conflicts = find_conflicts(match, citation)
+    if conflicts:
+        crud.create_possible_duplicate(db, project.id, survivor_id=match.id, loser_id=citation.id)
+        index.remove(match.id)
+    else:
+        merge_pair(db, project, survivor=match, loser=citation)
+    index.remove(citation.id)
+    return True
+
+
 def process_upload_matches(
     db: Session, project: models.ReviewProject, new_citations: list[models.Citation]
 ) -> None:
@@ -198,23 +299,9 @@ def process_upload_matches(
     the other as already active; import_citations avoids that by creating
     and matching one row at a time.
     """
+    index = _build_match_index(db, project)
     for citation in new_citations:
-        held = crud.held_citation_ids(db, project.id)
-        pool = [
-            c
-            for c in crud.list_citations(db, project.id)
-            if c.id != citation.id and c.id not in held
-        ]
-        match = find_match(citation, pool)
-        if match is None:
-            continue
-        conflicts = find_conflicts(match, citation)
-        if conflicts:
-            crud.create_possible_duplicate(
-                db, project.id, survivor_id=match.id, loser_id=citation.id
-            )
-        else:
-            merge_pair(db, project, survivor=match, loser=citation)
+        _match_and_merge(db, project, index, citation)
 
 
 def _apply_resolution_choice(
@@ -306,16 +393,27 @@ def to_possible_duplicate_read(
 
 def import_citations(
     db: Session, project: models.ReviewProject, parsed_citations: list[ParsedCitation]
-) -> list[models.Citation]:
+) -> list[uuid.UUID]:
     """Creates each parsed Citation and runs Duplicate matching against it in turn.
+
+    Returns the created Citations' ids (including any merged away or held
+    straight afterwards). Ids rather than ORM rows, because every commit
+    expires each row the Session still holds: returning the rows keeps all n
+    alive and makes each of the n commits cost O(n).
 
     Rows are created and matched one at a time, not bulk-created up front, so
     that an earlier row in the same batch is always already active by the
     time a later, matching row is checked against it (see process_upload_matches).
+    The match index is built once from the Citations already in the database
+    and then extended row by row, rather than re-queried per row (O(n^2) rows
+    read for an n-row upload). It is a snapshot: Citations another request adds
+    to this Review Project mid-import aren't matched against.
     """
-    citations = []
+    index = _build_match_index(db, project)
+    created_ids = []
     for parsed in parsed_citations:
         [citation] = crud.create_citations(db, project.id, [parsed])
-        process_upload_matches(db, project, [citation])
-        citations.append(citation)
-    return citations
+        created_ids.append(citation.id)
+        if not _match_and_merge(db, project, index, citation):
+            index.add(citation)
+    return created_ids

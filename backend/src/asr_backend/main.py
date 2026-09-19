@@ -507,9 +507,9 @@ async def upload_citations(
     except citation_import.UnsupportedFileType as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    citations = duplicates.import_citations(db, project, parsed.citations)
+    created_ids = duplicates.import_citations(db, project, parsed.citations)
     return schemas.CitationUploadResult(
-        created=len(citations),
+        created=len(created_ids),
         skipped=[
             schemas.CitationUploadSkipped(row=row, reason=reason)
             for row, reason in parsed.skipped
