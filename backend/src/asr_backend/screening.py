@@ -7,6 +7,23 @@ MISSING_ABSTRACT = "missing_abstract"
 GENERATION_FAILED = "generation_failed"
 
 
+def read_suggestion(
+    db: Session, citation: models.Citation
+) -> tuple[models.AISuggestion | None, str | None, bool]:
+    """Reads a Citation's AI Suggestion state without generating anything.
+
+    Returns (the persisted suggestion, why none can exist, whether one still
+    needs generating). Cheap enough for the Citation detail view, which must
+    not wait on the model.
+    """
+    existing = crud.get_ai_suggestion(db, citation.id)
+    if existing is not None:
+        return existing, None, False
+    if citation.needs_abstract:
+        return None, MISSING_ABSTRACT, False
+    return None, None, True
+
+
 async def get_or_generate_suggestion(
     db: Session, citation: models.Citation, suggester: AISuggester
 ) -> tuple[models.AISuggestion | None, str | None]:
@@ -15,12 +32,9 @@ async def get_or_generate_suggestion(
     Matches the AI Suggestion domain rule: generated once on demand, then
     persisted and reused on every later view rather than regenerated.
     """
-    existing = crud.get_ai_suggestion(db, citation.id)
-    if existing is not None:
-        return existing, None
-
-    if citation.needs_abstract:
-        return None, MISSING_ABSTRACT
+    existing, unavailable_reason, needs_generation = read_suggestion(db, citation)
+    if not needs_generation:
+        return existing, unavailable_reason
 
     criteria = citation.review_project.criteria
     try:

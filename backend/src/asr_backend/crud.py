@@ -322,11 +322,25 @@ def get_ai_suggestion(db: Session, citation_id: uuid.UUID) -> models.AISuggestio
 def create_ai_suggestion(
     db: Session, citation_id: uuid.UUID, decision: str, reason: str
 ) -> models.AISuggestion:
-    suggestion = models.AISuggestion(citation_id=citation_id, decision=decision, reason=reason)
-    db.add(suggestion)
+    """Persists a Citation's AI Suggestion, or returns the one a concurrent request saved first.
+
+    Generating takes seconds, so two requests can both find no suggestion and
+    both generate. Atomic INSERT ... ON CONFLICT DO NOTHING (as in
+    create_reviewer) lets the first save win instead of the second raising an
+    IntegrityError, and everyone then sees the same suggestion.
+    """
+    stmt = (
+        pg_insert(models.AISuggestion)
+        .values(citation_id=citation_id, decision=decision, reason=reason)
+        .on_conflict_do_nothing(index_elements=[models.AISuggestion.citation_id])
+        .returning(models.AISuggestion.id)
+    )
+    inserted_id = db.execute(stmt).scalar_one_or_none()
+    if inserted_id is None:
+        db.rollback()
+        return get_ai_suggestion(db, citation_id)
     db.commit()
-    db.refresh(suggestion)
-    return suggestion
+    return db.get(models.AISuggestion, inserted_id)
 
 
 def get_screening_decision(

@@ -47,7 +47,7 @@ def generate_ai_suggestion(
         decision=decision, reason=reason
     )
     try:
-        authed_client.get(f"/review-projects/{project_id}/citations/{citation_id}")
+        authed_client.post(f"/review-projects/{project_id}/citations/{citation_id}/suggestion")
     finally:
         app.dependency_overrides.pop(get_ai_suggester, None)
 

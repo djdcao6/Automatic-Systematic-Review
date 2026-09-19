@@ -1,6 +1,6 @@
 import pytest
 
-from asr_backend.ai_suggestion import SuggestionGenerationError, SuggestionResult, get_ai_suggester
+from asr_backend.ai_suggestion import SuggestionResult, get_ai_suggester
 from asr_backend.main import app
 
 
@@ -20,16 +20,13 @@ def upload_one_citation(authed_client, project_id: str, abstract: str | None = "
 
 
 class _FakeSuggester:
-    def __init__(self, decision="include", reason="Matches criteria.", error=None):
+    def __init__(self, decision="include", reason="Matches criteria."):
         self.decision = decision
         self.reason = reason
-        self.error = error
         self.calls = 0
 
     async def suggest_screening_decision(self, **kwargs) -> SuggestionResult:
         self.calls += 1
-        if self.error:
-            raise self.error
         return SuggestionResult(decision=self.decision, reason=self.reason)
 
 
@@ -41,7 +38,7 @@ def override_suggester():
     app.dependency_overrides.pop(get_ai_suggester, None)
 
 
-def test_citation_detail_generates_and_persists_suggestion(authed_client, override_suggester):
+def test_citation_detail_does_not_generate_a_suggestion(authed_client, override_suggester):
     project_id = create_project(authed_client)
     citation_id = upload_one_citation(authed_client, project_id)
 
@@ -49,19 +46,23 @@ def test_citation_detail_generates_and_persists_suggestion(authed_client, overri
 
     assert response.status_code == 200
     body = response.json()
-    assert body["suggestion"] == {"decision": "include", "reason": "Matches criteria."}
+    assert body["suggestion"] is None
     assert body["suggestion_unavailable_reason"] is None
-    assert override_suggester.calls == 1
+    assert body["suggestion_needs_generation"] is True
+    assert override_suggester.calls == 0
 
 
-def test_citation_detail_reuses_persisted_suggestion_on_second_view(authed_client, override_suggester):
+def test_citation_detail_returns_the_persisted_suggestion_without_regenerating(
+    authed_client, override_suggester
+):
     project_id = create_project(authed_client)
     citation_id = upload_one_citation(authed_client, project_id)
+    authed_client.post(f"/review-projects/{project_id}/citations/{citation_id}/suggestion")
 
-    authed_client.get(f"/review-projects/{project_id}/citations/{citation_id}")
-    response = authed_client.get(f"/review-projects/{project_id}/citations/{citation_id}")
+    body = authed_client.get(f"/review-projects/{project_id}/citations/{citation_id}").json()
 
-    assert response.json()["suggestion"] == {"decision": "include", "reason": "Matches criteria."}
+    assert body["suggestion"] == {"decision": "include", "reason": "Matches criteria."}
+    assert body["suggestion_needs_generation"] is False
     assert override_suggester.calls == 1
 
 
@@ -75,23 +76,8 @@ def test_citation_detail_missing_abstract_skips_generation(authed_client, overri
     body = response.json()
     assert body["suggestion"] is None
     assert body["suggestion_unavailable_reason"] == "missing_abstract"
+    assert body["suggestion_needs_generation"] is False
     assert override_suggester.calls == 0
-
-
-def test_citation_detail_generation_failure_reports_reason(authed_client):
-    project_id = create_project(authed_client)
-    citation_id = upload_one_citation(authed_client, project_id)
-    app.dependency_overrides[get_ai_suggester] = lambda: _FakeSuggester(
-        error=SuggestionGenerationError("boom")
-    )
-
-    response = authed_client.get(f"/review-projects/{project_id}/citations/{citation_id}")
-    app.dependency_overrides.pop(get_ai_suggester, None)
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["suggestion"] is None
-    assert body["suggestion_unavailable_reason"] == "generation_failed"
 
 
 def test_citation_detail_for_missing_citation(authed_client, override_suggester):
