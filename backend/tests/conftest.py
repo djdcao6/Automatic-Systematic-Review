@@ -1,6 +1,8 @@
+import time
+
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 from asr_backend.db import Base, get_db
@@ -9,6 +11,55 @@ from asr_backend.settings import settings
 
 test_engine = create_engine(settings.test_database_url)
 TestSessionLocal = sessionmaker(bind=test_engine, autoflush=False, autocommit=False)
+TEST_DATABASE_LOCK_ID = 0x415352  # "ASR"
+TEST_DATABASE_LOCK_TIMEOUT_SECONDS = 15 * 60
+TEST_DATABASE_LOCK_POLL_SECONDS = 0.5
+TEST_DATABASE_LOCK_ANNOUNCE_SECONDS = 5
+
+
+def acquire_test_database_lock(
+    connection,
+    *,
+    timeout_seconds=TEST_DATABASE_LOCK_TIMEOUT_SECONDS,
+    poll_seconds=TEST_DATABASE_LOCK_POLL_SECONDS,
+    announce=lambda message: None,
+):
+    """Polls for the session lock so a stuck holder fails loudly instead of hanging."""
+    started = time.monotonic()
+    announced = False
+    while not connection.scalar(
+        text("SELECT pg_try_advisory_lock(:lock_id)"),
+        {"lock_id": TEST_DATABASE_LOCK_ID},
+    ):
+        waited = time.monotonic() - started
+        if waited >= timeout_seconds:
+            pytest.exit(
+                f"Gave up after {timeout_seconds:g}s waiting for another pytest run "
+                "to release the test database.",
+                returncode=3,
+            )
+        if not announced and waited >= TEST_DATABASE_LOCK_ANNOUNCE_SECONDS:
+            announce("Waiting for another pytest run to release the test database...")
+            announced = True
+        time.sleep(poll_seconds)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _serialize_test_database_access(request):
+    """Keep concurrent pytest processes from resetting the same database."""
+    reporter = request.config.pluginmanager.get_plugin("terminalreporter")
+    announce = reporter.write_line if reporter else (lambda message: None)
+    # AUTOCOMMIT keeps the lock connection out of "idle in transaction", so a
+    # server-side idle_in_transaction_session_timeout cannot silently drop the lock.
+    with test_engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
+        acquire_test_database_lock(connection, announce=announce)
+        try:
+            yield
+        finally:
+            connection.execute(
+                text("SELECT pg_advisory_unlock(:lock_id)"),
+                {"lock_id": TEST_DATABASE_LOCK_ID},
+            )
 
 
 @pytest.fixture(autouse=True)
