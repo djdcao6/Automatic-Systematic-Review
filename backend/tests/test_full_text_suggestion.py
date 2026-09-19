@@ -2,7 +2,6 @@ import asyncio
 import io
 import itertools
 import threading
-import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 
@@ -265,24 +264,25 @@ def test_full_text_suggestion_unavailable_when_parse_failed(authed_client, overr
     assert override_suggester.full_text_calls == 0
 
 
-def test_two_simultaneous_first_requests_both_get_the_stored_suggestion(authed_client):
+def test_two_simultaneous_first_requests_share_one_model_generation(authed_client):
     project_id = create_project(authed_client)
     citation_id = create_citation(authed_client, project_id)
     upload_full_text(authed_client, project_id, citation_id, make_pdf())
-    suggester = _BarrierSuggester(parties=2)
+    suggester = _GatedSuggester()
     app.dependency_overrides[get_ai_suggester] = lambda: suggester
     try:
         with ThreadPoolExecutor(max_workers=2) as pool:
-            futures = [
-                pool.submit(generate_suggestion, authed_client, project_id, citation_id)
-                for _ in range(2)
-            ]
+            first = pool.submit(generate_suggestion, authed_client, project_id, citation_id)
+            assert suggester.entered.wait(timeout=10)
+            second = pool.submit(generate_suggestion, authed_client, project_id, citation_id)
+            suggester.release.set()
+            futures = [first, second]
             responses = [future.result() for future in futures]
     finally:
         app.dependency_overrides.pop(get_ai_suggester, None)
 
     assert [response.status_code for response in responses] == [200, 200]
-    assert suggester.full_text_calls == 2
+    assert suggester.full_text_calls == 1
     first, second = (response.json()["suggestion"] for response in responses)
     assert first == second
     assert get_detail(authed_client, project_id, citation_id)["full_text_suggestion"] == first
@@ -337,6 +337,8 @@ def test_replacing_the_pdf_waits_for_a_suggestion_that_is_being_saved(authed_cli
     saving = _PausedCommitSession(bind=engine)
     replacing = Session(bind=engine)
     events: list[str] = []
+    replacement_started = threading.Event()
+    replacement_finished = threading.Event()
 
     def save_suggestion():
         crud.create_full_text_suggestion(
@@ -351,6 +353,7 @@ def test_replacing_the_pdf_waits_for_a_suggestion_that_is_being_saved(authed_cli
         events.append("suggestion saved")
 
     def replace_pdf():
+        replacement_started.set()
         crud.upsert_full_text(
             replacing,
             citation_uuid,
@@ -360,13 +363,15 @@ def test_replacing_the_pdf_waits_for_a_suggestion_that_is_being_saved(authed_cli
             parse_status="parsed",
         )
         events.append("pdf replaced")
+        replacement_finished.set()
 
     try:
         with ThreadPoolExecutor(max_workers=2) as pool:
             saved = pool.submit(save_suggestion)
             assert saving.about_to_commit.wait(timeout=10)
             replaced = pool.submit(replace_pdf)
-            time.sleep(0.5)  # long enough for an unblocked replacement to finish
+            assert replacement_started.wait(timeout=10)
+            assert not replacement_finished.is_set()
             saving.proceed.set()
             saved.result()
             replaced.result()
