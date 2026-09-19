@@ -74,6 +74,38 @@ describe("CriteriaPage", () => {
     );
   });
 
+  // Regression: ISSUE-002 — locked Criteria stayed editable and Save failed with a generic error
+  // Found by /qa on 2026-09-19
+  // Report: .gstack/qa-reports/qa-report-localhost-2026-09-19.md
+  it("says the Criteria are locked and stops editing once a Screening Decision exists", () => {
+    renderWithProject(<CriteriaPage />, {
+      project: {
+        criteria_locked: true,
+        criteria: {
+          population: "Adults with diabetes",
+          intervention: null,
+          comparison: null,
+          outcome: null,
+          exclusion_rules: ["Non-English"],
+          notes: "Locked notes.",
+        },
+      },
+    });
+
+    expect(screen.getByRole("status")).toHaveTextContent(/criteria are locked/i);
+    expect(screen.getByLabelText(/population/i)).toBeDisabled();
+    expect(screen.getByLabelText(/exclusion rules/i)).toBeDisabled();
+    expect(screen.getByLabelText(/notes/i)).toBeDisabled();
+    expect(screen.getByRole("button", { name: /save criteria/i })).toBeDisabled();
+  });
+
+  it("does not show the locked notice while the Criteria can still be edited", () => {
+    renderWithProject(<CriteriaPage />);
+
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /save criteria/i })).toBeEnabled();
+  });
+
   it("tells the Reviewer when saving fails", async () => {
     mockedApi.saveCriteria.mockRejectedValue(new Error("boom"));
     renderWithProject(<CriteriaPage />);
