@@ -6,6 +6,7 @@ import { PageStatus } from "@/components/PageStatus";
 import { ScreeningFolio } from "@/components/ScreeningFolio";
 import {
   fetchFullTextFile,
+  generateFullTextSuggestion,
   generateSuggestion,
   getCitation,
   recordExtractionValue,
@@ -14,6 +15,7 @@ import {
   uploadFullText,
   type CitationDetail,
   type Decision,
+  type FullTextSuggestionOutcome,
   type ReviewProjectDetail,
   type SuggestionOutcome,
 } from "@/lib/api";
@@ -132,6 +134,9 @@ function CitationScreening({
   // What generating the AI suggestion produced, once it has. Until then the
   // margin shows a placeholder, so the abstract and form never wait on the model.
   const [suggestionOutcome, setSuggestionOutcome] = useState<SuggestionOutcome | null>(null);
+  // The same for the Full-Text Suggestion, which is asked for once a Full Text
+  // has been parsed and never fills a field the Reviewer owns.
+  const [fullTextOutcome, setFullTextOutcome] = useState<FullTextSuggestionOutcome | null>(null);
   // Nothing is chosen until the Reviewer chooses: with keyboard shortcuts, a
   // pre-selected Maybe could be recorded by one stray Ctrl+Enter.
   const [decision, setDecision] = useState<Decision | null>(null);
@@ -142,7 +147,10 @@ function CitationScreening({
   const [fullTextError, setFullTextError] = useState<string | null>(null);
   const [uploadingFullText, setUploadingFullText] = useState(false);
   const [viewFullTextError, setViewFullTextError] = useState<string | null>(null);
-  const [ftDecision, setFtDecision] = useState<Decision>("maybe");
+  // Nothing is chosen until the Reviewer chooses, and the AI never fills it: a
+  // Save with a pre-selected answer would record a decision nobody made.
+  const [ftDecision, setFtDecision] = useState<Decision | null>(null);
+  const [needsFtChoice, setNeedsFtChoice] = useState(false);
   const [ftReason, setFtReason] = useState("");
   const [ftError, setFtError] = useState<string | null>(null);
   const [ftSaved, setFtSaved] = useState(false);
@@ -180,24 +188,16 @@ function CitationScreening({
         if (data.full_text_decision) {
           setFtDecision(data.full_text_decision.decision);
           setFtReason(data.full_text_decision.reason ?? "");
-        } else if (data.full_text_suggestion) {
-          setFtDecision(data.full_text_suggestion.decision);
-          setFtReason(data.full_text_suggestion.reason);
         }
 
-        const suggestedByField = new Map(
-          (data.full_text_suggestion?.extraction_values ?? []).map((value) => [
-            value.extraction_field_id,
-            value.value,
-          ])
-        );
+        // Only the Reviewer's own recorded values fill the inputs. A suggested
+        // value waits beside its field until the Reviewer uses it.
         const recordedByField = new Map(
           data.extraction_values.map((value) => [value.extraction_field_id, value.value])
         );
         const initialInputs: Record<string, string> = {};
         for (const field of data.extraction_fields) {
-          initialInputs[field.id] =
-            recordedByField.get(field.id) ?? suggestedByField.get(field.id) ?? "";
+          initialInputs[field.id] = recordedByField.get(field.id) ?? "";
         }
         setExtractionInputs(initialInputs);
       })
@@ -243,6 +243,51 @@ function CitationScreening({
     generation.current = request();
   }, [needsSuggestion, reviewProjectId, citationId]);
 
+  const needsFullTextSuggestion = citation?.full_text_suggestion_needs_generation ?? false;
+  // The request for this Citation's Full-Text Suggestion while it is in flight.
+  const fullTextGeneration = useRef<Promise<void> | null>(null);
+  // Counts Full Text uploads. An answer asked for before the latest upload is
+  // about a PDF that is gone, so it is dropped. `fullTextRound` re-runs the
+  // effect below once an upload has finished, since a suggestion can be needed
+  // both before and after it.
+  const fullTextEpoch = useRef(0);
+  const [fullTextRound, setFullTextRound] = useState(0);
+
+  useEffect(() => {
+    if (!needsFullTextSuggestion || fullTextGeneration.current) return;
+
+    const request = (): Promise<void> => {
+      const epoch = fullTextEpoch.current;
+      return generateFullTextSuggestion(reviewProjectId, citationId)
+        .catch(
+          (): FullTextSuggestionOutcome => ({
+            suggestion: null,
+            suggestion_unavailable_reason: "generation_failed",
+          })
+        )
+        .then(async (outcome) => {
+          if (epoch !== fullTextEpoch.current) return;
+          if (outcome.suggestion !== null || outcome.suggestion_unavailable_reason !== null) {
+            fullTextGeneration.current = null;
+            setFullTextOutcome(outcome);
+            return;
+          }
+          // Nothing was kept: the Full Text was replaced while the model was
+          // reading the old one. Look at the Citation again, and ask once more
+          // if a suggestion is still needed.
+          const refreshed = await getCitation(reviewProjectId, citationId).catch(() => null);
+          fullTextGeneration.current = null;
+          if (!refreshed) return;
+          setCitation(refreshed);
+          if (refreshed.full_text_suggestion_needs_generation) {
+            fullTextGeneration.current = request();
+          }
+        });
+    };
+
+    fullTextGeneration.current = request();
+  }, [needsFullTextSuggestion, reviewProjectId, citationId, fullTextRound]);
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!decision) {
@@ -271,6 +316,10 @@ function CitationScreening({
 
   async function handleFullTextDecisionSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!ftDecision) {
+      setNeedsFtChoice(true);
+      return;
+    }
 
     try {
       const updated = await recordFullTextDecision(reviewProjectId, citationId, {
@@ -328,13 +377,37 @@ function CitationScreening({
 
     setUploadingFullText(true);
     setFullTextError(null);
+    // Anything asked for from here on is about the new PDF; an answer already
+    // on its way is about the old one.
+    fullTextEpoch.current += 1;
     try {
       const updated = await uploadFullText(reviewProjectId, citationId, file);
       setCitation((current) => (current ? { ...current, full_text: updated } : current));
+      // A new PDF clears the old Full-Text Suggestion, and only the backend
+      // knows whether a new one is needed, so read that state again instead of
+      // leaving a stale suggestion on the page.
+      const refreshed = await getCitation(reviewProjectId, citationId).catch(() => null);
+      setFullTextOutcome(null);
+      setCitation((current) =>
+        current
+          ? {
+              ...current,
+              full_text_suggestion: refreshed?.full_text_suggestion ?? null,
+              full_text_suggestion_unavailable_reason:
+                refreshed?.full_text_suggestion_unavailable_reason ?? null,
+              full_text_suggestion_needs_generation:
+                refreshed?.full_text_suggestion_needs_generation ?? false,
+            }
+          : current
+      );
     } catch {
       setFullTextError("Failed to upload Full Text.");
     } finally {
       setUploadingFullText(false);
+      // The request that was in flight, if any, now belongs to the old PDF.
+      // Letting go of it and starting a new round asks again if one is needed.
+      fullTextGeneration.current = null;
+      setFullTextRound((round) => round + 1);
     }
   }
 
@@ -352,11 +425,24 @@ function CitationScreening({
     : null;
   const suggestionPending = citation.suggestion_needs_generation && suggestionOutcome === null;
 
-  const fullTextSuggestionUnavailableMessage = citation.full_text_suggestion_unavailable_reason
-    ? (FULL_TEXT_SUGGESTION_UNAVAILABLE_MESSAGES[
-        citation.full_text_suggestion_unavailable_reason
-      ] ?? "No Full-Text Suggestion is available for this citation.")
+  const fullTextSuggestion = citation.full_text_suggestion ?? fullTextOutcome?.suggestion ?? null;
+  const fullTextUnavailableReason =
+    citation.full_text_suggestion_unavailable_reason ??
+    fullTextOutcome?.suggestion_unavailable_reason ??
+    null;
+  const fullTextSuggestionUnavailableMessage = fullTextUnavailableReason
+    ? (FULL_TEXT_SUGGESTION_UNAVAILABLE_MESSAGES[fullTextUnavailableReason] ??
+      "No Full-Text Suggestion is available for this citation.")
     : null;
+  const fullTextSuggestionPending =
+    citation.full_text_suggestion_needs_generation && fullTextOutcome === null;
+
+  const suggestedValueByField = new Map(
+    (fullTextSuggestion?.extraction_values ?? []).map((value) => [
+      value.extraction_field_id,
+      value.value,
+    ])
+  );
 
   const conflictHeld =
     citation.screening_decision !== null &&
@@ -477,20 +563,15 @@ function CitationScreening({
           {citation.full_text && (
             <section>
               <h2>Full-Text Suggestion</h2>
-              {citation.full_text_suggestion ? (
+              {fullTextSuggestion ? (
                 <div className="ai-note">
                   <p>
-                    {citation.full_text_suggestion.decision}: {citation.full_text_suggestion.reason}
+                    {fullTextSuggestion.decision}: {fullTextSuggestion.reason}
                   </p>
-                  {citation.full_text_suggestion.extraction_values.length > 0 && (
-                    <ul>
-                      {citation.full_text_suggestion.extraction_values.map((extractionValue) => (
-                        <li key={extractionValue.extraction_field_id}>
-                          {extractionValue.name}: {extractionValue.value}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
+                </div>
+              ) : fullTextSuggestionPending ? (
+                <div className="ai-note">
+                  <p role="status">Preparing a Full-Text Suggestion…</p>
                 </div>
               ) : (
                 <p>{fullTextSuggestionUnavailableMessage}</p>
@@ -501,28 +582,49 @@ function CitationScreening({
           {citation.extraction_fields.length > 0 && (
             <section>
               <h2>Extraction Values</h2>
-              {citation.extraction_fields.map((field) => (
-                <div key={field.id} className="extraction-field">
-                  <label htmlFor={`extraction-value-${field.id}`}>{field.name}</label>
-                  <input
-                    id={`extraction-value-${field.id}`}
-                    value={extractionInputs[field.id] ?? ""}
-                    onChange={(event) =>
-                      setExtractionInputs((current) => ({
-                        ...current,
-                        [field.id]: event.target.value,
-                      }))
-                    }
-                  />
-                  <button type="button" onClick={() => handleSaveExtractionValue(field.id)}>
-                    Save
-                  </button>
-                  {extractionErrors[field.id] && (
-                    <p role="alert">{extractionErrors[field.id]}</p>
-                  )}
-                  {extractionSavedFieldId === field.id && <p>Extraction value saved.</p>}
-                </div>
-              ))}
+              {citation.extraction_fields.map((field) => {
+                const suggested = suggestedValueByField.get(field.id);
+                return (
+                  <div key={field.id} className="extraction-field">
+                    <label htmlFor={`extraction-value-${field.id}`}>{field.name}</label>
+                    <input
+                      id={`extraction-value-${field.id}`}
+                      value={extractionInputs[field.id] ?? ""}
+                      onChange={(event) =>
+                        setExtractionInputs((current) => ({
+                          ...current,
+                          [field.id]: event.target.value,
+                        }))
+                      }
+                    />
+                    <button type="button" onClick={() => handleSaveExtractionValue(field.id)}>
+                      Save
+                    </button>
+                    {suggested !== undefined && (
+                      <div className="ai-note">
+                        <p>Suggested: {suggested}</p>
+                        <button
+                          type="button"
+                          aria-label={`Use suggested ${field.name}`}
+                          disabled={extractionInputs[field.id] === suggested}
+                          onClick={() =>
+                            setExtractionInputs((current) => ({
+                              ...current,
+                              [field.id]: suggested,
+                            }))
+                          }
+                        >
+                          Use
+                        </button>
+                      </div>
+                    )}
+                    {extractionErrors[field.id] && (
+                      <p role="alert">{extractionErrors[field.id]}</p>
+                    )}
+                    {extractionSavedFieldId === field.id && <p>Extraction value saved.</p>}
+                  </div>
+                );
+              })}
             </section>
           )}
 
@@ -534,8 +636,12 @@ function CitationScreening({
                   <DecisionChoices
                     name="full-text-decision"
                     value={ftDecision}
-                    onChange={setFtDecision}
+                    onChange={(option) => {
+                      setFtDecision(option);
+                      setNeedsFtChoice(false);
+                    }}
                   />
+                  {needsFtChoice && <p role="alert">Choose Include, Exclude or Maybe first.</p>}
 
                   {ftDecision === "exclude" && (
                     <>
@@ -562,7 +668,7 @@ function CitationScreening({
               </form>
               {ftError && <p role="alert">{ftError}</p>}
               {ftSaved && (
-                <p className="stamp" data-decision={ftDecision}>
+                <p className="stamp" data-decision={ftDecision ?? undefined}>
                   Full-text decision saved.
                 </p>
               )}

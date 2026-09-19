@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { StrictMode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -34,6 +34,7 @@ const baseCitation = {
   full_text_decision: null,
   full_text_suggestion: null,
   full_text_suggestion_unavailable_reason: null,
+  full_text_suggestion_needs_generation: false,
   extraction_fields: [],
   extraction_values: [],
 };
@@ -58,6 +59,30 @@ const dualReviewProject = {
   citations_needing_decision: 0,
 };
 
+const parsedFullText = {
+  original_filename: "paper.pdf",
+  parse_status: "parsed" as const,
+  created_at: "2026-01-01T00:00:00Z",
+  updated_at: "2026-01-01T00:00:00Z",
+};
+
+const sampleSizeField = {
+  id: "f1",
+  name: "Sample size",
+  description: null,
+  archived: false,
+  created_at: "2026-01-01T00:00:00Z",
+  updated_at: "2026-01-01T00:00:00Z",
+};
+
+const suggestionWithSampleSize = {
+  decision: "include" as const,
+  reason: "Meets all criteria.",
+  extraction_values: [
+    { extraction_field_id: "f1", name: "Sample size", value: "120 participants" },
+  ],
+};
+
 // A promise the test settles by hand, to check the page while a request is in flight.
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -67,6 +92,12 @@ function deferred<T>() {
     reject = rej;
   });
   return { promise, resolve, reject };
+}
+
+function chooseFile(label: RegExp, name = "paper.pdf") {
+  const file = new File(["pdf-bytes"], name, { type: "application/pdf" });
+  fireEvent.change(screen.getByLabelText(label), { target: { files: [file] } });
+  return file;
 }
 
 // The page sits inside the project's shell, which supplies the project.
@@ -81,6 +112,9 @@ function renderPage() {
 describe("CitationScreeningPage", () => {
   beforeEach(() => {
     mockedApi.generateSuggestion.mockReset();
+    mockedApi.generateFullTextSuggestion.mockReset();
+    mockedApi.recordFullTextDecision.mockReset();
+    mockedApi.recordExtractionValue.mockReset();
     mockedApi.getMe.mockResolvedValue({
       id: "owner-1",
       email: "owner@example.com",
@@ -678,6 +712,152 @@ describe("CitationScreeningPage", () => {
     expect(screen.queryByText("v1.pdf")).not.toBeInTheDocument();
   });
 
+  it("asks for a Full-Text Suggestion once a Full Text has been uploaded", async () => {
+    mockedApi.getCitation
+      .mockResolvedValueOnce({
+        ...baseCitation,
+        suggestion: null,
+        suggestion_unavailable_reason: null,
+        screening_decision: null,
+        full_text: null,
+      })
+      .mockResolvedValue({
+        ...baseCitation,
+        suggestion: null,
+        suggestion_unavailable_reason: null,
+        screening_decision: null,
+        full_text: parsedFullText,
+        full_text_suggestion_needs_generation: true,
+      });
+    mockedApi.uploadFullText.mockResolvedValue(parsedFullText);
+    mockedApi.generateFullTextSuggestion.mockResolvedValue({
+      suggestion: suggestionWithSampleSize,
+      suggestion_unavailable_reason: null,
+    });
+
+    renderPage();
+    await screen.findByText(/no full text uploaded yet/i);
+    chooseFile(/upload full text/i);
+
+    expect(await screen.findByText(/include:\s*meets all criteria/i)).toBeInTheDocument();
+    expect(mockedApi.generateFullTextSuggestion).toHaveBeenCalledTimes(1);
+  });
+
+  it("drops the old Full-Text Suggestion when the Full Text is replaced, and asks for a new one", async () => {
+    mockedApi.getCitation
+      .mockResolvedValueOnce({
+        ...baseCitation,
+        suggestion: null,
+        suggestion_unavailable_reason: null,
+        screening_decision: null,
+        full_text: parsedFullText,
+        full_text_suggestion: { decision: "exclude", reason: "Old reasoning.", extraction_values: [] },
+      })
+      .mockResolvedValue({
+        ...baseCitation,
+        suggestion: null,
+        suggestion_unavailable_reason: null,
+        screening_decision: null,
+        full_text: parsedFullText,
+        full_text_suggestion_needs_generation: true,
+      });
+    mockedApi.uploadFullText.mockResolvedValue(parsedFullText);
+    mockedApi.generateFullTextSuggestion.mockResolvedValue({
+      suggestion: suggestionWithSampleSize,
+      suggestion_unavailable_reason: null,
+    });
+
+    renderPage();
+    await screen.findByText(/exclude:\s*old reasoning/i);
+    chooseFile(/replace full text/i);
+
+    expect(await screen.findByText(/include:\s*meets all criteria/i)).toBeInTheDocument();
+    expect(screen.queryByText(/old reasoning/i)).not.toBeInTheDocument();
+    expect(mockedApi.generateFullTextSuggestion).toHaveBeenCalledTimes(1);
+  });
+
+  it("never shows a Full-Text Suggestion that was requested before the Full Text was replaced", async () => {
+    const first = deferred<api.FullTextSuggestionOutcome>();
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+      screening_decision: null,
+      full_text: parsedFullText,
+      full_text_suggestion_needs_generation: true,
+    });
+    mockedApi.uploadFullText.mockResolvedValue(parsedFullText);
+    mockedApi.generateFullTextSuggestion
+      .mockReturnValueOnce(first.promise)
+      .mockResolvedValueOnce({
+        suggestion: { decision: "include", reason: "New reasoning.", extraction_values: [] },
+        suggestion_unavailable_reason: null,
+      });
+
+    renderPage();
+    await screen.findByText(/preparing a full-text suggestion/i);
+    chooseFile(/replace full text/i);
+    expect(await screen.findByText(/include:\s*new reasoning/i)).toBeInTheDocument();
+
+    await act(async () => {
+      first.resolve({
+        suggestion: { decision: "exclude", reason: "Old reasoning.", extraction_values: [] },
+        suggestion_unavailable_reason: null,
+      });
+      await first.promise;
+    });
+
+    expect(screen.queryByText(/old reasoning/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/include:\s*new reasoning/i)).toBeInTheDocument();
+    expect(mockedApi.generateFullTextSuggestion).toHaveBeenCalledTimes(2);
+  });
+
+  it("still gets a Full-Text Suggestion when an upload fails while one is being prepared", async () => {
+    const first = deferred<api.FullTextSuggestionOutcome>();
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+      screening_decision: null,
+      full_text: parsedFullText,
+      full_text_suggestion_needs_generation: true,
+    });
+    mockedApi.uploadFullText.mockRejectedValue(new Error("nope"));
+    mockedApi.generateFullTextSuggestion
+      .mockReturnValueOnce(first.promise)
+      .mockResolvedValueOnce({ suggestion: suggestionWithSampleSize, suggestion_unavailable_reason: null });
+
+    renderPage();
+    await screen.findByText(/preparing a full-text suggestion/i);
+    chooseFile(/replace full text/i);
+
+    expect(await screen.findByText(/failed to upload full text/i)).toBeInTheDocument();
+    expect(await screen.findByText(/include:\s*meets all criteria/i)).toBeInTheDocument();
+    expect(screen.queryByText(/preparing a full-text suggestion/i)).not.toBeInTheDocument();
+  });
+
+  it("drops the old Full-Text Suggestion even when the page cannot read the new state", async () => {
+    mockedApi.getCitation
+      .mockResolvedValueOnce({
+        ...baseCitation,
+        suggestion: null,
+        suggestion_unavailable_reason: null,
+        screening_decision: null,
+        full_text: parsedFullText,
+        full_text_suggestion: { decision: "exclude", reason: "Old reasoning.", extraction_values: [] },
+      })
+      .mockRejectedValue(new Error("offline"));
+    mockedApi.uploadFullText.mockResolvedValue(parsedFullText);
+
+    renderPage();
+    await screen.findByText(/exclude:\s*old reasoning/i);
+    chooseFile(/replace full text/i);
+
+    await waitFor(() => expect(mockedApi.uploadFullText).toHaveBeenCalled());
+    await waitFor(() => expect(screen.queryByText(/old reasoning/i)).not.toBeInTheDocument());
+    expect(mockedApi.generateFullTextSuggestion).not.toHaveBeenCalled();
+  });
+
   it("shows an error when uploading a Full Text fails", async () => {
     mockedApi.getCitation.mockResolvedValue({
       ...baseCitation,
@@ -884,25 +1064,14 @@ describe("CitationScreeningPage", () => {
     expect(screen.queryByText("Full-Text Suggestion")).not.toBeInTheDocument();
   });
 
-  it("shows the Full-Text Suggestion decision, reason, and extraction field values", async () => {
+  it("shows the Full-Text Suggestion decision and reason", async () => {
     mockedApi.getCitation.mockResolvedValue({
       ...baseCitation,
       suggestion: null,
       suggestion_unavailable_reason: null,
       screening_decision: null,
-      full_text: {
-        original_filename: "paper.pdf",
-        parse_status: "parsed",
-        created_at: "2026-01-01T00:00:00Z",
-        updated_at: "2026-01-01T00:00:00Z",
-      },
-      full_text_suggestion: {
-        decision: "include",
-        reason: "Meets all criteria.",
-        extraction_values: [
-          { extraction_field_id: "f1", name: "Sample size", value: "120 participants" },
-        ],
-      },
+      full_text: parsedFullText,
+      full_text_suggestion: suggestionWithSampleSize,
       full_text_suggestion_unavailable_reason: null,
     });
 
@@ -911,10 +1080,143 @@ describe("CitationScreeningPage", () => {
     expect(
       await screen.findByText(/include:\s*meets all criteria/i)
     ).toBeInTheDocument();
-    expect(screen.getByText(/sample size:\s*120 participants/i)).toBeInTheDocument();
   });
 
-  it("pre-fills the Full-Text Decision form from a Full-Text Suggestion when no decision exists yet", async () => {
+  it("shows the citation at once, then the Full-Text Suggestion when it arrives", async () => {
+    const generation = deferred<api.FullTextSuggestionOutcome>();
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+      screening_decision: null,
+      full_text: parsedFullText,
+      full_text_suggestion_needs_generation: true,
+      extraction_fields: [sampleSizeField],
+    });
+    mockedApi.generateFullTextSuggestion.mockReturnValue(generation.promise);
+
+    renderPage();
+
+    const group = within(await screen.findByRole("group", { name: /full-text decision/i }));
+    expect(screen.getByLabelText("Sample size")).toHaveValue("");
+    expect(await screen.findByText(/preparing a full-text suggestion/i)).toBeInTheDocument();
+
+    generation.resolve({ suggestion: suggestionWithSampleSize, suggestion_unavailable_reason: null });
+
+    expect(await screen.findByText(/include:\s*meets all criteria/i)).toBeInTheDocument();
+    expect(screen.queryByText(/preparing a full-text suggestion/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Use suggested Sample size" })).toBeEnabled();
+    // Arriving late fills nothing the Reviewer owns.
+    expect(screen.getByLabelText("Sample size")).toHaveValue("");
+    expect(group.getByLabelText("include")).not.toBeChecked();
+  });
+
+  it("says when the Full-Text Suggestion could not be generated, without retrying or blocking the forms", async () => {
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+      screening_decision: null,
+      full_text: parsedFullText,
+      full_text_suggestion_needs_generation: true,
+    });
+    mockedApi.generateFullTextSuggestion.mockResolvedValue({
+      suggestion: null,
+      suggestion_unavailable_reason: "generation_failed",
+    });
+
+    renderPage();
+    const group = within(await screen.findByRole("group", { name: /full-text decision/i }));
+
+    expect(await screen.findByText(/generating a full-text suggestion failed/i)).toBeInTheDocument();
+    fireEvent.click(group.getByLabelText("include"));
+    expect(group.getByLabelText("include")).toBeChecked();
+    expect(mockedApi.generateFullTextSuggestion).toHaveBeenCalledTimes(1);
+  });
+
+  it("treats a failed request for the Full-Text Suggestion as a generation failure", async () => {
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+      screening_decision: null,
+      full_text: parsedFullText,
+      full_text_suggestion_needs_generation: true,
+    });
+    mockedApi.generateFullTextSuggestion.mockRejectedValue(new Error("network"));
+
+    renderPage();
+
+    expect(await screen.findByText(/generating a full-text suggestion failed/i)).toBeInTheDocument();
+    expect(mockedApi.generateFullTextSuggestion).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not ask for a Full-Text Suggestion that exists or cannot be made", async () => {
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+      screening_decision: null,
+      full_text: parsedFullText,
+      full_text_suggestion: suggestionWithSampleSize,
+      full_text_suggestion_needs_generation: false,
+    });
+
+    renderPage();
+
+    expect(await screen.findByText(/include:\s*meets all criteria/i)).toBeInTheDocument();
+    expect(mockedApi.generateFullTextSuggestion).not.toHaveBeenCalled();
+  });
+
+  it("sends one request for the Full-Text Suggestion under React Strict Mode", async () => {
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+      screening_decision: null,
+      full_text: parsedFullText,
+      full_text_suggestion_needs_generation: true,
+    });
+    mockedApi.generateFullTextSuggestion.mockResolvedValue({
+      suggestion: suggestionWithSampleSize,
+      suggestion_unavailable_reason: null,
+    });
+
+    render(
+      <StrictMode>
+        <ProjectShell reviewProjectId="1">
+          <CitationScreeningPage params={Promise.resolve({ id: "1", citationId: "c1" })} />
+        </ProjectShell>
+      </StrictMode>
+    );
+
+    expect(await screen.findByText(/include:\s*meets all criteria/i)).toBeInTheDocument();
+    expect(mockedApi.generateFullTextSuggestion).toHaveBeenCalledTimes(1);
+  });
+
+  it("looks again when the Full Text was replaced while the model was reading the old one", async () => {
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+      screening_decision: null,
+      full_text: parsedFullText,
+      full_text_suggestion_needs_generation: true,
+    });
+    mockedApi.generateFullTextSuggestion
+      .mockResolvedValueOnce({ suggestion: null, suggestion_unavailable_reason: null })
+      .mockResolvedValueOnce({
+        suggestion: suggestionWithSampleSize,
+        suggestion_unavailable_reason: null,
+      });
+
+    renderPage();
+
+    expect(await screen.findByText(/include:\s*meets all criteria/i)).toBeInTheDocument();
+    expect(mockedApi.generateFullTextSuggestion).toHaveBeenCalledTimes(2);
+  });
+
+  it("leaves the Full-Text Decision unchosen even when a Full-Text Suggestion exists", async () => {
     mockedApi.getCitation.mockResolvedValue({
       ...baseCitation,
       suggestion: null,
@@ -928,8 +1230,8 @@ describe("CitationScreeningPage", () => {
       },
       full_text_decision: null,
       full_text_suggestion: {
-        decision: "include",
-        reason: "Meets all criteria.",
+        decision: "exclude",
+        reason: "Wrong study design.",
         extraction_values: [],
       },
     });
@@ -937,7 +1239,34 @@ describe("CitationScreeningPage", () => {
     renderPage();
     const group = within(await screen.findByRole("group", { name: /full-text decision/i }));
 
-    expect(group.getByLabelText("include")).toBeChecked();
+    expect(group.getByLabelText("include")).not.toBeChecked();
+    expect(group.getByLabelText("exclude")).not.toBeChecked();
+    expect(group.getByLabelText("maybe")).not.toBeChecked();
+    expect(group.queryByLabelText(/reason/i)).not.toBeInTheDocument();
+  });
+
+  it("asks for a choice instead of saving a Full-Text Decision nobody made", async () => {
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+      screening_decision: null,
+      full_text: {
+        original_filename: "paper.pdf",
+        parse_status: "parsed",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+    });
+
+    renderPage();
+    await screen.findByRole("group", { name: /full-text decision/i });
+    fireEvent.click(screen.getByRole("button", { name: /save full-text decision/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Choose Include, Exclude or Maybe first."
+    );
+    expect(mockedApi.recordFullTextDecision).not.toHaveBeenCalled();
   });
 
   it("shows why no Full-Text Suggestion is available when the PDF could not be parsed", async () => {
@@ -1001,40 +1330,43 @@ describe("CitationScreeningPage", () => {
     expect(screen.queryByText("Extraction Values")).not.toBeInTheDocument();
   });
 
-  it("pre-fills the extraction values form from the Full-Text Suggestion", async () => {
+  it("leaves the extraction input empty and offers the suggested value beside it", async () => {
     mockedApi.getCitation.mockResolvedValue({
       ...baseCitation,
       suggestion: null,
       suggestion_unavailable_reason: null,
       screening_decision: null,
-      full_text: {
-        original_filename: "paper.pdf",
-        parse_status: "parsed",
-        created_at: "2026-01-01T00:00:00Z",
-        updated_at: "2026-01-01T00:00:00Z",
-      },
-      full_text_suggestion: {
-        decision: "include",
-        reason: "Meets all criteria.",
-        extraction_values: [
-          { extraction_field_id: "f1", name: "Sample size", value: "120 participants" },
-        ],
-      },
-      extraction_fields: [
-        {
-          id: "f1",
-          name: "Sample size",
-          description: null,
-          archived: false,
-          created_at: "2026-01-01T00:00:00Z",
-          updated_at: "2026-01-01T00:00:00Z",
-        },
-      ],
+      full_text: parsedFullText,
+      full_text_suggestion: suggestionWithSampleSize,
+      extraction_fields: [sampleSizeField],
     });
 
     renderPage();
 
-    expect(await screen.findByLabelText("Sample size")).toHaveValue("120 participants");
+    expect(await screen.findByLabelText("Sample size")).toHaveValue("");
+    expect(screen.getByText(/suggested:\s*120 participants/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Use suggested Sample size" })).toBeEnabled();
+    // The value is shown once, beside its field, not again in the suggestion note.
+    expect(screen.getAllByText(/120 participants/)).toHaveLength(1);
+    expect(mockedApi.recordExtractionValue).not.toHaveBeenCalled();
+  });
+
+  it("disables Use once the input already holds the suggested value", async () => {
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+      screening_decision: null,
+      full_text: parsedFullText,
+      full_text_suggestion: suggestionWithSampleSize,
+      extraction_fields: [sampleSizeField],
+    });
+
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Use suggested Sample size" }));
+
+    expect(screen.getByLabelText("Sample size")).toHaveValue("120 participants");
+    expect(screen.getByRole("button", { name: "Use suggested Sample size" })).toBeDisabled();
   });
 
   it("pre-fills the extraction values form from a previously recorded value over the suggestion", async () => {
@@ -1127,35 +1459,15 @@ describe("CitationScreeningPage", () => {
     expect(await screen.findByText(/extraction value saved/i)).toBeInTheDocument();
   });
 
-  it("confirms an AI-proposed extraction value as-is, recording it separately", async () => {
+  it("records an AI-proposed extraction value only after the Reviewer uses it and saves", async () => {
     mockedApi.getCitation.mockResolvedValue({
       ...baseCitation,
       suggestion: null,
       suggestion_unavailable_reason: null,
       screening_decision: null,
-      full_text: {
-        original_filename: "paper.pdf",
-        parse_status: "parsed",
-        created_at: "2026-01-01T00:00:00Z",
-        updated_at: "2026-01-01T00:00:00Z",
-      },
-      full_text_suggestion: {
-        decision: "include",
-        reason: "Meets all criteria.",
-        extraction_values: [
-          { extraction_field_id: "f1", name: "Sample size", value: "120 participants" },
-        ],
-      },
-      extraction_fields: [
-        {
-          id: "f1",
-          name: "Sample size",
-          description: null,
-          archived: false,
-          created_at: "2026-01-01T00:00:00Z",
-          updated_at: "2026-01-01T00:00:00Z",
-        },
-      ],
+      full_text: parsedFullText,
+      full_text_suggestion: suggestionWithSampleSize,
+      extraction_fields: [sampleSizeField],
     });
     mockedApi.recordExtractionValue.mockResolvedValue({
       extraction_field_id: "f1",
@@ -1167,7 +1479,8 @@ describe("CitationScreeningPage", () => {
 
     renderPage();
 
-    await screen.findByLabelText("Sample size");
+    fireEvent.click(await screen.findByRole("button", { name: "Use suggested Sample size" }));
+    expect(mockedApi.recordExtractionValue).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() =>
@@ -1177,35 +1490,15 @@ describe("CitationScreeningPage", () => {
     );
   });
 
-  it("overrides an AI-proposed extraction value by editing it before saving", async () => {
+  it("lets the Reviewer correct a used AI value before saving", async () => {
     mockedApi.getCitation.mockResolvedValue({
       ...baseCitation,
       suggestion: null,
       suggestion_unavailable_reason: null,
       screening_decision: null,
-      full_text: {
-        original_filename: "paper.pdf",
-        parse_status: "parsed",
-        created_at: "2026-01-01T00:00:00Z",
-        updated_at: "2026-01-01T00:00:00Z",
-      },
-      full_text_suggestion: {
-        decision: "include",
-        reason: "Meets all criteria.",
-        extraction_values: [
-          { extraction_field_id: "f1", name: "Sample size", value: "120 participants" },
-        ],
-      },
-      extraction_fields: [
-        {
-          id: "f1",
-          name: "Sample size",
-          description: null,
-          archived: false,
-          created_at: "2026-01-01T00:00:00Z",
-          updated_at: "2026-01-01T00:00:00Z",
-        },
-      ],
+      full_text: parsedFullText,
+      full_text_suggestion: suggestionWithSampleSize,
+      extraction_fields: [sampleSizeField],
     });
     mockedApi.recordExtractionValue.mockResolvedValue({
       extraction_field_id: "f1",
@@ -1217,7 +1510,8 @@ describe("CitationScreeningPage", () => {
 
     renderPage();
 
-    const input = await screen.findByLabelText("Sample size");
+    fireEvent.click(await screen.findByRole("button", { name: "Use suggested Sample size" }));
+    const input = screen.getByLabelText("Sample size");
     expect(input).toHaveValue("120 participants");
     fireEvent.change(input, { target: { value: "118 participants (corrected)" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
