@@ -67,45 +67,53 @@ export default function Home() {
   }
 
   return (
-    <main>
-      <h1>Review Projects</h1>
-      {billingEnabled && <Link href="/account">Account / Billing</Link>}
+    <main className="page">
+      <div className="page-head">
+        <h1>Review Projects</h1>
+        {billingEnabled && <Link href="/account">Account / Billing</Link>}
+      </div>
       {error && (
         <p role="alert">
           {error.message}
           {error.isCapError && <> <Link href="/account">Go to Account/Billing</Link></>}
         </p>
       )}
-      <form onSubmit={handleSubmit}>
-        <label htmlFor="project-name">Project name</label>
-        <input
-          id="project-name"
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-        />
-        <label htmlFor="merge-mode">Merge Mode</label>
-        <select
-          id="merge-mode"
-          value={mergeMode}
-          onChange={(event) => setMergeMode(event.target.value as MergeMode | "")}
-        >
-          <option value="">Select a merge mode</option>
-          <option value="combine">Combine</option>
-          <option value="keep_first">Keep First</option>
-        </select>
-        <label htmlFor="review-mode">Review Mode</label>
-        <select
-          id="review-mode"
-          value={reviewMode}
-          onChange={(event) => setReviewMode(event.target.value as ReviewMode | "")}
-        >
-          <option value="">Select a review mode</option>
-          <option value="solo">Solo</option>
-          <option value="dual">Dual</option>
-        </select>
+      <form onSubmit={handleSubmit} className="create-form panel">
+        <div>
+          <label htmlFor="project-name">Project name</label>
+          <input
+            id="project-name"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+          />
+        </div>
+        <div>
+          <label htmlFor="merge-mode">Merge Mode</label>
+          <select
+            id="merge-mode"
+            value={mergeMode}
+            onChange={(event) => setMergeMode(event.target.value as MergeMode | "")}
+          >
+            <option value="">Select a merge mode</option>
+            <option value="combine">Combine</option>
+            <option value="keep_first">Keep First</option>
+          </select>
+        </div>
+        <div>
+          <label htmlFor="review-mode">Review Mode</label>
+          <select
+            id="review-mode"
+            value={reviewMode}
+            onChange={(event) => setReviewMode(event.target.value as ReviewMode | "")}
+          >
+            <option value="">Select a review mode</option>
+            <option value="solo">Solo</option>
+            <option value="dual">Dual</option>
+          </select>
+        </div>
         <button type="submit">Create Review Project</button>
       </form>
-      <ul>
+      <ul className="rows">
         {projects.map((project) => (
           <li key={project.id}>
             <Link href={`/review-projects/${project.id}`}>{project.name}</Link>

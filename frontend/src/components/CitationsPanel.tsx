@@ -64,7 +64,7 @@ export function CitationsPanel({
       )}
       <label htmlFor="citation-file">Upload RIS or CSV file</label>
       <input id="citation-file" type="file" accept=".ris,.csv" onChange={handleFileChange} />
-      <ul>
+      <ul className="rows">
         {citations.map((citation) => (
           <li key={citation.id}>
             <Link href={`/review-projects/${reviewProjectId}/citations/${citation.id}`}>

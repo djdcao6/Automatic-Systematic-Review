@@ -99,6 +99,32 @@ describe("CitationScreeningPage", () => {
     expect(screen.getByLabelText(/reason/i)).toHaveValue("Matches all criteria.");
   });
 
+  it("shows the PICO criteria beside the abstract and skips the ones left blank", async () => {
+    mockedApi.getReviewProject.mockResolvedValue({
+      ...dualReviewProject,
+      review_mode: "solo",
+      criteria: {
+        ...dualReviewProject.criteria,
+        population: "Adults with type 2 diabetes",
+        outcome: "HbA1c at 6 months",
+      },
+    });
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+      screening_decision: null,
+      full_text: null,
+    });
+
+    renderPage();
+
+    const criteria = await screen.findByRole("region", { name: "Criteria" });
+    expect(within(criteria).getByText("Adults with type 2 diabetes")).toBeInTheDocument();
+    expect(within(criteria).getByText("HbA1c at 6 months")).toBeInTheDocument();
+    expect(within(criteria).queryByText("Intervention")).not.toBeInTheDocument();
+  });
+
   it("shows why no suggestion is available when the abstract is missing", async () => {
     mockedApi.getCitation.mockResolvedValue({
       ...baseCitation,

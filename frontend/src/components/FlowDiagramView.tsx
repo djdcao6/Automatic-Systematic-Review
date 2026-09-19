@@ -57,7 +57,7 @@ function ScreeningFunnelDiagram({ diagram }: { diagram: FlowDiagram }) {
   const sourceEntries = Object.entries(diagram.identification_counts);
 
   return (
-    <section aria-label="Screening funnel diagram">
+    <section aria-label="Screening funnel diagram" className="funnel">
       <h2>Screening Funnel</h2>
       <div>
         <h3>Identification</h3>
@@ -182,7 +182,7 @@ export function FlowDiagramView({ diagram }: { diagram: FlowDiagram }) {
 
   return (
     <>
-      <section aria-label="PRISMA Flow Diagram" ref={containerRef}>
+      <section aria-label="PRISMA Flow Diagram" ref={containerRef} className="plate">
         <CriteriaHeader criteria={diagram.criteria} />
         <ScreeningFunnelDiagram diagram={diagram} />
         <SummaryTable diagram={diagram} />

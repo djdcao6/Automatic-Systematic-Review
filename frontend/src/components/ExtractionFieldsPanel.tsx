@@ -117,7 +117,7 @@ export function ExtractionFieldsPanel({ reviewProjectId }: { reviewProjectId: st
       <h2>Extraction Fields</h2>
       {error && <p role="alert">{error}</p>}
 
-      <ul>
+      <ul className="rows">
         {fields.map((field) =>
           editingId === field.id ? (
             <li key={field.id}>

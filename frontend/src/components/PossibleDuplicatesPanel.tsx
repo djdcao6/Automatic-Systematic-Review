@@ -180,7 +180,7 @@ export function PossibleDuplicatesPanel({
       {possibleDuplicates.length === 0 ? (
         <p>No outstanding Possible Duplicates.</p>
       ) : (
-        <ul>
+        <ul className="items">
           {possibleDuplicates.map((possibleDuplicate) => (
             <PossibleDuplicateItem
               key={possibleDuplicate.id}

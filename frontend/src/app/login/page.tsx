@@ -28,10 +28,10 @@ export default function LoginPage() {
   }
 
   return (
-    <main>
+    <main className="auth">
       <h1>Log in</h1>
       {error && <p role="alert">{error}</p>}
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={handleSubmit} className="panel">
         <label htmlFor="email">Email</label>
         <input
           id="email"
@@ -46,7 +46,9 @@ export default function LoginPage() {
           value={password}
           onChange={(event) => setPassword(event.target.value)}
         />
-        <button type="submit">Log in</button>
+        <div className="form-actions">
+          <button type="submit">Log in</button>
+        </div>
       </form>
       <p>
         Need an account? <Link href="/register">Register</Link>

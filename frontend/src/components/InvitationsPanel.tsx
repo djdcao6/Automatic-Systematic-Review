@@ -112,7 +112,7 @@ export function InvitationsPanel({
               Generate Invite Link
             </button>
           ) : (
-            <ul>
+            <ul className="rows">
               {invitations.map((invitation) => (
                 <li key={invitation.id}>
                   <input readOnly value={invitationLink(invitation.token)} />

@@ -130,56 +130,72 @@ export default function ReviewProjectDetailPage({
   }
 
   return (
-    <main>
-      <h1>{project.name}</h1>
-      <p>Review Mode: {project.review_mode}</p>
-      <p>{project.citations_needing_decision} citation(s) still need a decision</p>
-      <button type="button" onClick={handleExport}>
-        Export CSV
-      </button>
-      <Link href={`/review-projects/${project.id}/flow-diagram`}>View PRISMA Flow Diagram</Link>
+    <main className="page">
+      <div className="page-head">
+        <h1>{project.name}</h1>
+        <p className="meta">Review Mode: {project.review_mode}</p>
+        <p className="meta">{project.citations_needing_decision} citation(s) still need a decision</p>
+        <div className="actions">
+          <button type="button" onClick={handleExport}>
+            Export CSV
+          </button>
+          <Link href={`/review-projects/${project.id}/flow-diagram`}>View PRISMA Flow Diagram</Link>
+        </div>
+      </div>
       {error && <p role="alert">{error}</p>}
-      <form onSubmit={handleSubmit}>
-        <label htmlFor="population">Population</label>
-        <input
-          id="population"
-          value={population}
-          onChange={(event) => setPopulation(event.target.value)}
-        />
+      <section>
+        <h2>Criteria</h2>
+        <form onSubmit={handleSubmit} className="panel">
+          <div className="field-grid">
+            <div>
+              <label htmlFor="population">Population</label>
+              <input
+                id="population"
+                value={population}
+                onChange={(event) => setPopulation(event.target.value)}
+              />
+            </div>
+            <div>
+              <label htmlFor="intervention">Intervention</label>
+              <input
+                id="intervention"
+                value={intervention}
+                onChange={(event) => setIntervention(event.target.value)}
+              />
+            </div>
+            <div>
+              <label htmlFor="comparison">Comparison</label>
+              <input
+                id="comparison"
+                value={comparison}
+                onChange={(event) => setComparison(event.target.value)}
+              />
+            </div>
+            <div>
+              <label htmlFor="outcome">Outcome</label>
+              <input
+                id="outcome"
+                value={outcome}
+                onChange={(event) => setOutcome(event.target.value)}
+              />
+            </div>
+          </div>
 
-        <label htmlFor="intervention">Intervention</label>
-        <input
-          id="intervention"
-          value={intervention}
-          onChange={(event) => setIntervention(event.target.value)}
-        />
+          <label htmlFor="exclusion-rules">Exclusion rules (one per line)</label>
+          <textarea
+            id="exclusion-rules"
+            value={exclusionRules}
+            onChange={(event) => setExclusionRules(event.target.value)}
+          />
 
-        <label htmlFor="comparison">Comparison</label>
-        <input
-          id="comparison"
-          value={comparison}
-          onChange={(event) => setComparison(event.target.value)}
-        />
+          <label htmlFor="notes">Notes</label>
+          <textarea id="notes" value={notes} onChange={(event) => setNotes(event.target.value)} />
 
-        <label htmlFor="outcome">Outcome</label>
-        <input
-          id="outcome"
-          value={outcome}
-          onChange={(event) => setOutcome(event.target.value)}
-        />
-
-        <label htmlFor="exclusion-rules">Exclusion rules (one per line)</label>
-        <textarea
-          id="exclusion-rules"
-          value={exclusionRules}
-          onChange={(event) => setExclusionRules(event.target.value)}
-        />
-
-        <label htmlFor="notes">Notes</label>
-        <textarea id="notes" value={notes} onChange={(event) => setNotes(event.target.value)} />
-
-        <button type="submit">Save Criteria</button>
-      </form>
+          <div className="form-actions">
+            <button type="submit">Save Criteria</button>
+          </div>
+        </form>
+      </section>
 
       <SearchTermsPanel reviewProjectId={project.id} />
 

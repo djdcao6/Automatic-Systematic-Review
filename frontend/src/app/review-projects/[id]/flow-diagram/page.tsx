@@ -37,8 +37,12 @@ export default function FlowDiagramPage({
   }
 
   return (
-    <main>
-      {id && <Link href={`/review-projects/${id}`}>Back to project</Link>}
+    <main className="page">
+      {id && (
+        <Link href={`/review-projects/${id}`} className="crumb">
+          Back to project
+        </Link>
+      )}
       <h1>PRISMA Flow Diagram{projectName ? `: ${projectName}` : ""}</h1>
       {error && <p role="alert">{error}</p>}
       <FlowDiagramView diagram={diagram} />

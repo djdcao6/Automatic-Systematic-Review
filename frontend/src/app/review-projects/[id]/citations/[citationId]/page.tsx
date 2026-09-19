@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
+import { Fragment, useEffect, useState, type ChangeEvent, type FormEvent } from "react";
 
 import {
   fetchFullTextFile,
@@ -12,10 +12,40 @@ import {
   recordScreeningDecision,
   uploadFullText,
   type CitationDetail,
+  type Criteria,
   type Decision,
 } from "@/lib/api";
 
 const DECISIONS: Decision[] = ["include", "exclude", "maybe"];
+
+// Each choice carries a glyph (via CSS, keyed on data-decision) so colour is
+// never the only signal for Include / Exclude / Maybe.
+function DecisionChoices({
+  name,
+  value,
+  onChange,
+}: {
+  name: string;
+  value: Decision;
+  onChange: (decision: Decision) => void;
+}) {
+  return (
+    <div className="choices">
+      {DECISIONS.map((option) => (
+        <label key={option} className="choice" data-decision={option}>
+          <input
+            type="radio"
+            name={name}
+            value={option}
+            checked={value === option}
+            onChange={() => onChange(option)}
+          />
+          {option}
+        </label>
+      ))}
+    </div>
+  );
+}
 
 const UNAVAILABLE_MESSAGES: Record<string, string> = {
   missing_abstract:
@@ -53,6 +83,7 @@ export default function CitationScreeningPage({
   const [uploadingFullText, setUploadingFullText] = useState(false);
   const [viewFullTextError, setViewFullTextError] = useState<string | null>(null);
   const [exclusionRules, setExclusionRules] = useState<string[]>([]);
+  const [criteria, setCriteria] = useState<Criteria | null>(null);
   const [reviewMode, setReviewMode] = useState<"solo" | "dual">("solo");
   const [ftDecision, setFtDecision] = useState<Decision>("maybe");
   const [ftReason, setFtReason] = useState("");
@@ -113,6 +144,7 @@ export default function CitationScreeningPage({
     getReviewProject(reviewProjectId)
       .then((project) => {
         setExclusionRules(project.criteria?.exclusion_rules ?? []);
+        setCriteria(project.criteria ?? null);
         setReviewMode(project.review_mode);
       })
       .catch(() => setExclusionRules([]));
@@ -227,202 +259,239 @@ export default function CitationScreeningPage({
       ] ?? "No Full-Text Suggestion is available for this citation.")
     : null;
 
+  const pico = criteria
+    ? [
+        ["Population", criteria.population],
+        ["Intervention", criteria.intervention],
+        ["Comparison", criteria.comparison],
+        ["Outcome", criteria.outcome],
+      ].filter(([, value]) => value)
+    : [];
+
   return (
     <main>
       {reviewProjectId && (
-        <Link href={`/review-projects/${reviewProjectId}`}>Back to project</Link>
+        <Link href={`/review-projects/${reviewProjectId}`} className="crumb">
+          Back to project
+        </Link>
       )}
-      <h1>{citation.title}</h1>
-      {error && <p role="alert">{error}</p>}
-      <p>{citation.abstract ?? "No abstract available."}</p>
-
-      <section>
-        <h2>AI Suggestion</h2>
-        {citation.screening_blind ? (
-          <p>Hidden until you record your own Screening Decision.</p>
-        ) : citation.suggestion ? (
-          <p>
-            {citation.suggestion.decision}: {citation.suggestion.reason}
+      <div className="reading">
+        <article className="reading-page">
+          <h1>{citation.title}</h1>
+          {error && <p role="alert">{error}</p>}
+          <p className={citation.abstract ? "abstract" : "abstract empty"}>
+            {citation.abstract ?? "No abstract available."}
           </p>
-        ) : (
-          <p>{unavailableMessage}</p>
-        )}
-      </section>
 
-      {reviewMode === "dual" && !citation.screening_blind && (
-        <section>
-          <h2>Co-Reviewer&apos;s Decision</h2>
-          {citation.peer_screening_decision ? (
-            <p>
-              {citation.peer_screening_decision.decision}
-              {citation.peer_screening_decision.reason
-                ? `: ${citation.peer_screening_decision.reason}`
-                : ""}
-            </p>
-          ) : (
-            <p>Not yet recorded.</p>
-          )}
-        </section>
-      )}
-
-      <section>
-        <h2>Full Text</h2>
-        {citation.full_text ? (
-          <>
-            <p>
-              {citation.full_text.original_filename}{" "}
-              {reviewProjectId && citationId && (
-                <button type="button" onClick={handleViewFullText}>
-                  View / Download
-                </button>
-              )}
-            </p>
-            {viewFullTextError && <p role="alert">{viewFullTextError}</p>}
-            {citation.full_text.parse_status === "parse_failed" && (
-              <p role="alert">
-                Could not extract text from this PDF. Enter extracted data manually.
-              </p>
-            )}
-          </>
-        ) : (
-          <p>No Full Text uploaded yet.</p>
-        )}
-        <label htmlFor="full-text-upload">
-          {citation.full_text ? "Replace Full Text" : "Upload Full Text"}
-        </label>
-        <input
-          id="full-text-upload"
-          type="file"
-          accept="application/pdf"
-          onChange={handleFullTextChange}
-          disabled={uploadingFullText}
-        />
-        {fullTextError && <p role="alert">{fullTextError}</p>}
-      </section>
-
-      {citation.full_text && (
-        <section>
-          <h2>Full-Text Suggestion</h2>
-          {citation.full_text_suggestion ? (
-            <>
-              <p>
-                {citation.full_text_suggestion.decision}: {citation.full_text_suggestion.reason}
-              </p>
-              {citation.full_text_suggestion.extraction_values.length > 0 && (
-                <ul>
-                  {citation.full_text_suggestion.extraction_values.map((extractionValue) => (
-                    <li key={extractionValue.extraction_field_id}>
-                      {extractionValue.name}: {extractionValue.value}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </>
-          ) : (
-            <p>{fullTextSuggestionUnavailableMessage}</p>
-          )}
-        </section>
-      )}
-
-      {citation.extraction_fields.length > 0 && (
-        <section>
-          <h2>Extraction Values</h2>
-          {citation.extraction_fields.map((field) => (
-            <div key={field.id}>
-              <label htmlFor={`extraction-value-${field.id}`}>{field.name}</label>
-              <input
-                id={`extraction-value-${field.id}`}
-                value={extractionInputs[field.id] ?? ""}
-                onChange={(event) =>
-                  setExtractionInputs((current) => ({
-                    ...current,
-                    [field.id]: event.target.value,
-                  }))
-                }
-              />
-              <button type="button" onClick={() => handleSaveExtractionValue(field.id)}>
-                Save
-              </button>
-              {extractionErrors[field.id] && (
-                <p role="alert">{extractionErrors[field.id]}</p>
-              )}
-              {extractionSavedFieldId === field.id && <p>Extraction value saved.</p>}
-            </div>
-          ))}
-        </section>
-      )}
-
-      {citation.full_text && (
-        <section>
-          <form onSubmit={handleFullTextDecisionSubmit}>
+          <form onSubmit={handleSubmit}>
             <fieldset>
-              <legend>Full-Text Decision</legend>
-              {DECISIONS.map((option) => (
-                <label key={option}>
-                  <input
-                    type="radio"
-                    name="full-text-decision"
-                    value={option}
-                    checked={ftDecision === option}
-                    onChange={() => setFtDecision(option)}
-                  />
-                  {option}
-                </label>
-              ))}
-
-              {ftDecision === "exclude" && (
-                <>
-                  <label htmlFor="full-text-decision-reason">Reason</label>
-                  <select
-                    id="full-text-decision-reason"
-                    value={ftReason}
-                    onChange={(event) => setFtReason(event.target.value)}
-                  >
-                    <option value="">Select a reason</option>
-                    {exclusionRules.map((rule) => (
-                      <option key={rule} value={rule}>
-                        {rule}
-                      </option>
-                    ))}
-                  </select>
-                </>
-              )}
+              <legend>Screening Decision</legend>
+              <DecisionChoices name="decision" value={decision} onChange={setDecision} />
             </fieldset>
 
-            <button type="submit">Save Full-Text Decision</button>
+            <label htmlFor="decision-reason">Reason</label>
+            <textarea
+              id="decision-reason"
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+            />
+
+            <div className="form-actions">
+              <button type="submit">Save Decision</button>
+            </div>
           </form>
-          {ftError && <p role="alert">{ftError}</p>}
-          {ftSaved && <p>Full-text decision saved.</p>}
-        </section>
-      )}
+          {saved && (
+            <p className="stamp" data-decision={decision}>
+              Decision saved.
+            </p>
+          )}
 
-      <form onSubmit={handleSubmit}>
-        <fieldset>
-          <legend>Screening Decision</legend>
-          {DECISIONS.map((option) => (
-            <label key={option}>
-              <input
-                type="radio"
-                name="decision"
-                value={option}
-                checked={decision === option}
-                onChange={() => setDecision(option)}
-              />
-              {option}
+          <section>
+            <h2>Full Text</h2>
+            {citation.full_text ? (
+              <>
+                <p>
+                  {citation.full_text.original_filename}{" "}
+                  {reviewProjectId && citationId && (
+                    <button type="button" onClick={handleViewFullText}>
+                      View / Download
+                    </button>
+                  )}
+                </p>
+                {viewFullTextError && <p role="alert">{viewFullTextError}</p>}
+                {citation.full_text.parse_status === "parse_failed" && (
+                  <p role="alert">
+                    Could not extract text from this PDF. Enter extracted data manually.
+                  </p>
+                )}
+              </>
+            ) : (
+              <p>No Full Text uploaded yet.</p>
+            )}
+            <label htmlFor="full-text-upload">
+              {citation.full_text ? "Replace Full Text" : "Upload Full Text"}
             </label>
-          ))}
-        </fieldset>
+            <input
+              id="full-text-upload"
+              type="file"
+              accept="application/pdf"
+              onChange={handleFullTextChange}
+              disabled={uploadingFullText}
+            />
+            {fullTextError && <p role="alert">{fullTextError}</p>}
+          </section>
 
-        <label htmlFor="decision-reason">Reason</label>
-        <textarea
-          id="decision-reason"
-          value={reason}
-          onChange={(event) => setReason(event.target.value)}
-        />
+          {citation.full_text && (
+            <section>
+              <h2>Full-Text Suggestion</h2>
+              {citation.full_text_suggestion ? (
+                <div className="ai-note">
+                  <p>
+                    {citation.full_text_suggestion.decision}: {citation.full_text_suggestion.reason}
+                  </p>
+                  {citation.full_text_suggestion.extraction_values.length > 0 && (
+                    <ul>
+                      {citation.full_text_suggestion.extraction_values.map((extractionValue) => (
+                        <li key={extractionValue.extraction_field_id}>
+                          {extractionValue.name}: {extractionValue.value}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ) : (
+                <p>{fullTextSuggestionUnavailableMessage}</p>
+              )}
+            </section>
+          )}
 
-        <button type="submit">Save Decision</button>
-      </form>
-      {saved && <p>Decision saved.</p>}
+          {citation.extraction_fields.length > 0 && (
+            <section>
+              <h2>Extraction Values</h2>
+              {citation.extraction_fields.map((field) => (
+                <div key={field.id} className="extraction-field">
+                  <label htmlFor={`extraction-value-${field.id}`}>{field.name}</label>
+                  <input
+                    id={`extraction-value-${field.id}`}
+                    value={extractionInputs[field.id] ?? ""}
+                    onChange={(event) =>
+                      setExtractionInputs((current) => ({
+                        ...current,
+                        [field.id]: event.target.value,
+                      }))
+                    }
+                  />
+                  <button type="button" onClick={() => handleSaveExtractionValue(field.id)}>
+                    Save
+                  </button>
+                  {extractionErrors[field.id] && (
+                    <p role="alert">{extractionErrors[field.id]}</p>
+                  )}
+                  {extractionSavedFieldId === field.id && <p>Extraction value saved.</p>}
+                </div>
+              ))}
+            </section>
+          )}
+
+          {citation.full_text && (
+            <section>
+              <form onSubmit={handleFullTextDecisionSubmit}>
+                <fieldset>
+                  <legend>Full-Text Decision</legend>
+                  <DecisionChoices
+                    name="full-text-decision"
+                    value={ftDecision}
+                    onChange={setFtDecision}
+                  />
+
+                  {ftDecision === "exclude" && (
+                    <>
+                      <label htmlFor="full-text-decision-reason">Reason</label>
+                      <select
+                        id="full-text-decision-reason"
+                        value={ftReason}
+                        onChange={(event) => setFtReason(event.target.value)}
+                      >
+                        <option value="">Select a reason</option>
+                        {exclusionRules.map((rule) => (
+                          <option key={rule} value={rule}>
+                            {rule}
+                          </option>
+                        ))}
+                      </select>
+                    </>
+                  )}
+                </fieldset>
+
+                <div className="form-actions">
+                  <button type="submit">Save Full-Text Decision</button>
+                </div>
+              </form>
+              {ftError && <p role="alert">{ftError}</p>}
+              {ftSaved && (
+                <p className="stamp" data-decision={ftDecision}>
+                  Full-text decision saved.
+                </p>
+              )}
+            </section>
+          )}
+        </article>
+
+        <aside className="margin">
+          {pico.length > 0 && (
+            <section aria-label="Criteria">
+              <h2>Criteria</h2>
+              <dl>
+                {pico.map(([label, value]) => (
+                  <Fragment key={label}>
+                    <dt>{label}</dt>
+                    <dd>{value}</dd>
+                  </Fragment>
+                ))}
+              </dl>
+            </section>
+          )}
+
+          <section>
+            <h2>AI Suggestion</h2>
+            {citation.screening_blind ? (
+              <div className="sealed">
+                <p>Hidden until you record your own Screening Decision.</p>
+              </div>
+            ) : citation.suggestion ? (
+              <div className="ai-note">
+                <p>
+                  {citation.suggestion.decision}: {citation.suggestion.reason}
+                </p>
+              </div>
+            ) : unavailableMessage ? (
+              <div className="ai-note">
+                <p>{unavailableMessage}</p>
+              </div>
+            ) : null}
+          </section>
+
+          {reviewMode === "dual" && !citation.screening_blind && (
+            <section>
+              <h2>Co-Reviewer&apos;s Decision</h2>
+              {citation.peer_screening_decision ? (
+                <div className="ink-note">
+                  <p>
+                    {citation.peer_screening_decision.decision}
+                    {citation.peer_screening_decision.reason
+                      ? `: ${citation.peer_screening_decision.reason}`
+                      : ""}
+                  </p>
+                </div>
+              ) : (
+                <div className="sealed">
+                  <p>Not yet recorded.</p>
+                </div>
+              )}
+            </section>
+          )}
+        </aside>
+      </div>
     </main>
   );
 }

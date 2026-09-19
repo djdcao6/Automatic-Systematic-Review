@@ -77,7 +77,7 @@ export default function AcceptInvitationPage({
 
   if (loadError) {
     return (
-      <main>
+      <main className="auth">
         <h1>Invitation</h1>
         <p role="alert">{loadError}</p>
       </main>
@@ -86,7 +86,7 @@ export default function AcceptInvitationPage({
 
   if (!invitation) {
     return (
-      <main>
+      <main className="auth">
         <h1>Invitation</h1>
         <p>Loading...</p>
       </main>
@@ -95,7 +95,7 @@ export default function AcceptInvitationPage({
 
   if (invitation.status !== "pending") {
     return (
-      <main>
+      <main className="auth">
         <h1>Invitation</h1>
         <p role="alert">This invitation is no longer valid.</p>
       </main>
@@ -103,13 +103,13 @@ export default function AcceptInvitationPage({
   }
 
   return (
-    <main>
+    <main className="auth">
       <h1>Join &quot;{invitation.review_project_name}&quot; as Co-Reviewer</h1>
 
       <section>
         <h2>Register</h2>
         {registerError && <p role="alert">{registerError}</p>}
-        <form onSubmit={handleRegister}>
+        <form onSubmit={handleRegister} className="panel">
           <label htmlFor="register-email">Email</label>
           <input
             id="register-email"
@@ -124,14 +124,16 @@ export default function AcceptInvitationPage({
             value={registerPassword}
             onChange={(event) => setRegisterPassword(event.target.value)}
           />
-          <button type="submit">Register &amp; Join</button>
+          <div className="form-actions">
+            <button type="submit">Register &amp; Join</button>
+          </div>
         </form>
       </section>
 
       <section>
         <h2>Log in</h2>
         {loginError && <p role="alert">{loginError}</p>}
-        <form onSubmit={handleLogin}>
+        <form onSubmit={handleLogin} className="panel">
           <label htmlFor="login-email">Email</label>
           <input
             id="login-email"
@@ -146,7 +148,9 @@ export default function AcceptInvitationPage({
             value={loginPassword}
             onChange={(event) => setLoginPassword(event.target.value)}
           />
-          <button type="submit">Log in &amp; Join</button>
+          <div className="form-actions">
+            <button type="submit">Log in &amp; Join</button>
+          </div>
         </form>
       </section>
     </main>

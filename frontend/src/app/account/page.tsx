@@ -47,9 +47,9 @@ export default function AccountPage() {
   }
 
   return (
-    <main>
+    <main className="page">
+      <Link href="/" className="crumb">Back to Review Projects</Link>
       <h1>Account / Billing</h1>
-      <Link href="/">Back to Review Projects</Link>
       {error && <p role="alert">{error}</p>}
       <p>Plan: {subscription.plan === "paid" ? "Paid" : "Free"}</p>
       {subscription.plan === "free" && (

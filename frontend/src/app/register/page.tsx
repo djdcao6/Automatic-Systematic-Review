@@ -26,10 +26,10 @@ export default function RegisterPage() {
   }
 
   return (
-    <main>
+    <main className="auth">
       <h1>Register</h1>
       {error && <p role="alert">{error}</p>}
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={handleSubmit} className="panel">
         <label htmlFor="email">Email</label>
         <input
           id="email"
@@ -44,7 +44,9 @@ export default function RegisterPage() {
           value={password}
           onChange={(event) => setPassword(event.target.value)}
         />
-        <button type="submit">Register</button>
+        <div className="form-actions">
+          <button type="submit">Register</button>
+        </div>
       </form>
       <p>
         Already have an account? <Link href="/login">Log in</Link>

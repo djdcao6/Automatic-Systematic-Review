@@ -71,7 +71,7 @@ function ConflictItem({
       </table>
 
       {isOwner ? (
-        <div>
+        <div className="resolve">
           <label>
             <input
               type="radio"
@@ -166,7 +166,7 @@ export function ConflictsPanel({
       {conflicts.length === 0 ? (
         <p>No outstanding Conflicts.</p>
       ) : (
-        <ul>
+        <ul className="items">
           {conflicts.map((conflict) => (
             <ConflictItem
               key={conflict.id}

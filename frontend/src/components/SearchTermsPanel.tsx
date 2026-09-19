@@ -44,9 +44,9 @@ function ConceptTerms({
   }
 
   return (
-    <div>
+    <div className="concept">
       <h3>{label}</h3>
-      <ul>
+      <ul className="chips">
         {terms.map((term) => (
           <li key={term}>
             {term}
@@ -56,7 +56,7 @@ function ConceptTerms({
           </li>
         ))}
       </ul>
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={handleSubmit} className="add-term">
         <label htmlFor={inputId}>Add {label} term</label>
         <input
           id={inputId}
@@ -177,7 +177,7 @@ export function SearchTermsPanel({ reviewProjectId }: { reviewProjectId: string 
             onAdd={(term) => handleAdd("outcome_terms", term)}
             onRemove={(term) => handleRemove("outcome_terms", term)}
           />
-          <p>Combined query: {searchTerms.combined_query || "(no terms yet)"}</p>
+          <p className="query">Combined query: {searchTerms.combined_query || "(no terms yet)"}</p>
         </>
       )}
     </section>
