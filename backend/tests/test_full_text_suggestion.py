@@ -1,9 +1,22 @@
+import asyncio
 import io
+import itertools
+import threading
+import time
+import uuid
+from concurrent.futures import ThreadPoolExecutor
 
 import pymupdf
 import pytest
+from sqlalchemy.orm import Session
 
-from asr_backend.ai_suggestion import SuggestionGenerationError, SuggestionResult, get_ai_suggester
+from asr_backend import crud
+from asr_backend.ai_suggestion import (
+    FullTextSuggestionResult,
+    SuggestionGenerationError,
+    SuggestionResult,
+    get_ai_suggester,
+)
 from asr_backend.main import app
 
 
@@ -52,6 +65,12 @@ def get_detail(authed_client, project_id: str, citation_id: str) -> dict:
     return authed_client.get(f"/review-projects/{project_id}/citations/{citation_id}").json()
 
 
+def generate_suggestion(authed_client, project_id: str, citation_id: str):
+    return authed_client.post(
+        f"/review-projects/{project_id}/citations/{citation_id}/full-text-suggestion"
+    )
+
+
 class _FakeSuggester:
     def __init__(
         self,
@@ -84,6 +103,44 @@ class _FakeSuggester:
         )
 
 
+class _BarrierSuggester(_FakeSuggester):
+    """Holds every caller inside the model call until `parties` of them have arrived.
+
+    Each caller gets its own answer ("Answer 1", "Answer 2"), so a test can tell
+    whose answer ended up stored.
+    """
+
+    def __init__(self, parties: int):
+        super().__init__()
+        self._barrier = threading.Barrier(parties, timeout=10)
+        self._answers = itertools.count(1)
+
+    async def suggest_full_text_decision(self, **kwargs):
+        await asyncio.to_thread(self._barrier.wait)
+        self.full_text_calls += 1
+        return FullTextSuggestionResult(
+            decision="include", reason=f"Answer {next(self._answers)}", extraction_values={}
+        )
+
+
+class _GatedSuggester(_FakeSuggester):
+    """Parks its caller inside the model call until the test lets it finish."""
+
+    def __init__(self):
+        super().__init__()
+        self.entered = threading.Event()
+        self.release = threading.Event()
+        self._answers = itertools.count(1)
+
+    async def suggest_full_text_decision(self, **kwargs):
+        self.entered.set()
+        await asyncio.to_thread(self.release.wait)
+        self.full_text_calls += 1
+        return FullTextSuggestionResult(
+            decision="include", reason=f"Answer {next(self._answers)}", extraction_values={}
+        )
+
+
 @pytest.fixture
 def override_suggester():
     fake = _FakeSuggester()
@@ -92,16 +149,37 @@ def override_suggester():
     app.dependency_overrides.pop(get_ai_suggester, None)
 
 
-def test_full_text_suggestion_generated_and_persisted_on_first_view(authed_client, override_suggester):
+def test_opening_a_citation_with_a_full_text_does_not_wait_on_the_model(
+    authed_client, override_suggester
+):
     project_id = create_project(authed_client)
     citation_id = create_citation(authed_client, project_id)
     upload_full_text(authed_client, project_id, citation_id, make_pdf())
 
     detail = get_detail(authed_client, project_id, citation_id)
 
+    assert detail["full_text_suggestion"] is None
+    assert detail["full_text_suggestion_unavailable_reason"] is None
+    assert detail["full_text_suggestion_needs_generation"] is True
+    assert override_suggester.full_text_calls == 0
+
+
+def test_generating_a_full_text_suggestion_keeps_it_for_later_views(authed_client, override_suggester):
+    project_id = create_project(authed_client)
+    citation_id = create_citation(authed_client, project_id)
+    upload_full_text(authed_client, project_id, citation_id, make_pdf())
+
+    response = generate_suggestion(authed_client, project_id, citation_id)
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "suggestion": {"decision": "include", "reason": "Meets all criteria.", "extraction_values": []},
+        "suggestion_unavailable_reason": None,
+    }
+    detail = get_detail(authed_client, project_id, citation_id)
     assert detail["full_text_suggestion"]["decision"] == "include"
     assert detail["full_text_suggestion"]["reason"] == "Meets all criteria."
-    assert detail["full_text_suggestion_unavailable_reason"] is None
+    assert detail["full_text_suggestion_needs_generation"] is False
     assert override_suggester.full_text_calls == 1
 
 
@@ -112,9 +190,9 @@ def test_full_text_suggestion_includes_active_extraction_field_values(authed_cli
     upload_full_text(authed_client, project_id, citation_id, make_pdf())
     override_suggester.extraction_values = {field["id"]: "120 participants"}
 
-    detail = get_detail(authed_client, project_id, citation_id)
+    outcome = generate_suggestion(authed_client, project_id, citation_id).json()
 
-    values = detail["full_text_suggestion"]["extraction_values"]
+    values = outcome["suggestion"]["extraction_values"]
     assert values == [
         {
             "extraction_field_id": field["id"],
@@ -137,20 +215,24 @@ def test_full_text_suggestion_keeps_values_distinct_for_same_named_fields(
         field_b["id"]: "12 months",
     }
 
-    detail = get_detail(authed_client, project_id, citation_id)
+    outcome = generate_suggestion(authed_client, project_id, citation_id).json()
 
-    values = {v["extraction_field_id"]: v["value"] for v in detail["full_text_suggestion"]["extraction_values"]}
+    values = {v["extraction_field_id"]: v["value"] for v in outcome["suggestion"]["extraction_values"]}
     assert values == {field_a["id"]: "6 months", field_b["id"]: "12 months"}
 
 
-def test_full_text_suggestion_is_reused_on_second_view(authed_client, override_suggester):
+def test_a_second_request_returns_the_same_suggestion_without_asking_the_model_again(
+    authed_client, override_suggester
+):
     project_id = create_project(authed_client)
     citation_id = create_citation(authed_client, project_id)
     upload_full_text(authed_client, project_id, citation_id, make_pdf())
 
-    get_detail(authed_client, project_id, citation_id)
-    get_detail(authed_client, project_id, citation_id)
+    first = generate_suggestion(authed_client, project_id, citation_id).json()
+    override_suggester.reason = "A different answer."
+    second = generate_suggestion(authed_client, project_id, citation_id).json()
 
+    assert second == first
     assert override_suggester.full_text_calls == 1
 
 
@@ -162,6 +244,7 @@ def test_full_text_suggestion_unavailable_without_a_full_text(authed_client, ove
 
     assert detail["full_text_suggestion"] is None
     assert detail["full_text_suggestion_unavailable_reason"] == "no_full_text"
+    assert detail["full_text_suggestion_needs_generation"] is False
     assert override_suggester.full_text_calls == 0
 
 
@@ -178,40 +261,194 @@ def test_full_text_suggestion_unavailable_when_parse_failed(authed_client, overr
     assert detail["full_text"]["parse_status"] == "parse_failed"
     assert detail["full_text_suggestion"] is None
     assert detail["full_text_suggestion_unavailable_reason"] == "parse_failed"
+    assert detail["full_text_suggestion_needs_generation"] is False
     assert override_suggester.full_text_calls == 0
 
 
-def test_full_text_suggestion_generation_failure_reports_reason(authed_client):
+def test_two_simultaneous_first_requests_both_get_the_stored_suggestion(authed_client):
     project_id = create_project(authed_client)
     citation_id = create_citation(authed_client, project_id)
     upload_full_text(authed_client, project_id, citation_id, make_pdf())
-    app.dependency_overrides[get_ai_suggester] = lambda: _FakeSuggester(
-        error=SuggestionGenerationError("boom")
-    )
+    suggester = _BarrierSuggester(parties=2)
+    app.dependency_overrides[get_ai_suggester] = lambda: suggester
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = [
+                pool.submit(generate_suggestion, authed_client, project_id, citation_id)
+                for _ in range(2)
+            ]
+            responses = [future.result() for future in futures]
+    finally:
+        app.dependency_overrides.pop(get_ai_suggester, None)
 
-    detail = get_detail(authed_client, project_id, citation_id)
-    app.dependency_overrides.pop(get_ai_suggester, None)
+    assert [response.status_code for response in responses] == [200, 200]
+    assert suggester.full_text_calls == 2
+    first, second = (response.json()["suggestion"] for response in responses)
+    assert first == second
+    assert get_detail(authed_client, project_id, citation_id)["full_text_suggestion"] == first
 
-    assert detail["full_text_suggestion"] is None
-    assert detail["full_text_suggestion_unavailable_reason"] == "generation_failed"
 
-
-def test_replacing_the_pdf_invalidates_and_regenerates_the_suggestion(authed_client, override_suggester):
+def test_a_suggestion_generated_from_a_replaced_pdf_is_not_kept(authed_client):
     project_id = create_project(authed_client)
     citation_id = create_citation(authed_client, project_id)
     upload_full_text(authed_client, project_id, citation_id, make_pdf("First version"))
-    get_detail(authed_client, project_id, citation_id)
+    suggester = _GatedSuggester()
+    app.dependency_overrides[get_ai_suggester] = lambda: suggester
+    try:
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            in_flight = pool.submit(generate_suggestion, authed_client, project_id, citation_id)
+            assert suggester.entered.wait(timeout=10)
+            upload_full_text(authed_client, project_id, citation_id, make_pdf("Second version"))
+            suggester.release.set()
+            stale = in_flight.result()
+        detail = get_detail(authed_client, project_id, citation_id)
+        fresh = generate_suggestion(authed_client, project_id, citation_id)
+    finally:
+        app.dependency_overrides.pop(get_ai_suggester, None)
+
+    assert stale.status_code == 200
+    assert stale.json() == {"suggestion": None, "suggestion_unavailable_reason": None}
+    assert detail["full_text_suggestion"] is None
+    assert detail["full_text_suggestion_needs_generation"] is True
+    assert fresh.json()["suggestion"]["reason"] == "Answer 2"
+
+
+class _PausedCommitSession(Session):
+    """A session that stops just before committing, until the test lets it go."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.about_to_commit = threading.Event()
+        self.proceed = threading.Event()
+
+    def commit(self):
+        self.about_to_commit.set()
+        assert self.proceed.wait(timeout=10)
+        super().commit()
+
+
+def test_replacing_the_pdf_waits_for_a_suggestion_that_is_being_saved(authed_client, db_session):
+    project_id = create_project(authed_client)
+    citation_id = create_citation(authed_client, project_id)
+    upload_full_text(authed_client, project_id, citation_id, make_pdf("First version"))
+    citation_uuid = uuid.UUID(citation_id)
+    stamp = crud.get_full_text(db_session, citation_uuid).updated_at
+    engine = db_session.get_bind()
+    saving = _PausedCommitSession(bind=engine)
+    replacing = Session(bind=engine)
+    events: list[str] = []
+
+    def save_suggestion():
+        crud.create_full_text_suggestion(
+            saving,
+            citation_uuid,
+            decision="include",
+            reason="From the first version.",
+            extraction_values={},
+            active_fields=[],
+            full_text_stamp=stamp,
+        )
+        events.append("suggestion saved")
+
+    def replace_pdf():
+        crud.upsert_full_text(
+            replacing,
+            citation_uuid,
+            original_filename="paper.pdf",
+            file_path="unused.pdf",
+            parsed_text="Second version",
+            parse_status="parsed",
+        )
+        events.append("pdf replaced")
+
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            saved = pool.submit(save_suggestion)
+            assert saving.about_to_commit.wait(timeout=10)
+            replaced = pool.submit(replace_pdf)
+            time.sleep(0.5)  # long enough for an unblocked replacement to finish
+            saving.proceed.set()
+            saved.result()
+            replaced.result()
+    finally:
+        saving.close()
+        replacing.close()
+
+    assert events == ["suggestion saved", "pdf replaced"]
+
+
+def test_requesting_a_suggestion_without_a_full_text_does_not_ask_the_model(
+    authed_client, override_suggester
+):
+    project_id = create_project(authed_client)
+    citation_id = create_citation(authed_client, project_id)
+
+    response = generate_suggestion(authed_client, project_id, citation_id)
+
+    assert response.status_code == 200
+    assert response.json() == {"suggestion": None, "suggestion_unavailable_reason": "no_full_text"}
+    assert override_suggester.full_text_calls == 0
+
+
+def test_requesting_a_suggestion_for_an_unparsable_full_text_does_not_ask_the_model(
+    authed_client, override_suggester
+):
+    project_id = create_project(authed_client)
+    citation_id = create_citation(authed_client, project_id)
+    doc = pymupdf.open()
+    doc.new_page()
+    upload_full_text(authed_client, project_id, citation_id, doc.tobytes())
+
+    response = generate_suggestion(authed_client, project_id, citation_id)
+
+    assert response.status_code == 200
+    assert response.json() == {"suggestion": None, "suggestion_unavailable_reason": "parse_failed"}
+    assert override_suggester.full_text_calls == 0
+
+
+def test_a_failed_generation_is_reported_and_the_next_request_tries_again(authed_client):
+    project_id = create_project(authed_client)
+    citation_id = create_citation(authed_client, project_id)
+    upload_full_text(authed_client, project_id, citation_id, make_pdf())
+    failing = _FakeSuggester(error=SuggestionGenerationError("boom"))
+    app.dependency_overrides[get_ai_suggester] = lambda: failing
+    try:
+        first = generate_suggestion(authed_client, project_id, citation_id)
+        detail = get_detail(authed_client, project_id, citation_id)
+        generate_suggestion(authed_client, project_id, citation_id)
+    finally:
+        app.dependency_overrides.pop(get_ai_suggester, None)
+
+    assert first.status_code == 200
+    assert first.json() == {
+        "suggestion": None,
+        "suggestion_unavailable_reason": "generation_failed",
+    }
+    assert detail["full_text_suggestion"] is None
+    assert detail["full_text_suggestion_needs_generation"] is True
+    assert failing.full_text_calls == 2
+
+
+def test_replacing_the_pdf_clears_the_suggestion_and_the_next_request_generates_a_new_one(
+    authed_client, override_suggester
+):
+    project_id = create_project(authed_client)
+    citation_id = create_citation(authed_client, project_id)
+    upload_full_text(authed_client, project_id, citation_id, make_pdf("First version"))
+    generate_suggestion(authed_client, project_id, citation_id)
     assert override_suggester.full_text_calls == 1
 
     override_suggester.decision = "exclude"
     override_suggester.reason = "Wrong study design after re-read."
     upload_full_text(authed_client, project_id, citation_id, make_pdf("Second version"))
-
     detail = get_detail(authed_client, project_id, citation_id)
+    outcome = generate_suggestion(authed_client, project_id, citation_id).json()
 
+    assert detail["full_text_suggestion"] is None
+    assert detail["full_text_suggestion_needs_generation"] is True
     assert override_suggester.full_text_calls == 2
-    assert detail["full_text_suggestion"]["decision"] == "exclude"
-    assert detail["full_text_suggestion"]["reason"] == "Wrong study design after re-read."
+    assert outcome["suggestion"]["decision"] == "exclude"
+    assert outcome["suggestion"]["reason"] == "Wrong study design after re-read."
 
 
 def test_full_text_suggestion_for_missing_citation_returns_404(authed_client, override_suggester):
@@ -222,3 +459,12 @@ def test_full_text_suggestion_for_missing_citation_returns_404(authed_client, ov
     )
 
     assert response.status_code == 404
+
+
+def test_requesting_a_suggestion_for_a_missing_citation_returns_404(authed_client, override_suggester):
+    project_id = create_project(authed_client)
+
+    response = generate_suggestion(authed_client, project_id, "00000000-0000-0000-0000-000000000000")
+
+    assert response.status_code == 404
+    assert override_suggester.full_text_calls == 0

@@ -137,8 +137,10 @@ def test_extraction_value_is_stored_separately_from_ai_proposal_even_when_it_mat
 
     app.dependency_overrides[get_ai_suggester] = lambda: _FakeSuggester()
     try:
-        detail = get_detail(authed_client, project_id, citation_id)
-        proposed_value = detail["full_text_suggestion"]["extraction_values"][0]["value"]
+        outcome = authed_client.post(
+            f"/review-projects/{project_id}/citations/{citation_id}/full-text-suggestion"
+        ).json()
+        proposed_value = outcome["suggestion"]["extraction_values"][0]["value"]
         assert proposed_value == "120 participants"
 
         record_extraction_value(authed_client, project_id, citation_id, field["id"], proposed_value)
