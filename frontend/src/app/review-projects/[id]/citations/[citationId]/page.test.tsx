@@ -18,6 +18,10 @@ const baseCitation = {
   source: ["PubMed"],
   needs_abstract: false,
   blocked_pending_co_reviewer: false,
+  position: null,
+  total: 0,
+  previous_citation_id: null,
+  next_citation_id: null,
   peer_screening_decision: null,
   screening_blind: false,
   screening_resolved: false,
@@ -201,14 +205,19 @@ describe("CitationScreeningPage", () => {
     expect(await screen.findByText(/decision saved/i)).toBeInTheDocument();
   });
 
-  it("hides the AI Suggestion and Co-Reviewer's Decision while blind", async () => {
+  it("hides the AI Suggestion and seals the Co-Reviewer's Decision while blind", async () => {
     mockedApi.getReviewProject.mockResolvedValue(dualReviewProject);
     mockedApi.getCitation.mockResolvedValue({
       ...baseCitation,
       suggestion: null,
       suggestion_unavailable_reason: null,
       screening_decision: null,
-      peer_screening_decision: null,
+      peer_screening_decision: {
+        decision: "exclude",
+        reason: "Wrong population",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
       screening_blind: true,
       full_text: null,
     });
@@ -218,7 +227,10 @@ describe("CitationScreeningPage", () => {
     expect(
       await screen.findByText(/hidden until you record your own screening decision/i)
     ).toBeInTheDocument();
-    expect(screen.queryByText(/co-reviewer's decision/i)).not.toBeInTheDocument();
+    // The tab is there so the Reviewer knows a second opinion is coming, but sealed.
+    expect(screen.getByRole("heading", { name: /co-reviewer's decision/i })).toBeInTheDocument();
+    expect(screen.getByText(/sealed until you record your own screening decision/i)).toBeInTheDocument();
+    expect(screen.queryByText(/wrong population/i)).not.toBeInTheDocument();
   });
 
   it("shows the AI Suggestion and Co-Reviewer's Decision once revealed", async () => {

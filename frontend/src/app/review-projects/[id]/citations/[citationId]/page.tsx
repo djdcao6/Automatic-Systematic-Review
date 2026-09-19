@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { Fragment, useEffect, useState, type ChangeEvent, type FormEvent } from "react";
+import { Fragment, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 
+import { ScreeningFolio } from "@/components/ScreeningFolio";
 import {
   fetchFullTextFile,
   getCitation,
@@ -12,11 +13,16 @@ import {
   recordScreeningDecision,
   uploadFullText,
   type CitationDetail,
-  type Criteria,
   type Decision,
+  type ReviewProjectDetail,
 } from "@/lib/api";
+import { useScreeningShortcuts } from "@/lib/useScreeningShortcuts";
 
 const DECISIONS: Decision[] = ["include", "exclude", "maybe"];
+
+// The key that picks each screening decision. Shown as a keycap on the choice
+// (CSS reads data-key) and announced through aria-keyshortcuts.
+const DECISION_KEYS: Record<Decision, string> = { include: "i", exclude: "e", maybe: "m" };
 
 // Each choice carries a glyph (via CSS, keyed on data-decision) so colour is
 // never the only signal for Include / Exclude / Maybe.
@@ -24,21 +30,29 @@ function DecisionChoices({
   name,
   value,
   onChange,
+  shortcuts = false,
 }: {
   name: string;
-  value: Decision;
+  value: Decision | null;
   onChange: (decision: Decision) => void;
+  shortcuts?: boolean;
 }) {
   return (
     <div className="choices">
       {DECISIONS.map((option) => (
-        <label key={option} className="choice" data-decision={option}>
+        <label
+          key={option}
+          className="choice"
+          data-decision={option}
+          data-key={shortcuts ? DECISION_KEYS[option].toUpperCase() : undefined}
+        >
           <input
             type="radio"
             name={name}
             value={option}
             checked={value === option}
             onChange={() => onChange(option)}
+            aria-keyshortcuts={shortcuts ? DECISION_KEYS[option] : undefined}
           />
           {option}
         </label>
@@ -67,24 +81,87 @@ function blankOrValue(value: string): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+// Moving between citations changes the route params but keeps this component
+// mounted. The frame below therefore holds what belongs to the whole project,
+// fetched once, and gives every citation a fresh body with `key` so no form
+// state leaks from the last one.
 export default function CitationScreeningPage({
   params,
 }: {
   params: Promise<{ id: string; citationId: string }>;
 }) {
-  const [reviewProjectId, setReviewProjectId] = useState<string | null>(null);
-  const [citationId, setCitationId] = useState<string | null>(null);
+  const [ids, setIds] = useState<{ id: string; citationId: string } | null>(null);
+  const [project, setProject] = useState<ReviewProjectDetail | null>(null);
+  const reviewProjectId = ids?.id ?? null;
+
+  useEffect(() => {
+    params.then(setIds);
+  }, [params]);
+
+  useEffect(() => {
+    if (!reviewProjectId) return;
+    let ignore = false;
+    getReviewProject(reviewProjectId)
+      .then((data) => {
+        if (!ignore) setProject(data);
+      })
+      .catch(() => {
+        if (!ignore) setProject(null);
+      });
+    return () => {
+      ignore = true;
+    };
+  }, [reviewProjectId]);
+
+  async function refreshProject() {
+    if (!reviewProjectId) return;
+    try {
+      setProject(await getReviewProject(reviewProjectId));
+    } catch {
+      // Best-effort: the progress line just stays where it was.
+    }
+  }
+
+  if (!ids) return <p>Loading...</p>;
+
+  return (
+    <main>
+      <Link href={`/review-projects/${ids.id}`} className="crumb">
+        Back to project
+      </Link>
+      <CitationScreening
+        key={ids.citationId}
+        reviewProjectId={ids.id}
+        citationId={ids.citationId}
+        project={project}
+        onDecisionRecorded={refreshProject}
+      />
+    </main>
+  );
+}
+
+function CitationScreening({
+  reviewProjectId,
+  citationId,
+  project,
+  onDecisionRecorded,
+}: {
+  reviewProjectId: string;
+  citationId: string;
+  project: ReviewProjectDetail | null;
+  onDecisionRecorded: () => void;
+}) {
   const [citation, setCitation] = useState<CitationDetail | null>(null);
-  const [decision, setDecision] = useState<Decision>("maybe");
+  // Nothing is chosen until the Reviewer chooses: with keyboard shortcuts, a
+  // pre-selected Maybe could be recorded by one stray Ctrl+Enter.
+  const [decision, setDecision] = useState<Decision | null>(null);
+  const [needsChoice, setNeedsChoice] = useState(false);
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [fullTextError, setFullTextError] = useState<string | null>(null);
   const [uploadingFullText, setUploadingFullText] = useState(false);
   const [viewFullTextError, setViewFullTextError] = useState<string | null>(null);
-  const [exclusionRules, setExclusionRules] = useState<string[]>([]);
-  const [criteria, setCriteria] = useState<Criteria | null>(null);
-  const [reviewMode, setReviewMode] = useState<"solo" | "dual">("solo");
   const [ftDecision, setFtDecision] = useState<Decision>("maybe");
   const [ftReason, setFtReason] = useState("");
   const [ftError, setFtError] = useState<string | null>(null);
@@ -92,16 +169,25 @@ export default function CitationScreeningPage({
   const [extractionInputs, setExtractionInputs] = useState<Record<string, string>>({});
   const [extractionErrors, setExtractionErrors] = useState<Record<string, string>>({});
   const [extractionSavedFieldId, setExtractionSavedFieldId] = useState<string | null>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+
+  const criteria = project?.criteria ?? null;
+  const exclusionRules = criteria?.exclusion_rules ?? [];
+  const reviewMode = project?.review_mode ?? "solo";
+
+  function chooseDecision(option: Decision) {
+    setDecision(option);
+    setNeedsChoice(false);
+  }
+
+  useScreeningShortcuts({
+    ...Object.fromEntries(
+      DECISIONS.map((option) => [DECISION_KEYS[option], () => chooseDecision(option)])
+    ),
+    "mod+enter": () => formRef.current?.requestSubmit(),
+  });
 
   useEffect(() => {
-    params.then((resolved) => {
-      setReviewProjectId(resolved.id);
-      setCitationId(resolved.citationId);
-    });
-  }, [params]);
-
-  useEffect(() => {
-    if (!reviewProjectId || !citationId) return;
     getCitation(reviewProjectId, citationId)
       .then((data) => {
         setCitation(data);
@@ -139,20 +225,12 @@ export default function CitationScreeningPage({
       .catch(() => setError("Failed to load citation."));
   }, [reviewProjectId, citationId]);
 
-  useEffect(() => {
-    if (!reviewProjectId) return;
-    getReviewProject(reviewProjectId)
-      .then((project) => {
-        setExclusionRules(project.criteria?.exclusion_rules ?? []);
-        setCriteria(project.criteria ?? null);
-        setReviewMode(project.review_mode);
-      })
-      .catch(() => setExclusionRules([]));
-  }, [reviewProjectId]);
-
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!reviewProjectId || !citationId) return;
+    if (!decision) {
+      setNeedsChoice(true);
+      return;
+    }
 
     try {
       await recordScreeningDecision(reviewProjectId, citationId, {
@@ -167,6 +245,7 @@ export default function CitationScreeningPage({
       setCitation(refreshed);
       setSaved(true);
       setError(null);
+      onDecisionRecorded();
     } catch {
       setError("Failed to save screening decision.");
     }
@@ -174,7 +253,6 @@ export default function CitationScreeningPage({
 
   async function handleFullTextDecisionSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!reviewProjectId || !citationId) return;
 
     try {
       const updated = await recordFullTextDecision(reviewProjectId, citationId, {
@@ -190,7 +268,6 @@ export default function CitationScreeningPage({
   }
 
   async function handleSaveExtractionValue(fieldId: string) {
-    if (!reviewProjectId || !citationId) return;
     const value = extractionInputs[fieldId] ?? "";
 
     try {
@@ -216,7 +293,6 @@ export default function CitationScreeningPage({
   }
 
   async function handleViewFullText() {
-    if (!reviewProjectId || !citationId) return;
     setViewFullTextError(null);
     try {
       const blob = await fetchFullTextFile(reviewProjectId, citationId);
@@ -230,7 +306,7 @@ export default function CitationScreeningPage({
   async function handleFullTextChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = "";
-    if (!file || !reviewProjectId || !citationId) return;
+    if (!file) return;
 
     setUploadingFullText(true);
     setFullTextError(null);
@@ -259,6 +335,12 @@ export default function CitationScreeningPage({
       ] ?? "No Full-Text Suggestion is available for this citation.")
     : null;
 
+  const conflictHeld =
+    citation.screening_decision !== null &&
+    citation.peer_screening_decision !== null &&
+    citation.screening_decision.decision !== citation.peer_screening_decision.decision &&
+    !citation.screening_resolved;
+
   const pico = criteria
     ? [
         ["Population", criteria.population],
@@ -268,25 +350,45 @@ export default function CitationScreeningPage({
       ].filter(([, value]) => value)
     : [];
 
+  const byline = [citation.authors.join(", "), citation.year].filter(Boolean).join(" · ");
+
+  const citationHref = (id: string | null) =>
+    id ? `/review-projects/${reviewProjectId}/citations/${id}` : null;
+
   return (
-    <main>
-      {reviewProjectId && (
-        <Link href={`/review-projects/${reviewProjectId}`} className="crumb">
-          Back to project
-        </Link>
+    <>
+      {project && citation.position !== null && (
+        <ScreeningFolio
+          position={citation.position}
+          total={citation.total}
+          decided={citation.total - project.citations_needing_decision}
+          modeNote={project.review_mode === "dual" ? "Dual review" : "Solo review"}
+          previousHref={citationHref(citation.previous_citation_id)}
+          nextHref={citationHref(citation.next_citation_id)}
+        />
       )}
       <div className="reading">
         <article className="reading-page">
+          <p className="cit-meta">
+            {citation.source.length > 0 && <span>{citation.source.join(", ")}</span>}
+            {citation.needs_abstract && <span className="flag">No abstract</span>}
+          </p>
           <h1>{citation.title}</h1>
+          {byline && <p className="cit-byline">{byline}</p>}
           {error && <p role="alert">{error}</p>}
           <p className={citation.abstract ? "abstract" : "abstract empty"}>
             {citation.abstract ?? "No abstract available."}
           </p>
 
-          <form onSubmit={handleSubmit}>
+          <form className="decide" ref={formRef} onSubmit={handleSubmit}>
             <fieldset>
               <legend>Screening Decision</legend>
-              <DecisionChoices name="decision" value={decision} onChange={setDecision} />
+              <DecisionChoices
+                name="decision"
+                value={decision}
+                onChange={chooseDecision}
+                shortcuts
+              />
             </fieldset>
 
             <label htmlFor="decision-reason">Reason</label>
@@ -298,11 +400,21 @@ export default function CitationScreeningPage({
 
             <div className="form-actions">
               <button type="submit">Save Decision</button>
+              <p className="hint">
+                <kbd>Ctrl</kbd> + <kbd>Enter</kbd> to save
+              </p>
             </div>
+            {needsChoice && <p role="alert">Choose Include, Exclude or Maybe first.</p>}
           </form>
           {saved && (
-            <p className="stamp" data-decision={decision}>
+            <p className="stamp" data-decision={decision ?? undefined}>
               Decision saved.
+            </p>
+          )}
+          {conflictHeld && (
+            <p role="status">
+              You and your Co-Reviewer recorded different decisions. This citation is held as a
+              Conflict until the Owner resolves it.
             </p>
           )}
 
@@ -312,11 +424,9 @@ export default function CitationScreeningPage({
               <>
                 <p>
                   {citation.full_text.original_filename}{" "}
-                  {reviewProjectId && citationId && (
-                    <button type="button" onClick={handleViewFullText}>
-                      View / Download
-                    </button>
-                  )}
+                  <button type="button" onClick={handleViewFullText}>
+                    View / Download
+                  </button>
                 </p>
                 {viewFullTextError && <p role="alert">{viewFullTextError}</p>}
                 {citation.full_text.parse_status === "parse_failed" && (
@@ -438,9 +548,12 @@ export default function CitationScreeningPage({
         </article>
 
         <aside className="margin">
-          {pico.length > 0 && (
+          {(pico.length > 0 || exclusionRules.length > 0) && (
             <section aria-label="Criteria">
-              <h2>Criteria</h2>
+              <h2>
+                Criteria
+                {project?.criteria_locked && <span className="lock">locked</span>}
+              </h2>
               <dl>
                 {pico.map(([label, value]) => (
                   <Fragment key={label}>
@@ -448,12 +561,24 @@ export default function CitationScreeningPage({
                     <dd>{value}</dd>
                   </Fragment>
                 ))}
+                {exclusionRules.length > 0 && (
+                  <>
+                    <dt>Exclude if</dt>
+                    <dd>
+                      <ul className="rules">
+                        {exclusionRules.map((rule) => (
+                          <li key={rule}>{rule}</li>
+                        ))}
+                      </ul>
+                    </dd>
+                  </>
+                )}
               </dl>
             </section>
           )}
 
           <section>
-            <h2>AI Suggestion</h2>
+            <h2>AI suggestion (advisory)</h2>
             {citation.screening_blind ? (
               <div className="sealed">
                 <p>Hidden until you record your own Screening Decision.</p>
@@ -471,10 +596,14 @@ export default function CitationScreeningPage({
             ) : null}
           </section>
 
-          {reviewMode === "dual" && !citation.screening_blind && (
+          {reviewMode === "dual" && (
             <section>
               <h2>Co-Reviewer&apos;s Decision</h2>
-              {citation.peer_screening_decision ? (
+              {citation.screening_blind ? (
+                <div className="sealed tab">
+                  <p>Sealed until you record your own Screening Decision.</p>
+                </div>
+              ) : citation.peer_screening_decision ? (
                 <div className="ink-note">
                   <p>
                     {citation.peer_screening_decision.decision}
@@ -492,6 +621,6 @@ export default function CitationScreeningPage({
           )}
         </aside>
       </div>
-    </main>
+    </>
   );
 }

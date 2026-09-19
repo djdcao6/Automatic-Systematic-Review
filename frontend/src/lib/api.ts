@@ -156,6 +156,12 @@ export type ExtractionValue = {
 };
 
 export type CitationDetail = Citation & {
+  // Place among the project's active citations, for stepping through them.
+  // `position` is null for an archived citation, which is not in the list.
+  position: number | null;
+  total: number;
+  previous_citation_id: string | null;
+  next_citation_id: string | null;
   suggestion: Suggestion | null;
   suggestion_unavailable_reason: string | null;
   screening_decision: ScreeningDecision | null;
