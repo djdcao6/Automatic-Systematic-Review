@@ -542,6 +542,10 @@
   .form-actions {
     margin-top: 1.25rem;
   }
+  /* A button that follows a field directly gets the same air as .form-actions. */
+  :is(input, textarea, select) + button {
+    margin-top: 1.25rem;
+  }
 
   /* Inline create form on the project list */
   .create-form {
