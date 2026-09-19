@@ -77,11 +77,11 @@ A Review Project-level choice, made once at creation and never revisited, for ho
 _Avoid_: Review type, Screening mode
 
 **Owner**:
-The Reviewer who created a Review Project. In a Dual Review Project, the Owner alone invites or removes the Co-Reviewer and has final say resolving a Conflict.
+The Reviewer who created a Review Project. In a Dual Review Project, the Owner alone invites or removes the Co-Reviewer, edits the Criteria, and has final say resolving a Conflict.
 _Avoid_: Admin, Creator
 
 **Co-Reviewer**:
-The second Reviewer in a Dual Review Project, invited by its Owner. Records an independent Screening Decision per Citation alongside the Owner's.
+The second Reviewer in a Dual Review Project, invited by its Owner. Records an independent Screening Decision per Citation alongside the Owner's. Reads the Criteria but cannot edit them.
 _Avoid_: Second reviewer, Collaborator
 
 **PRISMA Flow Diagram**:
