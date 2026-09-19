@@ -167,4 +167,49 @@ describe("InvitationsPanel", () => {
     });
     expect(screen.queryByDisplayValue(/\/invitations\/token-a$/)).not.toBeInTheDocument();
   });
+  describe("when there is no invitation link", () => {
+    it("says so, next to the button that makes one", async () => {
+      mockedApi.listInvitations.mockResolvedValue([]);
+
+      render(<InvitationsPanel reviewProjectId="1" hasCoReviewer={false} />);
+
+      expect(
+        await screen.findByText("No invitation link yet. Generate one to invite a Co-Reviewer.")
+      ).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /generate invite link/i })).toBeInTheDocument();
+    });
+
+    it("stays quiet while the invitations are still loading", async () => {
+      const pending = deferred<Invitation[]>();
+      mockedApi.listInvitations.mockReturnValueOnce(pending.promise);
+
+      render(<InvitationsPanel reviewProjectId="1" hasCoReviewer={false} />);
+
+      expect(screen.queryByText(/no invitation link yet/i)).not.toBeInTheDocument();
+      await act(async () => pending.resolve([]));
+      expect(await screen.findByText(/no invitation link yet/i)).toBeInTheDocument();
+    });
+
+    it("does not claim there is none when the invitations failed to load", async () => {
+      mockedApi.listInvitations.mockRejectedValueOnce(new Error("down"));
+
+      render(<InvitationsPanel reviewProjectId="1" hasCoReviewer={false} />);
+
+      expect(await screen.findByText(/failed to load invitations/i)).toBeInTheDocument();
+      expect(screen.queryByText(/no invitation link yet/i)).not.toBeInTheDocument();
+    });
+
+    it("is not shown when an invitation exists, or once a Co-Reviewer has joined", async () => {
+      mockedApi.listInvitations.mockResolvedValue([pendingInvitation]);
+      const { unmount } = render(<InvitationsPanel reviewProjectId="1" hasCoReviewer={false} />);
+
+      expect(await screen.findByRole("button", { name: /revoke/i })).toBeInTheDocument();
+      expect(screen.queryByText(/no invitation link yet/i)).not.toBeInTheDocument();
+      unmount();
+
+      render(<InvitationsPanel reviewProjectId="1" hasCoReviewer />);
+      expect(await screen.findByText(/a co-reviewer has joined/i)).toBeInTheDocument();
+      expect(screen.queryByText(/no invitation link yet/i)).not.toBeInTheDocument();
+    });
+  });
 });

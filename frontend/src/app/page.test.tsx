@@ -182,4 +182,53 @@ describe("Home", () => {
     expect(alert).toHaveTextContent(/failed to create review project/i);
     expect(within(alert).queryByRole("link")).not.toBeInTheDocument();
   });
+  describe("when there are no review projects", () => {
+    it("says so, and points at the form above", async () => {
+      mockedApi.listReviewProjects.mockResolvedValue([]);
+
+      render(<Home />);
+
+      expect(
+        await screen.findByText("No review projects yet. Create one above.")
+      ).toBeInTheDocument();
+    });
+
+    it("stays quiet while the projects are still loading", async () => {
+      let resolve!: (projects: []) => void;
+      mockedApi.listReviewProjects.mockReturnValueOnce(
+        new Promise((res) => {
+          resolve = res;
+        })
+      );
+
+      render(<Home />);
+
+      expect(screen.queryByText(/no review projects yet/i)).not.toBeInTheDocument();
+      resolve([]);
+      expect(await screen.findByText(/no review projects yet/i)).toBeInTheDocument();
+    });
+
+    it("does not claim there are none when the projects failed to load", async () => {
+      mockedApi.listReviewProjects.mockRejectedValueOnce(new Error("down"));
+
+      render(<Home />);
+
+      expect(await screen.findByText(/failed to load review projects/i)).toBeInTheDocument();
+      expect(screen.queryByText(/no review projects yet/i)).not.toBeInTheDocument();
+    });
+
+    it("goes away as soon as a project is created", async () => {
+      mockedApi.listReviewProjects.mockResolvedValue([]);
+      render(<Home />);
+      await screen.findByText(/no review projects yet/i);
+
+      fireEvent.change(screen.getByLabelText("Project name"), { target: { value: "New Review" } });
+      fireEvent.change(screen.getByLabelText("Merge Mode"), { target: { value: "combine" } });
+      fireEvent.change(screen.getByLabelText("Review Mode"), { target: { value: "solo" } });
+      fireEvent.click(screen.getByRole("button", { name: /create review project/i }));
+
+      expect(await screen.findByRole("link", { name: "New Review" })).toBeInTheDocument();
+      expect(screen.queryByText(/no review projects yet/i)).not.toBeInTheDocument();
+    });
+  });
 });

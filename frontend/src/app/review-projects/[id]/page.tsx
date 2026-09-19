@@ -7,6 +7,7 @@ import { CitationsPanel } from "@/components/CitationsPanel";
 import { ConflictsPanel } from "@/components/ConflictsPanel";
 import { ExtractionFieldsPanel } from "@/components/ExtractionFieldsPanel";
 import { InvitationsPanel } from "@/components/InvitationsPanel";
+import { PageStatus } from "@/components/PageStatus";
 import { PossibleDuplicatesPanel } from "@/components/PossibleDuplicatesPanel";
 import { SearchTermsPanel } from "@/components/SearchTermsPanel";
 import {
@@ -126,7 +127,7 @@ export default function ReviewProjectDetailPage({
   }
 
   if (!project) {
-    return error ? <p role="alert">{error}</p> : <p>Loading...</p>;
+    return <PageStatus error={error} />;
   }
 
   return (

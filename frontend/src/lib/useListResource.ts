@@ -8,9 +8,13 @@ export function useListResource<T>(
   fetcher: () => Promise<T[]>,
   deps: DependencyList,
   fallbackError: string
-): { data: T[]; error: string | null; refresh: () => Promise<void> } {
+): { data: T[]; error: string | null; loaded: boolean; refresh: () => Promise<void> } {
   const [data, setData] = useState<T[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // `data` starts as [] before anything has arrived, so an empty list alone
+  // cannot tell "nothing yet" from "nothing there". `loaded` is true once a
+  // fetch has succeeded, which is when an empty state is safe to show.
+  const [loaded, setLoaded] = useState(false);
   const latestRequest = useRef(0);
 
   useEffect(() => {
@@ -20,6 +24,7 @@ export function useListResource<T>(
         if (requestId === latestRequest.current) {
           setData(result);
           setError(null);
+          setLoaded(true);
         }
       })
       .catch(() => {
@@ -39,6 +44,7 @@ export function useListResource<T>(
       if (requestId === latestRequest.current) {
         setData(result);
         setError(null);
+        setLoaded(true);
       }
     } catch {
       if (requestId === latestRequest.current) {
@@ -47,5 +53,5 @@ export function useListResource<T>(
     }
   }
 
-  return { data, error, refresh };
+  return { data, error, loaded, refresh };
 }

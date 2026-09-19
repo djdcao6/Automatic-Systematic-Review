@@ -283,4 +283,24 @@ describe("FlowDiagramPage", () => {
       /failed to download prisma flow diagram as png/i
     );
   });
+  describe("before the diagram has loaded", () => {
+    it("keeps the loading message inside the page's main", async () => {
+      mockedApi.getFlowDiagram.mockReturnValueOnce(new Promise(() => {}));
+
+      renderPage();
+      await vi.waitFor(() => expect(mockedApi.getFlowDiagram).toHaveBeenCalled());
+
+      expect(screen.getByRole("main")).toHaveTextContent("Loading...");
+    });
+
+    it("keeps the load failure inside main", async () => {
+      mockedApi.getFlowDiagram.mockRejectedValueOnce(new Error("down"));
+
+      renderPage();
+
+      const alert = await screen.findByRole("alert");
+      expect(alert).toHaveTextContent(/failed to load prisma flow diagram/i);
+      expect(screen.getByRole("main")).toContainElement(alert);
+    });
+  });
 });

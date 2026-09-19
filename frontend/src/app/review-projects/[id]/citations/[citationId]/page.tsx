@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Fragment, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 
+import { PageStatus } from "@/components/PageStatus";
 import { ScreeningFolio } from "@/components/ScreeningFolio";
 import {
   fetchFullTextFile,
@@ -122,7 +123,7 @@ export default function CitationScreeningPage({
     }
   }
 
-  if (!ids) return <p>Loading...</p>;
+  if (!ids) return <PageStatus />;
 
   return (
     <main>
@@ -321,7 +322,7 @@ function CitationScreening({
   }
 
   if (!citation) {
-    return error ? <p role="alert">{error}</p> : <p>Loading...</p>;
+    return error ? <p role="alert">{error}</p> : <p className="meta">Loading...</p>;
   }
 
   const unavailableMessage = citation.suggestion_unavailable_reason

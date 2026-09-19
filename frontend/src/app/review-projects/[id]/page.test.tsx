@@ -253,4 +253,24 @@ describe("ReviewProjectDetailPage", () => {
     await waitFor(() => expect(mockedApi.getMe).toHaveBeenCalled());
     expect(screen.queryByRole("heading", { name: /co-reviewer/i })).not.toBeInTheDocument();
   });
+  describe("before the project has loaded", () => {
+    it("keeps the loading message inside the page's main", async () => {
+      mockedApi.getReviewProject.mockReturnValueOnce(new Promise(() => {}));
+
+      renderPage();
+      await vi.waitFor(() => expect(mockedApi.getReviewProject).toHaveBeenCalled());
+
+      expect(screen.getByRole("main")).toHaveTextContent("Loading...");
+    });
+
+    it("keeps the load failure inside main", async () => {
+      mockedApi.getReviewProject.mockRejectedValueOnce(new Error("down"));
+
+      renderPage();
+
+      const alert = await screen.findByRole("alert");
+      expect(alert).toHaveTextContent(/failed to load review project/i);
+      expect(screen.getByRole("main")).toContainElement(alert);
+    });
+  });
 });

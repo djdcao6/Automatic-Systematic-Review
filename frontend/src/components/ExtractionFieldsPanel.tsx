@@ -62,6 +62,7 @@ export function ExtractionFieldsPanel({ reviewProjectId }: { reviewProjectId: st
   const {
     data: fields,
     error: loadError,
+    loaded,
     refresh,
   } = useListResource(
     () => listExtractionFields(reviewProjectId),
@@ -117,30 +118,35 @@ export function ExtractionFieldsPanel({ reviewProjectId }: { reviewProjectId: st
       <h2>Extraction Fields</h2>
       {error && <p role="alert">{error}</p>}
 
-      <ul className="rows">
-        {fields.map((field) =>
-          editingId === field.id ? (
-            <li key={field.id}>
-              <EditFieldForm
-                field={field}
-                onSave={(input) => handleSaveEdit(field.id, input)}
-                onCancel={() => setEditingId(null)}
-              />
-            </li>
-          ) : (
-            <li key={field.id}>
-              <strong>{field.name}</strong>
-              {field.description && <p>{field.description}</p>}
-              <button type="button" onClick={() => setEditingId(field.id)}>
-                Edit
-              </button>
-              <button type="button" onClick={() => handleArchive(field.id)}>
-                Archive
-              </button>
-            </li>
-          )
-        )}
-      </ul>
+      {loaded && fields.length === 0 && (
+        <p className="meta">No extraction fields yet. Add one below.</p>
+      )}
+      {fields.length > 0 && (
+        <ul className="rows">
+          {fields.map((field) =>
+            editingId === field.id ? (
+              <li key={field.id}>
+                <EditFieldForm
+                  field={field}
+                  onSave={(input) => handleSaveEdit(field.id, input)}
+                  onCancel={() => setEditingId(null)}
+                />
+              </li>
+            ) : (
+              <li key={field.id}>
+                <strong>{field.name}</strong>
+                {field.description && <p>{field.description}</p>}
+                <button type="button" onClick={() => setEditingId(field.id)}>
+                  Edit
+                </button>
+                <button type="button" onClick={() => handleArchive(field.id)}>
+                  Archive
+                </button>
+              </li>
+            )
+          )}
+        </ul>
+      )}
 
       <form onSubmit={handleAddField}>
         <label htmlFor="extraction-field-name">Name</label>

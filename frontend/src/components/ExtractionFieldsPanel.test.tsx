@@ -169,4 +169,45 @@ describe("ExtractionFieldsPanel", () => {
     });
     expect(screen.queryByText("Project A Field")).not.toBeInTheDocument();
   });
+  describe("when there are no extraction fields", () => {
+    it("says so, and points at the form below", async () => {
+      mockedApi.listExtractionFields.mockResolvedValue([]);
+
+      render(<ExtractionFieldsPanel reviewProjectId="1" />);
+
+      expect(
+        await screen.findByText("No extraction fields yet. Add one below.")
+      ).toBeInTheDocument();
+      expect(screen.queryAllByRole("listitem")).toHaveLength(0);
+    });
+
+    it("stays quiet while the list is still loading", async () => {
+      const pending = deferred<ExtractionField[]>();
+      mockedApi.listExtractionFields.mockReturnValueOnce(pending.promise);
+
+      render(<ExtractionFieldsPanel reviewProjectId="1" />);
+
+      expect(screen.queryByText(/no extraction fields yet/i)).not.toBeInTheDocument();
+      await act(async () => pending.resolve([]));
+      expect(await screen.findByText(/no extraction fields yet/i)).toBeInTheDocument();
+    });
+
+    it("does not claim the list is empty when it failed to load", async () => {
+      mockedApi.listExtractionFields.mockRejectedValueOnce(new Error("down"));
+
+      render(<ExtractionFieldsPanel reviewProjectId="1" />);
+
+      expect(await screen.findByText(/failed to load extraction fields/i)).toBeInTheDocument();
+      expect(screen.queryByText(/no extraction fields yet/i)).not.toBeInTheDocument();
+    });
+
+    it("goes away once there is a field", async () => {
+      mockedApi.listExtractionFields.mockResolvedValue([sampleSizeField]);
+
+      render(<ExtractionFieldsPanel reviewProjectId="1" />);
+
+      expect(await screen.findByText("Sample size")).toBeInTheDocument();
+      expect(screen.queryByText(/no extraction fields yet/i)).not.toBeInTheDocument();
+    });
+  });
 });

@@ -26,6 +26,8 @@ export function InvitationsPanel({
 }) {
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // Whether a fetch has succeeded: an empty list before that is not "none yet".
+  const [loaded, setLoaded] = useState(false);
   // Not useListResource: the fetch is conditionally skipped entirely while
   // hasCoReviewer is true, which the hook's always-fetch shape doesn't
   // support. Guards the same reviewProjectId-change race with the same
@@ -40,6 +42,7 @@ export function InvitationsPanel({
         if (requestId === latestRequest.current) {
           setInvitations(result);
           setError(null);
+          setLoaded(true);
         }
       })
       .catch(() => {
@@ -56,6 +59,7 @@ export function InvitationsPanel({
       if (requestId === latestRequest.current) {
         setInvitations(result);
         setError(null);
+        setLoaded(true);
       }
     } catch {
       if (requestId === latestRequest.current) {
@@ -108,9 +112,16 @@ export function InvitationsPanel({
       ) : (
         <>
           {invitations.length === 0 ? (
-            <button type="button" onClick={handleGenerate}>
-              Generate Invite Link
-            </button>
+            <>
+              {loaded && (
+                <p className="meta">
+                  No invitation link yet. Generate one to invite a Co-Reviewer.
+                </p>
+              )}
+              <button type="button" onClick={handleGenerate}>
+                Generate Invite Link
+              </button>
+            </>
           ) : (
             <ul className="rows">
               {invitations.map((invitation) => (

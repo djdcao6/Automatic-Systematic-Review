@@ -18,6 +18,7 @@ export function CitationsPanel({
   const {
     data: citations,
     error: loadError,
+    loaded,
     refresh,
   } = useListResource(
     () => listCitations(reviewProjectId),
@@ -64,19 +65,24 @@ export function CitationsPanel({
       )}
       <label htmlFor="citation-file">Upload RIS or CSV file</label>
       <input id="citation-file" type="file" accept=".ris,.csv" onChange={handleFileChange} />
-      <ul className="rows">
-        {citations.map((citation) => (
-          <li key={citation.id}>
-            <Link href={`/review-projects/${reviewProjectId}/citations/${citation.id}`}>
-              {citation.title}
-            </Link>
-            {citation.needs_abstract && <span> (needs abstract)</span>}
-            {citation.blocked_pending_co_reviewer && (
-              <span> (blocked: awaiting a replacement Co-Reviewer)</span>
-            )}
-          </li>
-        ))}
-      </ul>
+      {loaded && citations.length === 0 && (
+        <p className="meta">No citations yet. Upload a RIS or CSV file above.</p>
+      )}
+      {citations.length > 0 && (
+        <ul className="rows">
+          {citations.map((citation) => (
+            <li key={citation.id}>
+              <Link href={`/review-projects/${reviewProjectId}/citations/${citation.id}`}>
+                {citation.title}
+              </Link>
+              {citation.needs_abstract && <span> (needs abstract)</span>}
+              {citation.blocked_pending_co_reviewer && (
+                <span> (blocked: awaiting a replacement Co-Reviewer)</span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }

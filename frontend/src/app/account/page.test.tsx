@@ -118,4 +118,24 @@ describe("AccountPage", () => {
 
     expect(await screen.findByText(/failed to open billing portal/i)).toBeInTheDocument();
   });
+  describe("before it has anything to show", () => {
+    it("keeps the loading message inside the page's main", async () => {
+      mockedApi.getMySubscription.mockReturnValueOnce(new Promise(() => {}));
+
+      render(<AccountPage />);
+      await vi.waitFor(() => expect(mockedApi.getMySubscription).toHaveBeenCalled());
+
+      expect(screen.getByRole("main")).toHaveTextContent("Loading...");
+    });
+
+    it("keeps the billing-unavailable message inside main too", async () => {
+      mockedApi.getMySubscription.mockResolvedValueOnce(null);
+
+      render(<AccountPage />);
+
+      const alert = await screen.findByRole("alert");
+      expect(alert).toHaveTextContent(/billing is not available/i);
+      expect(screen.getByRole("main")).toContainElement(alert);
+    });
+  });
 });

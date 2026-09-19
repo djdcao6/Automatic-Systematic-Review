@@ -267,4 +267,45 @@ describe("CitationsPanel", () => {
     });
     expect(screen.queryByText("Project A Citation")).not.toBeInTheDocument();
   });
+  describe("when there are no citations", () => {
+    it("says so, and points at the upload control", async () => {
+      mockedApi.listCitations.mockResolvedValue([]);
+
+      render(<CitationsPanel reviewProjectId="1" />);
+
+      expect(
+        await screen.findByText("No citations yet. Upload a RIS or CSV file above.")
+      ).toBeInTheDocument();
+      expect(screen.queryAllByRole("listitem")).toHaveLength(0);
+    });
+
+    it("stays quiet while the list is still loading", async () => {
+      const pending = deferred<Citation[]>();
+      mockedApi.listCitations.mockReturnValueOnce(pending.promise);
+
+      render(<CitationsPanel reviewProjectId="1" />);
+
+      expect(screen.queryByText(/no citations yet/i)).not.toBeInTheDocument();
+      await act(async () => pending.resolve([]));
+      expect(await screen.findByText(/no citations yet/i)).toBeInTheDocument();
+    });
+
+    it("does not claim the list is empty when it failed to load", async () => {
+      mockedApi.listCitations.mockRejectedValueOnce(new Error("down"));
+
+      render(<CitationsPanel reviewProjectId="1" />);
+
+      expect(await screen.findByText(/failed to load citations/i)).toBeInTheDocument();
+      expect(screen.queryByText(/no citations yet/i)).not.toBeInTheDocument();
+    });
+
+    it("goes away once there is a citation", async () => {
+      mockedApi.listCitations.mockResolvedValue([citation("1", "First study")]);
+
+      render(<CitationsPanel reviewProjectId="1" />);
+
+      expect(await screen.findByText("First study")).toBeInTheDocument();
+      expect(screen.queryByText(/no citations yet/i)).not.toBeInTheDocument();
+    });
+  });
 });

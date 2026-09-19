@@ -96,4 +96,30 @@ describe("useListResource", () => {
     expect(result.current.data).toEqual(["b-item"]);
     expect(result.current.error).toBeNull();
   });
+  it("is not loaded until the first fetch has succeeded", async () => {
+    const first = deferred<string[]>();
+    const fetcher = vi.fn().mockReturnValueOnce(first.promise);
+
+    const { result } = renderHook(() => useListResource(fetcher, [], "Failed to load."));
+
+    expect(result.current.loaded).toBe(false);
+    await act(async () => first.resolve([]));
+    expect(result.current.loaded).toBe(true);
+    expect(result.current.data).toEqual([]);
+  });
+
+  it("stays not loaded when the first fetch fails, and becomes loaded once a refresh succeeds", async () => {
+    const fetcher = vi.fn().mockRejectedValueOnce(new Error("boom")).mockResolvedValueOnce([]);
+
+    const { result } = renderHook(() => useListResource(fetcher, [], "Failed to load."));
+
+    await waitFor(() => expect(result.current.error).toBe("Failed to load."));
+    expect(result.current.loaded).toBe(false);
+
+    await act(async () => {
+      await result.current.refresh();
+    });
+
+    expect(result.current.loaded).toBe(true);
+  });
 });

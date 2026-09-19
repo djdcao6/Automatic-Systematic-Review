@@ -20,6 +20,8 @@ type FormError = { message: string; isCapError: boolean };
 
 export default function Home() {
   const [projects, setProjects] = useState<ReviewProject[]>([]);
+  // An empty list before the first response is not "no projects yet".
+  const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [name, setName] = useState("");
   const [mergeMode, setMergeMode] = useState<MergeMode | "">("");
   const [reviewMode, setReviewMode] = useState<ReviewMode | "">("");
@@ -28,7 +30,10 @@ export default function Home() {
 
   useEffect(() => {
     listReviewProjects()
-      .then(setProjects)
+      .then((loaded) => {
+        setProjects(loaded);
+        setProjectsLoaded(true);
+      })
       .catch(() => setError({ message: "Failed to load review projects.", isCapError: false }));
   }, []);
 
@@ -113,13 +118,18 @@ export default function Home() {
         </div>
         <button type="submit">Create Review Project</button>
       </form>
-      <ul className="rows">
-        {projects.map((project) => (
-          <li key={project.id}>
-            <Link href={`/review-projects/${project.id}`}>{project.name}</Link>
-          </li>
-        ))}
-      </ul>
+      {projectsLoaded && projects.length === 0 && (
+        <p className="meta">No review projects yet. Create one above.</p>
+      )}
+      {projects.length > 0 && (
+        <ul className="rows">
+          {projects.map((project) => (
+            <li key={project.id}>
+              <Link href={`/review-projects/${project.id}`}>{project.name}</Link>
+            </li>
+          ))}
+        </ul>
+      )}
     </main>
   );
 }

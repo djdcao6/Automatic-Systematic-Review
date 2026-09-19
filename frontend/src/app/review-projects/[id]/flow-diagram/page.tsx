@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { FlowDiagramView } from "@/components/FlowDiagramView";
+import { PageStatus } from "@/components/PageStatus";
 import { getFlowDiagram, getReviewProject, type FlowDiagram } from "@/lib/api";
 
 export default function FlowDiagramPage({
@@ -33,7 +34,7 @@ export default function FlowDiagramPage({
   }, [id]);
 
   if (!diagram) {
-    return error ? <p role="alert">{error}</p> : <p>Loading...</p>;
+    return <PageStatus error={error} />;
   }
 
   return (

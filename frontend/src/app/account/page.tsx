@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+import { PageStatus } from "@/components/PageStatus";
 import {
   createCheckoutSession,
   createPortalSession,
@@ -39,11 +40,11 @@ export default function AccountPage() {
   }
 
   if (subscription === undefined) {
-    return error ? <p role="alert">{error}</p> : <p>Loading...</p>;
+    return <PageStatus error={error} />;
   }
 
   if (subscription === null) {
-    return <p role="alert">Billing is not available.</p>;
+    return <PageStatus error="Billing is not available." />;
   }
 
   return (

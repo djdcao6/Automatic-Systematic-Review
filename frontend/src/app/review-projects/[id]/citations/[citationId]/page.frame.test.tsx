@@ -431,4 +431,30 @@ describe("CitationScreeningPage screening frame", () => {
       expect(screen.queryByRole("status")).not.toBeInTheDocument();
     });
   });
+  describe("before the page has anything to show", () => {
+    it("keeps the loading message inside main while the route params resolve", () => {
+      render(<CitationScreeningPage params={new Promise(() => {})} />);
+
+      expect(screen.getByRole("main")).toHaveTextContent("Loading...");
+    });
+
+    it("keeps the loading message inside main while the citation loads", async () => {
+      mockedApi.getCitation.mockReturnValueOnce(new Promise(() => {}));
+
+      renderPage();
+      await waitFor(() => expect(mockedApi.getCitation).toHaveBeenCalled());
+
+      expect(screen.getByRole("main")).toHaveTextContent("Loading...");
+    });
+
+    it("keeps the load failure inside main", async () => {
+      mockedApi.getCitation.mockRejectedValueOnce(new Error("down"));
+
+      renderPage();
+
+      const alert = await screen.findByRole("alert");
+      expect(alert).toHaveTextContent(/failed to load citation/i);
+      expect(screen.getByRole("main")).toContainElement(alert);
+    });
+  });
 });
