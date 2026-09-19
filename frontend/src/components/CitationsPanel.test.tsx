@@ -163,6 +163,73 @@ describe("CitationsPanel", () => {
     await waitFor(() => expect(onCitationsChanged).toHaveBeenCalledTimes(1));
   });
 
+  // Regression: ISSUE-002 — the upload result's `skipped` rows were never
+  // shown, so a row dropped for a missing title vanished without a word.
+  // Found by /qa on 2026-09-19
+  // Report: .gstack/qa-reports/qa-report-localhost-2026-09-19.md
+  it("tells the Reviewer which rows an upload skipped and why", async () => {
+    mockedApi.listCitations.mockResolvedValue([]);
+    mockedApi.uploadCitations.mockResolvedValue({
+      created: 1,
+      skipped: [
+        { row: 1, reason: "missing title" },
+        { row: 4, reason: "unreadable year" },
+      ],
+    });
+
+    render(<CitationsPanel reviewProjectId="1" />);
+    await waitFor(() => expect(mockedApi.listCitations).toHaveBeenCalledTimes(1));
+
+    const file = new File(["title\n"], "citations.csv", { type: "text/csv" });
+    fireEvent.change(screen.getByLabelText(/upload ris or csv file/i), {
+      target: { files: [file] },
+    });
+
+    expect(await screen.findByText(/2 rows skipped/i)).toBeInTheDocument();
+    expect(screen.getByText("Row 1: missing title")).toBeInTheDocument();
+    expect(screen.getByText("Row 4: unreadable year")).toBeInTheDocument();
+  });
+
+  it("uses the singular for one skipped row and shows nothing when none were skipped", async () => {
+    mockedApi.listCitations.mockResolvedValue([]);
+    mockedApi.uploadCitations
+      .mockResolvedValueOnce({ created: 0, skipped: [{ row: 2, reason: "missing title" }] })
+      .mockResolvedValueOnce({ created: 1, skipped: [] });
+
+    render(<CitationsPanel reviewProjectId="1" />);
+    await waitFor(() => expect(mockedApi.listCitations).toHaveBeenCalledTimes(1));
+
+    const input = screen.getByLabelText(/upload ris or csv file/i);
+    const file = new File(["title\n"], "citations.csv", { type: "text/csv" });
+
+    fireEvent.change(input, { target: { files: [file] } });
+    expect(await screen.findByText(/1 row skipped/i)).toBeInTheDocument();
+
+    fireEvent.change(input, { target: { files: [file] } });
+    await waitFor(() => expect(screen.queryByText(/row skipped/i)).not.toBeInTheDocument());
+    expect(screen.queryByText(/missing title/i)).not.toBeInTheDocument();
+  });
+
+  it("drops a previous upload's skipped rows when the next upload is rejected", async () => {
+    mockedApi.listCitations.mockResolvedValue([]);
+    mockedApi.uploadCitations
+      .mockResolvedValueOnce({ created: 0, skipped: [{ row: 1, reason: "missing title" }] })
+      .mockRejectedValueOnce(new Error("File must be .ris or .csv"));
+
+    render(<CitationsPanel reviewProjectId="1" />);
+    await waitFor(() => expect(mockedApi.listCitations).toHaveBeenCalledTimes(1));
+
+    const input = screen.getByLabelText(/upload ris or csv file/i);
+    const file = new File(["title\n"], "citations.csv", { type: "text/csv" });
+
+    fireEvent.change(input, { target: { files: [file] } });
+    expect(await screen.findByText("Row 1: missing title")).toBeInTheDocument();
+
+    fireEvent.change(input, { target: { files: [file] } });
+    expect(await screen.findByRole("alert")).toHaveTextContent("File must be .ris or .csv");
+    expect(screen.queryByText("Row 1: missing title")).not.toBeInTheDocument();
+  });
+
   // Regression: ISSUE-003 — the panel's catch block replaced the backend's
   // reason ("File must be .ris or .csv") with a hardcoded generic string.
   // Found by /qa on 2026-09-19
