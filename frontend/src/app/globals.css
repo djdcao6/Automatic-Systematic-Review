@@ -626,7 +626,7 @@
   .add-term {
     display: flex;
     flex-wrap: wrap;
-    align-items: end;
+    align-items: stretch;
     gap: 0.5rem;
     margin-bottom: 1.5rem;
   }
