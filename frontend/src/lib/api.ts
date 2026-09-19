@@ -154,6 +154,14 @@ export type FullTextSuggestion = {
   extraction_values: ExtractionValueSuggestion[];
 };
 
+// What generating a Full-Text Suggestion on demand produced. Both fields are null
+// when the Full Text was replaced while the model was reading the old one: nothing
+// was kept, so the page looks again.
+export type FullTextSuggestionOutcome = {
+  suggestion: FullTextSuggestion | null;
+  suggestion_unavailable_reason: string | null;
+};
+
 export type ExtractionValue = {
   extraction_field_id: string;
   name: string;
@@ -182,6 +190,9 @@ export type CitationDetail = Citation & {
   full_text_decision: FullTextDecision | null;
   full_text_suggestion: FullTextSuggestion | null;
   full_text_suggestion_unavailable_reason: string | null;
+  // True when a Full Text was parsed and no suggestion exists yet: the page asks
+  // for it separately (`generateFullTextSuggestion`) so this response never waits on the model.
+  full_text_suggestion_needs_generation: boolean;
   extraction_fields: ExtractionField[];
   extraction_values: ExtractionValue[];
 };
@@ -562,6 +573,17 @@ export async function generateSuggestion(
     `${API_URL}/review-projects/${reviewProjectId}/citations/${citationId}/suggestion`,
     { method: "POST" },
     "Failed to generate AI suggestion"
+  );
+}
+
+export async function generateFullTextSuggestion(
+  reviewProjectId: string,
+  citationId: string
+): Promise<FullTextSuggestionOutcome> {
+  return request(
+    `${API_URL}/review-projects/${reviewProjectId}/citations/${citationId}/full-text-suggestion`,
+    { method: "POST" },
+    "Failed to generate Full-Text Suggestion"
   );
 }
 

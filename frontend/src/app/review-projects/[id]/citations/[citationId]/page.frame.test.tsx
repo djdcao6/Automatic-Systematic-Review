@@ -65,6 +65,7 @@ const detail = (overrides = {}) => ({
   full_text_decision: null,
   full_text_suggestion: null,
   full_text_suggestion_unavailable_reason: null,
+  full_text_suggestion_needs_generation: false,
   extraction_fields: [],
   extraction_values: [],
   suggestion: null,
@@ -104,6 +105,7 @@ describe("CitationScreeningPage screening frame", () => {
     mockedApi.getReviewProject.mockReset();
     mockedApi.getCitation.mockReset();
     mockedApi.generateSuggestion.mockReset();
+    mockedApi.generateFullTextSuggestion.mockReset();
     mockedApi.listCitations.mockReset();
     mockedApi.recordScreeningDecision.mockReset();
     mockedApi.getMe.mockResolvedValue({
@@ -258,6 +260,53 @@ describe("CitationScreeningPage screening frame", () => {
       await act(async () => {
         answerFirstCitation({
           suggestion: { decision: "include", reason: "Late answer for the first citation." },
+          suggestion_unavailable_reason: null,
+        });
+      });
+
+      expect(screen.getByText(/exclude:\s*wrong population/i)).toBeInTheDocument();
+      expect(screen.queryByText(/late answer/i)).not.toBeInTheDocument();
+    });
+
+    it("drops a Full-Text Suggestion that arrives after the reviewer has moved on", async () => {
+      const fullText = {
+        original_filename: "paper.pdf",
+        parse_status: "parsed" as const,
+        created_at: stamp,
+        updated_at: stamp,
+      };
+      let answerFirstCitation!: (outcome: api.FullTextSuggestionOutcome) => void;
+      mockedApi.generateFullTextSuggestion.mockReturnValue(
+        new Promise((resolve) => {
+          answerFirstCitation = resolve;
+        })
+      );
+      mockedApi.getCitation.mockImplementation(async (_project, id) =>
+        id === "c1"
+          ? detail({ full_text: fullText, full_text_suggestion_needs_generation: true })
+          : detail({
+              id,
+              title: "Third trial",
+              full_text: fullText,
+              full_text_suggestion: {
+                decision: "exclude",
+                reason: "Wrong population.",
+                extraction_values: [],
+              },
+            })
+      );
+      const { rerender } = renderPage();
+      await screen.findByRole("heading", { name: "Metformin RCT" });
+
+      renderNext(rerender, "c2");
+      expect(await screen.findByRole("heading", { name: "Third trial" })).toBeInTheDocument();
+      await act(async () => {
+        answerFirstCitation({
+          suggestion: {
+            decision: "include",
+            reason: "Late answer for the first citation.",
+            extraction_values: [],
+          },
           suggestion_unavailable_reason: null,
         });
       });
