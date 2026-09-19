@@ -150,6 +150,63 @@ describe("api authorization handling", () => {
     );
   });
 
+  // Regression: ISSUE-001 — a 422 validation error's `detail` is a list of
+  // { loc, msg } objects, not a string, so register with a too-short password
+  // showed only "Failed to register".
+  // Found by /qa on 2026-09-19
+  // Report: .gstack/qa-reports/qa-report-localhost-2026-09-19.md
+  it("surfaces field-level messages from a 422 validation error's detail list", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          detail: [
+            {
+              type: "string_too_short",
+              loc: ["body", "password"],
+              msg: "String should have at least 8 characters",
+            },
+          ],
+        }),
+        { status: 422 }
+      )
+    );
+    global.fetch = fetchMock;
+
+    await expect(registerReviewer({ email: "a@b.co", password: "short" })).rejects.toThrow(
+      "password: String should have at least 8 characters"
+    );
+  });
+
+  it("joins every field's message when a 422 reports several problems", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          detail: [
+            { loc: ["body", "email"], msg: "value is not a valid email address" },
+            { loc: ["body", "password"], msg: "String should have at least 8 characters" },
+          ],
+        }),
+        { status: 422 }
+      )
+    );
+    global.fetch = fetchMock;
+
+    await expect(registerReviewer({ email: "nope", password: "x" })).rejects.toThrow(
+      "email: value is not a valid email address; password: String should have at least 8 characters"
+    );
+  });
+
+  it("falls back to the generic message when a detail list has no usable messages", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(JSON.stringify({ detail: [{}] }), { status: 422 }));
+    global.fetch = fetchMock;
+
+    await expect(registerReviewer({ email: "a@b.co", password: "x" })).rejects.toThrow(
+      "Failed to register"
+    );
+  });
+
   it("falls back to a generic message when the backend response has no detail", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 500 }));
     global.fetch = fetchMock;
