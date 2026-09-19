@@ -112,6 +112,13 @@ export type Suggestion = {
   reason: string;
 };
 
+// What generating an AI Suggestion on demand produced. Both fields are null for
+// a blind Reviewer: the suggestion is kept for them, but nothing about it is sent.
+export type SuggestionOutcome = {
+  suggestion: Suggestion | null;
+  suggestion_unavailable_reason: string | null;
+};
+
 export type ScreeningDecision = {
   decision: Decision;
   reason: string | null;
@@ -164,6 +171,9 @@ export type CitationDetail = Citation & {
   next_citation_id: string | null;
   suggestion: Suggestion | null;
   suggestion_unavailable_reason: string | null;
+  // True when no suggestion exists yet and one can be generated: the page asks
+  // for it separately (`generateSuggestion`) so this response never waits on the model.
+  suggestion_needs_generation: boolean;
   screening_decision: ScreeningDecision | null;
   peer_screening_decision: ScreeningDecision | null;
   screening_blind: boolean;
@@ -541,6 +551,17 @@ export async function getCitation(
     `${API_URL}/review-projects/${reviewProjectId}/citations/${citationId}`,
     {},
     "Failed to load citation"
+  );
+}
+
+export async function generateSuggestion(
+  reviewProjectId: string,
+  citationId: string
+): Promise<SuggestionOutcome> {
+  return request(
+    `${API_URL}/review-projects/${reviewProjectId}/citations/${citationId}/suggestion`,
+    { method: "POST" },
+    "Failed to generate AI suggestion"
   );
 }
 

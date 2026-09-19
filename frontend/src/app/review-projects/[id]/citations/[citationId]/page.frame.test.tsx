@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ProjectShell } from "@/components/ProjectShell";
@@ -69,6 +69,7 @@ const detail = (overrides = {}) => ({
   extraction_values: [],
   suggestion: null,
   suggestion_unavailable_reason: null,
+  suggestion_needs_generation: false,
   screening_decision: null,
   full_text: null,
   ...overrides,
@@ -102,6 +103,7 @@ describe("CitationScreeningPage screening frame", () => {
   beforeEach(() => {
     mockedApi.getReviewProject.mockReset();
     mockedApi.getCitation.mockReset();
+    mockedApi.generateSuggestion.mockReset();
     mockedApi.listCitations.mockReset();
     mockedApi.recordScreeningDecision.mockReset();
     mockedApi.getMe.mockResolvedValue({
@@ -230,6 +232,38 @@ describe("CitationScreeningPage screening frame", () => {
       expect(screen.queryByText(/decision saved/i)).not.toBeInTheDocument();
       expect(screen.getByLabelText(/reason/i)).toHaveValue("");
       expect(screen.getByLabelText("exclude")).not.toBeChecked();
+    });
+
+    it("drops a suggestion that arrives after the reviewer has moved on", async () => {
+      let answerFirstCitation!: (outcome: api.SuggestionOutcome) => void;
+      mockedApi.generateSuggestion.mockReturnValue(
+        new Promise((resolve) => {
+          answerFirstCitation = resolve;
+        })
+      );
+      mockedApi.getCitation.mockImplementation(async (_project, id) =>
+        id === "c1"
+          ? detail({ suggestion_needs_generation: true })
+          : detail({
+              id,
+              title: "Third trial",
+              suggestion: { decision: "exclude", reason: "Wrong population." },
+            })
+      );
+      const { rerender } = renderPage();
+      await screen.findByRole("heading", { name: "Metformin RCT" });
+
+      renderNext(rerender, "c2");
+      expect(await screen.findByRole("heading", { name: "Third trial" })).toBeInTheDocument();
+      await act(async () => {
+        answerFirstCitation({
+          suggestion: { decision: "include", reason: "Late answer for the first citation." },
+          suggestion_unavailable_reason: null,
+        });
+      });
+
+      expect(screen.getByText(/exclude:\s*wrong population/i)).toBeInTheDocument();
+      expect(screen.queryByText(/late answer/i)).not.toBeInTheDocument();
     });
 
     it("fetches the project once, and never downloads the whole citation list", async () => {
