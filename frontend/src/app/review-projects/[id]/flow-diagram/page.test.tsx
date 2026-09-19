@@ -1,8 +1,9 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 
 import * as api from "@/lib/api";
 import * as pngExport from "@/lib/png-export";
+import { renderWithProject } from "@/test/renderWithProject";
 
 import FlowDiagramPage from "./page";
 
@@ -12,28 +13,11 @@ vi.mock("@/lib/png-export");
 const mockedApi = vi.mocked(api);
 const mockedPngExport = vi.mocked(pngExport);
 
-const baseProject = {
-  id: "1",
-  name: "My Review",
-  criteria_locked: false,
-  merge_mode: "combine" as const,
-  review_mode: "solo" as const,
-  owner_reviewer_id: "owner-1",
-  co_reviewer_id: null,
-  created_at: "2026-01-01T00:00:00Z",
-  citations_needing_decision: 0,
-  criteria: null,
-};
-
 function renderPage() {
-  return render(<FlowDiagramPage params={Promise.resolve({ id: "1" })} />);
+  return renderWithProject(<FlowDiagramPage />);
 }
 
 describe("FlowDiagramPage", () => {
-  beforeEach(() => {
-    mockedApi.getReviewProject.mockResolvedValue(baseProject);
-  });
-
   it("renders per-source identification counts, duplicates removed, and screening totals", async () => {
     mockedApi.getFlowDiagram.mockResolvedValue({
       criteria: null,
@@ -283,6 +267,49 @@ describe("FlowDiagramPage", () => {
       /failed to download prisma flow diagram as png/i
     );
   });
+  it("names the project in its heading from the shared project, without fetching it again", async () => {
+    mockedApi.getFlowDiagram.mockResolvedValue({
+      criteria: null,
+      identification_counts: {},
+      duplicates_removed: 0,
+      screened: 0,
+      excluded: 0,
+      pending: 0,
+      full_text_assessed: 0,
+      full_text_excluded_by_reason: {},
+      full_text_included: 0,
+      full_text_pending: 0,
+    });
+
+    renderPage();
+
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "PRISMA Flow Diagram: My Review" })
+    ).toBeInTheDocument();
+    expect(mockedApi.getFlowDiagram).toHaveBeenCalledWith("1");
+    expect(mockedApi.getReviewProject).not.toHaveBeenCalled();
+  });
+
+  it("leaves getting back to the project to the rail", async () => {
+    mockedApi.getFlowDiagram.mockResolvedValue({
+      criteria: null,
+      identification_counts: {},
+      duplicates_removed: 0,
+      screened: 0,
+      excluded: 0,
+      pending: 0,
+      full_text_assessed: 0,
+      full_text_excluded_by_reason: {},
+      full_text_included: 0,
+      full_text_pending: 0,
+    });
+
+    renderPage();
+
+    await screen.findByRole("heading", { level: 1 });
+    expect(screen.queryByRole("link", { name: /back to project/i })).not.toBeInTheDocument();
+  });
+
   describe("before the diagram has loaded", () => {
     it("keeps the loading message inside the page's main", async () => {
       mockedApi.getFlowDiagram.mockReturnValueOnce(new Promise(() => {}));

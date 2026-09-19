@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { Fragment, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 
 import { PageStatus } from "@/components/PageStatus";
@@ -8,7 +7,6 @@ import { ScreeningFolio } from "@/components/ScreeningFolio";
 import {
   fetchFullTextFile,
   getCitation,
-  getReviewProject,
   recordExtractionValue,
   recordFullTextDecision,
   recordScreeningDecision,
@@ -17,6 +15,7 @@ import {
   type Decision,
   type ReviewProjectDetail,
 } from "@/lib/api";
+import { useReviewProject } from "@/lib/ReviewProjectContext";
 import { useScreeningShortcuts } from "@/lib/useScreeningShortcuts";
 
 const DECISIONS: Decision[] = ["include", "exclude", "maybe"];
@@ -83,57 +82,29 @@ function blankOrValue(value: string): string | null {
 }
 
 // Moving between citations changes the route params but keeps this component
-// mounted. The frame below therefore holds what belongs to the whole project,
-// fetched once, and gives every citation a fresh body with `key` so no form
-// state leaks from the last one.
+// mounted. The project comes from the shell around it, loaded once for every
+// section, and each citation gets a fresh body with `key` so no form state
+// leaks from the last one.
 export default function CitationScreeningPage({
   params,
 }: {
   params: Promise<{ id: string; citationId: string }>;
 }) {
-  const [ids, setIds] = useState<{ id: string; citationId: string } | null>(null);
-  const [project, setProject] = useState<ReviewProjectDetail | null>(null);
-  const reviewProjectId = ids?.id ?? null;
+  const { project, refreshProject } = useReviewProject();
+  const [citationId, setCitationId] = useState<string | null>(null);
 
   useEffect(() => {
-    params.then(setIds);
+    params.then((resolved) => setCitationId(resolved.citationId));
   }, [params]);
 
-  useEffect(() => {
-    if (!reviewProjectId) return;
-    let ignore = false;
-    getReviewProject(reviewProjectId)
-      .then((data) => {
-        if (!ignore) setProject(data);
-      })
-      .catch(() => {
-        if (!ignore) setProject(null);
-      });
-    return () => {
-      ignore = true;
-    };
-  }, [reviewProjectId]);
-
-  async function refreshProject() {
-    if (!reviewProjectId) return;
-    try {
-      setProject(await getReviewProject(reviewProjectId));
-    } catch {
-      // Best-effort: the progress line just stays where it was.
-    }
-  }
-
-  if (!ids) return <PageStatus />;
+  if (!citationId) return <PageStatus />;
 
   return (
     <main>
-      <Link href={`/review-projects/${ids.id}`} className="crumb">
-        Back to project
-      </Link>
       <CitationScreening
-        key={ids.citationId}
-        reviewProjectId={ids.id}
-        citationId={ids.citationId}
+        key={citationId}
+        reviewProjectId={project.id}
+        citationId={citationId}
         project={project}
         onDecisionRecorded={refreshProject}
       />
@@ -149,7 +120,7 @@ function CitationScreening({
 }: {
   reviewProjectId: string;
   citationId: string;
-  project: ReviewProjectDetail | null;
+  project: ReviewProjectDetail;
   onDecisionRecorded: () => void;
 }) {
   const [citation, setCitation] = useState<CitationDetail | null>(null);
@@ -172,9 +143,9 @@ function CitationScreening({
   const [extractionSavedFieldId, setExtractionSavedFieldId] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
 
-  const criteria = project?.criteria ?? null;
+  const criteria = project.criteria;
   const exclusionRules = criteria?.exclusion_rules ?? [];
-  const reviewMode = project?.review_mode ?? "solo";
+  const reviewMode = project.review_mode;
 
   function chooseDecision(option: Decision) {
     setDecision(option);
@@ -358,7 +329,7 @@ function CitationScreening({
 
   return (
     <>
-      {project && citation.position !== null && (
+      {citation.position !== null && (
         <ScreeningFolio
           position={citation.position}
           total={citation.total}
@@ -553,7 +524,7 @@ function CitationScreening({
             <section aria-label="Criteria">
               <h2>
                 Criteria
-                {project?.criteria_locked && <span className="lock">locked</span>}
+                {project.criteria_locked && <span className="lock">locked</span>}
               </h2>
               <dl>
                 {pico.map(([label, value]) => (
