@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState, type ChangeEvent } from "react";
 
-import { listCitations, uploadCitations } from "@/lib/api";
+import { listCitations, uploadCitations, type CitationUploadResult } from "@/lib/api";
 import { useListResource } from "@/lib/useListResource";
 
 export function CitationsPanel({
@@ -25,6 +25,7 @@ export function CitationsPanel({
     "Failed to load citations."
   );
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [skipped, setSkipped] = useState<CitationUploadResult["skipped"]>([]);
   const error = uploadError ?? loadError;
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
@@ -32,11 +33,13 @@ export function CitationsPanel({
     if (!file) return;
 
     try {
-      await uploadCitations(reviewProjectId, file);
+      const result = await uploadCitations(reviewProjectId, file);
       setUploadError(null);
+      setSkipped(result.skipped);
       await refresh();
       onCitationsChanged?.();
     } catch (err) {
+      setSkipped([]);
       setUploadError(err instanceof Error ? err.message : "Failed to upload citations.");
     } finally {
       event.target.value = "";
@@ -47,6 +50,18 @@ export function CitationsPanel({
     <section>
       <h2>Citations</h2>
       {error && <p role="alert">{error}</p>}
+      {skipped.length > 0 && (
+        <div role="status">
+          <p>
+            {skipped.length} {skipped.length === 1 ? "row" : "rows"} skipped:
+          </p>
+          <ul>
+            {skipped.map(({ row, reason }) => (
+              <li key={row}>{`Row ${row}: ${reason}`}</li>
+            ))}
+          </ul>
+        </div>
+      )}
       <label htmlFor="citation-file">Upload RIS or CSV file</label>
       <input id="citation-file" type="file" accept=".ris,.csv" onChange={handleFileChange} />
       <ul>
