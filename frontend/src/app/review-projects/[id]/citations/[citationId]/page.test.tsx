@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { StrictMode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ProjectShell } from "@/components/ProjectShell";
@@ -27,6 +28,7 @@ const baseCitation = {
   previous_citation_id: null,
   next_citation_id: null,
   peer_screening_decision: null,
+  suggestion_needs_generation: false,
   screening_blind: false,
   screening_resolved: false,
   full_text_decision: null,
@@ -56,6 +58,17 @@ const dualReviewProject = {
   citations_needing_decision: 0,
 };
 
+// A promise the test settles by hand, to check the page while a request is in flight.
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 // The page sits inside the project's shell, which supplies the project.
 function renderPage() {
   return render(
@@ -67,6 +80,7 @@ function renderPage() {
 
 describe("CitationScreeningPage", () => {
   beforeEach(() => {
+    mockedApi.generateSuggestion.mockReset();
     mockedApi.getMe.mockResolvedValue({
       id: "owner-1",
       email: "owner@example.com",
@@ -99,7 +113,7 @@ describe("CitationScreeningPage", () => {
     });
   });
 
-  it("shows the AI suggestion and pre-fills the decision form from it", async () => {
+  it("shows the AI suggestion in the margin but leaves the decision and reason to the reviewer", async () => {
     mockedApi.getCitation.mockResolvedValue({
       ...baseCitation,
       suggestion: { decision: "include", reason: "Matches all criteria." },
@@ -111,8 +125,199 @@ describe("CitationScreeningPage", () => {
     renderPage();
 
     expect(await screen.findByText(/include:\s*matches all criteria/i)).toBeInTheDocument();
-    expect(screen.getByLabelText("include")).toBeChecked();
-    expect(screen.getByLabelText(/reason/i)).toHaveValue("Matches all criteria.");
+    expect(screen.getByLabelText("include")).not.toBeChecked();
+    expect(screen.getByLabelText("exclude")).not.toBeChecked();
+    expect(screen.getByLabelText("maybe")).not.toBeChecked();
+    expect(screen.getByLabelText(/reason/i)).toHaveValue("");
+    // Already generated on an earlier visit, so nothing is requested again.
+    expect(mockedApi.generateSuggestion).not.toHaveBeenCalled();
+  });
+
+  it("shows the citation at once, then the generated suggestion in the margin", async () => {
+    const generation = deferred<api.SuggestionOutcome>();
+    mockedApi.generateSuggestion.mockReturnValue(generation.promise);
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+      suggestion_needs_generation: true,
+      screening_decision: null,
+      full_text: null,
+    });
+
+    renderPage();
+
+    expect(await screen.findByText("A randomized trial of metformin.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /save decision/i })).toBeInTheDocument();
+    expect(screen.getByText(/preparing an ai suggestion/i)).toHaveAttribute("role", "status");
+
+    generation.resolve({
+      suggestion: { decision: "include", reason: "Matches all criteria." },
+      suggestion_unavailable_reason: null,
+    });
+
+    expect(await screen.findByText(/include:\s*matches all criteria/i)).toBeInTheDocument();
+    expect(screen.queryByText(/preparing an ai suggestion/i)).not.toBeInTheDocument();
+    expect(screen.getByLabelText("include")).not.toBeChecked();
+    expect(screen.getByLabelText(/reason/i)).toHaveValue("");
+    expect(mockedApi.generateSuggestion).toHaveBeenCalledTimes(1);
+    expect(mockedApi.generateSuggestion).toHaveBeenCalledWith("1", "c1");
+  });
+
+  it.each([
+    [
+      "the server reports a failed generation",
+      () =>
+        mockedApi.generateSuggestion.mockResolvedValue({
+          suggestion: null,
+          suggestion_unavailable_reason: "generation_failed",
+        }),
+    ],
+    [
+      "the request itself fails",
+      () => mockedApi.generateSuggestion.mockRejectedValue(new Error("network down")),
+    ],
+  ])("shows the failure message when %s, and leaves manual decisions open", async (_, arrange) => {
+    arrange();
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+      suggestion_needs_generation: true,
+      screening_decision: null,
+      full_text: null,
+    });
+
+    renderPage();
+
+    expect(await screen.findByText(/generating an ai suggestion failed/i)).toBeInTheDocument();
+    expect(screen.queryByText(/preparing an ai suggestion/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /save decision/i })).toBeEnabled();
+  });
+
+  it("asks for the suggestion while blind but shows nothing of it", async () => {
+    mockedApi.getReviewProject.mockResolvedValue(dualReviewProject);
+    mockedApi.generateSuggestion.mockResolvedValue({
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+    });
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+      suggestion_needs_generation: true,
+      screening_decision: null,
+      screening_blind: true,
+      full_text: null,
+    });
+
+    renderPage();
+
+    expect(
+      await screen.findByText(/hidden until you record your own screening decision/i)
+    ).toBeInTheDocument();
+    await waitFor(() => expect(mockedApi.generateSuggestion).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText(/preparing an ai suggestion/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/generating an ai suggestion failed/i)).not.toBeInTheDocument();
+  });
+
+  describe("saving a decision while the suggestion is still being generated (blind Dual)", () => {
+    const stamp = "2026-01-01T00:00:00Z";
+    const blindCitation = {
+      ...baseCitation,
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+      suggestion_needs_generation: true,
+      screening_decision: null,
+      screening_blind: true,
+      full_text: null,
+    };
+    const ownDecision = { decision: "include" as const, reason: null, created_at: stamp, updated_at: stamp };
+    // The server sends a blind Reviewer nothing about the suggestion, even once it is ready.
+    const emptyAnswer = { suggestion: null, suggestion_unavailable_reason: null };
+
+    async function saveWhileBlind() {
+      renderPage();
+      await screen.findByText(/hidden until you record your own screening decision/i);
+      fireEvent.click(screen.getByLabelText("include"));
+      fireEvent.click(screen.getByRole("button", { name: /save decision/i }));
+      await screen.findByText(/decision saved/i);
+    }
+
+    it("shows the suggestion once it is ready, without a reload", async () => {
+      const generation = deferred<api.SuggestionOutcome>();
+      mockedApi.getReviewProject.mockResolvedValue(dualReviewProject);
+      mockedApi.generateSuggestion.mockReturnValue(generation.promise);
+      mockedApi.getCitation
+        .mockResolvedValueOnce(blindCitation)
+        .mockResolvedValueOnce({
+          ...blindCitation,
+          screening_blind: false,
+          screening_decision: ownDecision,
+        })
+        .mockResolvedValue({
+          ...blindCitation,
+          screening_blind: false,
+          screening_decision: ownDecision,
+          suggestion: { decision: "exclude", reason: "Wrong population." },
+          suggestion_needs_generation: false,
+        });
+
+      await saveWhileBlind();
+      expect(screen.getByText(/preparing an ai suggestion/i)).toBeInTheDocument();
+
+      generation.resolve(emptyAnswer);
+
+      expect(await screen.findByText(/exclude:\s*wrong population/i)).toBeInTheDocument();
+      expect(screen.queryByText(/preparing an ai suggestion/i)).not.toBeInTheDocument();
+      expect(mockedApi.generateSuggestion).toHaveBeenCalledTimes(1);
+    });
+
+    it("asks once more if generating it failed, and reports a second failure", async () => {
+      const firstAttempt = deferred<api.SuggestionOutcome>();
+      mockedApi.getReviewProject.mockResolvedValue(dualReviewProject);
+      mockedApi.generateSuggestion.mockReturnValueOnce(firstAttempt.promise).mockResolvedValueOnce({
+        suggestion: null,
+        suggestion_unavailable_reason: "generation_failed",
+      });
+      mockedApi.getCitation.mockResolvedValueOnce(blindCitation).mockResolvedValue({
+        ...blindCitation,
+        screening_blind: false,
+        screening_decision: ownDecision,
+      });
+
+      await saveWhileBlind();
+      firstAttempt.resolve(emptyAnswer);
+
+      expect(await screen.findByText(/generating an ai suggestion failed/i)).toBeInTheDocument();
+      expect(mockedApi.generateSuggestion).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it("sends one request under React Strict Mode and still shows the suggestion", async () => {
+    mockedApi.generateSuggestion.mockResolvedValue({
+      suggestion: { decision: "include", reason: "Matches all criteria." },
+      suggestion_unavailable_reason: null,
+    });
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+      suggestion_needs_generation: true,
+      screening_decision: null,
+      full_text: null,
+    });
+
+    render(
+      <StrictMode>
+        <ProjectShell reviewProjectId="1">
+          <CitationScreeningPage params={Promise.resolve({ id: "1", citationId: "c1" })} />
+        </ProjectShell>
+      </StrictMode>
+    );
+
+    expect(await screen.findByText(/include:\s*matches all criteria/i)).toBeInTheDocument();
+    expect(mockedApi.generateSuggestion).toHaveBeenCalledTimes(1);
   });
 
   it("shows the PICO criteria beside the abstract and skips the ones left blank", async () => {

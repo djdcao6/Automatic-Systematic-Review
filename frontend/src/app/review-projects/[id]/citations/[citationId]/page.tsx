@@ -6,6 +6,7 @@ import { PageStatus } from "@/components/PageStatus";
 import { ScreeningFolio } from "@/components/ScreeningFolio";
 import {
   fetchFullTextFile,
+  generateSuggestion,
   getCitation,
   recordExtractionValue,
   recordFullTextDecision,
@@ -14,6 +15,7 @@ import {
   type CitationDetail,
   type Decision,
   type ReviewProjectDetail,
+  type SuggestionOutcome,
 } from "@/lib/api";
 import { useReviewProject } from "@/lib/ReviewProjectContext";
 import { useScreeningShortcuts } from "@/lib/useScreeningShortcuts";
@@ -124,6 +126,9 @@ function CitationScreening({
   onDecisionRecorded: () => void;
 }) {
   const [citation, setCitation] = useState<CitationDetail | null>(null);
+  // What generating the AI suggestion produced, once it has. Until then the
+  // margin shows a placeholder, so the abstract and form never wait on the model.
+  const [suggestionOutcome, setSuggestionOutcome] = useState<SuggestionOutcome | null>(null);
   // Nothing is chosen until the Reviewer chooses: with keyboard shortcuts, a
   // pre-selected Maybe could be recorded by one stray Ctrl+Enter.
   const [decision, setDecision] = useState<Decision | null>(null);
@@ -163,12 +168,11 @@ function CitationScreening({
     getCitation(reviewProjectId, citationId)
       .then((data) => {
         setCitation(data);
+        // Only the Reviewer's own recorded decision fills the form. The AI
+        // suggestion stays in the margin, in pencil, however it arrives.
         if (data.screening_decision) {
           setDecision(data.screening_decision.decision);
           setReason(data.screening_decision.reason ?? "");
-        } else if (data.suggestion) {
-          setDecision(data.suggestion.decision);
-          setReason(data.suggestion.reason);
         }
         if (data.full_text_decision) {
           setFtDecision(data.full_text_decision.decision);
@@ -196,6 +200,45 @@ function CitationScreening({
       })
       .catch(() => setError("Failed to load citation."));
   }, [reviewProjectId, citationId]);
+
+  const needsSuggestion = citation?.suggestion_needs_generation ?? false;
+  // The request for this Citation's suggestion while it is in flight, so there
+  // is only ever one, however many times the effect below runs.
+  const generation = useRef<Promise<void> | null>(null);
+
+  useEffect(() => {
+    if (!needsSuggestion || generation.current) return;
+
+    const request = (): Promise<void> =>
+      generateSuggestion(reviewProjectId, citationId)
+        .catch(
+          (): SuggestionOutcome => ({
+            suggestion: null,
+            suggestion_unavailable_reason: "generation_failed",
+          })
+        )
+        .then(async (outcome) => {
+          if (outcome.suggestion !== null || outcome.suggestion_unavailable_reason !== null) {
+            generation.current = null;
+            setSuggestionOutcome(outcome);
+            return;
+          }
+          // A blind Reviewer is always answered with nothing, and may have
+          // recorded their decision while this was in flight, so look again.
+          const refreshed = await getCitation(reviewProjectId, citationId).catch(() => null);
+          generation.current = null;
+          if (!refreshed) return;
+          setCitation(refreshed);
+          // If it failed while they were blind and they can now be told, ask
+          // once more. A Reviewer who can see is never answered with nothing,
+          // so this cannot loop.
+          if (refreshed.suggestion_needs_generation && !refreshed.screening_blind) {
+            generation.current = request();
+          }
+        });
+
+    generation.current = request();
+  }, [needsSuggestion, reviewProjectId, citationId]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -296,10 +339,15 @@ function CitationScreening({
     return error ? <p role="alert">{error}</p> : <p className="meta">Loading...</p>;
   }
 
-  const unavailableMessage = citation.suggestion_unavailable_reason
-    ? (UNAVAILABLE_MESSAGES[citation.suggestion_unavailable_reason] ??
-      "No AI Suggestion is available for this citation.")
+  const suggestion = citation.suggestion ?? suggestionOutcome?.suggestion ?? null;
+  const unavailableReason =
+    citation.suggestion_unavailable_reason ??
+    suggestionOutcome?.suggestion_unavailable_reason ??
+    null;
+  const unavailableMessage = unavailableReason
+    ? (UNAVAILABLE_MESSAGES[unavailableReason] ?? "No AI Suggestion is available for this citation.")
     : null;
+  const suggestionPending = citation.suggestion_needs_generation && suggestionOutcome === null;
 
   const fullTextSuggestionUnavailableMessage = citation.full_text_suggestion_unavailable_reason
     ? (FULL_TEXT_SUGGESTION_UNAVAILABLE_MESSAGES[
@@ -555,15 +603,19 @@ function CitationScreening({
               <div className="sealed">
                 <p>Hidden until you record your own Screening Decision.</p>
               </div>
-            ) : citation.suggestion ? (
+            ) : suggestion ? (
               <div className="ai-note">
                 <p>
-                  {citation.suggestion.decision}: {citation.suggestion.reason}
+                  {suggestion.decision}: {suggestion.reason}
                 </p>
               </div>
             ) : unavailableMessage ? (
               <div className="ai-note">
                 <p>{unavailableMessage}</p>
+              </div>
+            ) : suggestionPending ? (
+              <div className="ai-note">
+                <p role="status">Preparing an AI suggestion…</p>
               </div>
             ) : null}
           </section>
