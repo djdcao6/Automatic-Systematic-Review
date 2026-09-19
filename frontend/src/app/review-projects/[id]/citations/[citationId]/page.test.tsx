@@ -502,6 +502,67 @@ describe("CitationScreeningPage", () => {
     expect(screen.getByText(/not yet recorded/i)).toBeInTheDocument();
   });
 
+  // Regression: ISSUE-001 — the Co-Reviewer saw the Owner's decision titled "Co-Reviewer's Decision"
+  // Found by /qa on 2026-09-19
+  // Report: .gstack/qa-reports/qa-report-localhost-2026-09-19.md
+  it("names the Owner's decision as the Owner's when the viewer is the Co-Reviewer", async () => {
+    mockedApi.getMe.mockResolvedValue({
+      id: "co-reviewer-1",
+      email: "co@example.com",
+      created_at: "2026-01-01T00:00:00Z",
+    });
+    mockedApi.getReviewProject.mockResolvedValue(dualReviewProject);
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: { decision: "include", reason: "Matches all criteria." },
+      suggestion_unavailable_reason: null,
+      screening_decision: {
+        decision: "include",
+        reason: "My take",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+      peer_screening_decision: {
+        decision: "exclude",
+        reason: "Wrong population",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+      screening_blind: false,
+      full_text: null,
+    });
+
+    renderPage();
+
+    expect(await screen.findByRole("heading", { name: /owner's decision/i })).toBeInTheDocument();
+    expect(screen.getByText(/exclude:\s*wrong population/i)).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /co-reviewer's decision/i })).not.toBeInTheDocument();
+  });
+
+  it("names the sealed tab after the Owner when the viewer is the blind Co-Reviewer", async () => {
+    mockedApi.getMe.mockResolvedValue({
+      id: "co-reviewer-1",
+      email: "co@example.com",
+      created_at: "2026-01-01T00:00:00Z",
+    });
+    mockedApi.getReviewProject.mockResolvedValue(dualReviewProject);
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+      screening_decision: null,
+      peer_screening_decision: null,
+      screening_blind: true,
+      full_text: null,
+    });
+
+    renderPage();
+
+    expect(await screen.findByRole("heading", { name: /owner's decision/i })).toBeInTheDocument();
+    expect(screen.getByText(/sealed until you record your own screening decision/i)).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /co-reviewer's decision/i })).not.toBeInTheDocument();
+  });
+
   it("does not show a Co-Reviewer's Decision section in a Solo Review Project", async () => {
     mockedApi.getCitation.mockResolvedValue({
       ...baseCitation,
