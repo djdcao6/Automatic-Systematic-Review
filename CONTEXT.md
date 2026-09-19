@@ -33,7 +33,7 @@ The three-state outcome — Include, Exclude, or Maybe — that a Reviewer recor
 _Avoid_: Unsure, Undecided, Verdict
 
 **AI Suggestion**:
-A proposed Screening Decision plus a reason, generated once on demand when a Reviewer first opens a Citation and persisted from then on — not regenerated on later views. Always advisory, and stored separately from the Reviewer's final Screening Decision — even when they match — so AI accuracy can be reviewed later. In a Dual Review Project, withheld from both the Owner and Co-Reviewer until each has independently recorded their own Screening Decision, so neither's judgment is AI-anchored.
+A proposed Screening Decision plus a reason, generated once on demand when a Reviewer first opens a Citation and persisted from then on — not regenerated on later views. Always advisory, and stored separately from the Reviewer's final Screening Decision — even when they match — so AI accuracy can be reviewed later. Never pre-selects the Screening Decision or fills in its reason, and is generated after the Citation is shown, so the Reviewer never waits on it. In a Dual Review Project, withheld from both the Owner and Co-Reviewer until each has independently recorded their own Screening Decision, so neither's judgment is AI-anchored.
 _Avoid_: AI decision, Auto-screening
 
 **Conflict**:
