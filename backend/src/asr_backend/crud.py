@@ -1,8 +1,9 @@
 import secrets
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from sqlalchemy import func
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -238,6 +239,12 @@ def create_citations(
     return citations
 
 
+# The order Citations appear in, wherever they are listed or stepped through.
+# The id breaks ties: a batch upload can stamp several rows with one instant,
+# and without it their order, and so every position, would be undefined.
+CITATION_ORDER = (models.Citation.created_at, models.Citation.id)
+
+
 def list_citations(db: Session, review_project_id: uuid.UUID) -> list[models.Citation]:
     return list(
         db.query(models.Citation)
@@ -245,8 +252,49 @@ def list_citations(db: Session, review_project_id: uuid.UUID) -> list[models.Cit
             models.Citation.review_project_id == review_project_id,
             models.Citation.archived.is_(False),
         )
-        .order_by(models.Citation.created_at)
+        .order_by(*CITATION_ORDER)
         .all()
+    )
+
+
+@dataclass(frozen=True)
+class CitationPlace:
+    position: int | None
+    total: int
+    previous_id: uuid.UUID | None
+    next_id: uuid.UUID | None
+
+
+def get_citation_place(
+    db: Session, review_project_id: uuid.UUID, citation: models.Citation
+) -> CitationPlace:
+    """Where a Citation sits among its Review Project's active Citations.
+
+    One query computes it in the database, so the caller never loads the other
+    Citations (abstracts and all) just to count them. An archived Citation is
+    not in the list, so it has no position and no neighbours.
+    """
+    active = (
+        models.Citation.review_project_id == review_project_id,
+        models.Citation.archived.is_(False),
+    )
+    ordered = (
+        select(
+            models.Citation.id.label("id"),
+            func.row_number().over(order_by=CITATION_ORDER).label("position"),
+            func.count().over().label("total"),
+            func.lag(models.Citation.id).over(order_by=CITATION_ORDER).label("previous_id"),
+            func.lead(models.Citation.id).over(order_by=CITATION_ORDER).label("next_id"),
+        )
+        .where(*active)
+        .subquery()
+    )
+    row = db.execute(select(ordered).where(ordered.c.id == citation.id)).one_or_none()
+    if row is None:
+        total = db.scalar(select(func.count()).select_from(models.Citation).where(*active))
+        return CitationPlace(position=None, total=total or 0, previous_id=None, next_id=None)
+    return CitationPlace(
+        position=row.position, total=row.total, previous_id=row.previous_id, next_id=row.next_id
     )
 
 

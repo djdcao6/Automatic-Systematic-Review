@@ -368,6 +368,12 @@ class FlowDiagramRead(BaseModel):
 
 
 class CitationDetailRead(CitationRead):
+    # Place in the Review Project's list of active Citations, for stepping
+    # through them. `position` is None for an archived Citation.
+    position: int | None = None
+    total: int
+    previous_citation_id: uuid.UUID | None = None
+    next_citation_id: uuid.UUID | None = None
     suggestion: SuggestionRead | None = None
     suggestion_unavailable_reason: str | None = None
     screening_decision: ScreeningDecisionRead | None = None

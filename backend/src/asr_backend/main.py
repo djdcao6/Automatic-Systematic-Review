@@ -562,6 +562,7 @@ async def get_citation_detail(
         db, citation, existing_full_text, suggester
     )
     extraction_values = crud.get_extraction_values(db, citation.id)
+    place = crud.get_citation_place(db, project.id, citation)
     return schemas.CitationDetailRead(
         id=citation.id,
         title=citation.title,
@@ -571,6 +572,10 @@ async def get_citation_detail(
         source=citation.source,
         needs_abstract=citation.needs_abstract,
         blocked_pending_co_reviewer=citation.blocked_pending_co_reviewer,
+        position=place.position,
+        total=place.total,
+        previous_citation_id=place.previous_id,
+        next_citation_id=place.next_id,
         suggestion=suggestion if not is_blind else None,
         suggestion_unavailable_reason=unavailable_reason if not is_blind else None,
         screening_decision=own_decision,
