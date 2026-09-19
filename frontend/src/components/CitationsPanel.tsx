@@ -9,11 +9,9 @@ import { useListResource } from "@/lib/useListResource";
 export function CitationsPanel({
   reviewProjectId,
   onCitationsChanged,
-  refreshToken,
 }: {
   reviewProjectId: string;
   onCitationsChanged?: () => void;
-  refreshToken?: number;
 }) {
   const {
     data: citations,
@@ -22,7 +20,7 @@ export function CitationsPanel({
     refresh,
   } = useListResource(
     () => listCitations(reviewProjectId),
-    [reviewProjectId, refreshToken],
+    [reviewProjectId],
     "Failed to load citations."
   );
   const [uploadError, setUploadError] = useState<string | null>(null);
