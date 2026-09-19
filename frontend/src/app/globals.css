@@ -462,6 +462,68 @@
     margin: 0;
   }
 
+  /* Project shell: a 200px rail and the section beside it. Below 70rem the
+     rail folds into a Menu button (see the media query at the end). The frame
+     widens for it so the reading page keeps its full 62ch column. */
+  .frame:has(.shell),
+  body:has(.shell) .topbar-inner {
+    max-width: 80rem;
+  }
+  .shell {
+    display: grid;
+    grid-template-columns: 12.5rem minmax(0, 1fr);
+    gap: 2.5rem;
+    align-items: start;
+  }
+  .shell-main {
+    min-width: 0;
+  }
+  .project-name {
+    margin: 0 0 0.25rem;
+    font-family: var(--font-source-serif), Georgia, serif;
+    font-size: 1.25rem;
+    font-weight: 500;
+    line-height: 1.2;
+  }
+  .rail {
+    position: sticky;
+    top: 1.5rem;
+  }
+  .rail-menu {
+    display: none;
+    margin: 0;
+  }
+  .rail nav {
+    padding: 0.5rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+  }
+  .rail ul {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .rail nav a {
+    display: block;
+    padding: 0.4375rem 0.75rem;
+    border-radius: var(--r-md);
+    color: var(--text-muted);
+    font-size: 0.9375rem;
+    text-decoration: none;
+  }
+  .rail nav a:hover {
+    color: var(--text);
+  }
+  .rail nav a[aria-current="page"] {
+    background: var(--background);
+    color: var(--text);
+    font-weight: 500;
+  }
+
   .panel {
     padding: 1.25rem;
     background: var(--surface);
@@ -1095,6 +1157,25 @@
     line-height: 1;
   }
 
+  @media (max-width: 70rem) {
+    .shell {
+      display: block;
+    }
+    .rail {
+      position: static;
+      margin-bottom: 1.75rem;
+    }
+    .rail-menu {
+      display: inline-flex;
+    }
+    .rail nav {
+      display: none;
+      margin-top: 0.5rem;
+    }
+    .rail[data-open="true"] nav {
+      display: block;
+    }
+  }
   @media (max-width: 56rem) {
     .reading {
       grid-template-columns: minmax(0, 1fr);
