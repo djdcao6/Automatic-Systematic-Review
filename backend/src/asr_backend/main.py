@@ -476,7 +476,10 @@ def create_extraction_field(
     project: models.ReviewProject = Depends(get_review_project_or_404),
     db: Session = Depends(get_db),
 ) -> models.ExtractionField:
-    return crud.create_extraction_field(db, project.id, payload)
+    try:
+        return crud.create_extraction_field(db, project.id, payload)
+    except crud.DuplicateExtractionFieldNameError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.get(
@@ -510,7 +513,10 @@ def update_extraction_field(
     field: models.ExtractionField = Depends(get_extraction_field_or_404),
     db: Session = Depends(get_db),
 ) -> models.ExtractionField:
-    return crud.update_extraction_field(db, field, payload)
+    try:
+        return crud.update_extraction_field(db, field, payload)
+    except crud.DuplicateExtractionFieldNameError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.post(

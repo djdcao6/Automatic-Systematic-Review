@@ -491,11 +491,28 @@ export async function listExtractionFields(
   );
 }
 
+// Thrown instead of a plain Error when another active Extraction Field in the
+// Review Project already has the name (#67), so the form can show the
+// backend's message as it is while other failures keep a generic one.
+export class ExtractionFieldNameTakenError extends Error {}
+
+async function extractionFieldRequest(
+  input: string,
+  init: RequestInit,
+  fallback: string
+): Promise<ExtractionField> {
+  const response = await authorizedFetch(input, init);
+  if (response.status === 409) {
+    throw new ExtractionFieldNameTakenError(await errorMessage(response, fallback));
+  }
+  return (await ensureOk(response, fallback)).json();
+}
+
 export async function createExtractionField(
   reviewProjectId: string,
   payload: ExtractionFieldInput
 ): Promise<ExtractionField> {
-  return request(
+  return extractionFieldRequest(
     `${API_URL}/review-projects/${reviewProjectId}/extraction-fields`,
     {
       method: "POST",
@@ -511,7 +528,7 @@ export async function updateExtractionField(
   extractionFieldId: string,
   payload: ExtractionFieldInput
 ): Promise<ExtractionField> {
-  return request(
+  return extractionFieldRequest(
     `${API_URL}/review-projects/${reviewProjectId}/extraction-fields/${extractionFieldId}`,
     {
       method: "PUT",

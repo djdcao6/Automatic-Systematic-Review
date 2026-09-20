@@ -2,11 +2,24 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as api from "@/lib/api";
+import { ExtractionFieldNameTakenError } from "@/lib/api";
 import type { ExtractionField } from "@/lib/api";
 
 import { ExtractionFieldsPanel } from "./ExtractionFieldsPanel";
 
-vi.mock("@/lib/api");
+// Automocking would also replace ExtractionFieldNameTakenError's constructor, so an
+// instance built in a test would lose its message: keep the real class, mock only
+// the functions.
+vi.mock("@/lib/api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/api")>();
+  return {
+    ...actual,
+    listExtractionFields: vi.fn(),
+    createExtractionField: vi.fn(),
+    updateExtractionField: vi.fn(),
+    archiveExtractionField: vi.fn(),
+  };
+});
 
 const mockedApi = vi.mocked(api);
 
@@ -100,6 +113,56 @@ describe("ExtractionFieldsPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: /add field/i }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(/failed to (add|create)/i);
+  });
+
+  it("shows the backend's message when the name is already taken", async () => {
+    const message =
+      'An active Extraction Field named "Sample size" already exists in this Review Project';
+    mockedApi.createExtractionField.mockRejectedValue(new ExtractionFieldNameTakenError(message));
+
+    render(<ExtractionFieldsPanel reviewProjectId="1" />);
+
+    await waitFor(() => expect(mockedApi.listExtractionFields).toHaveBeenCalledTimes(1));
+    fireEvent.change(screen.getByLabelText(/^name$/i), { target: { value: "Sample size" } });
+    fireEvent.click(screen.getByRole("button", { name: /add field/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(message);
+    // The Reviewer's input is kept, so they can change the name and try again.
+    expect(screen.getByLabelText(/^name$/i)).toHaveValue("Sample size");
+  });
+
+  it("shows the backend's message when a rename collides, and keeps the edit form open", async () => {
+    const message =
+      'An active Extraction Field named "Follow-up" already exists in this Review Project';
+    mockedApi.listExtractionFields.mockResolvedValue([sampleSizeField]);
+    mockedApi.updateExtractionField.mockRejectedValue(new ExtractionFieldNameTakenError(message));
+
+    render(<ExtractionFieldsPanel reviewProjectId="1" />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /edit/i }));
+    fireEvent.change(screen.getByDisplayValue("Sample size"), { target: { value: "Follow-up" } });
+    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(message);
+    expect(screen.getByDisplayValue("Follow-up")).toBeInTheDocument();
+  });
+
+  it("clears the name-taken message after a successful add", async () => {
+    mockedApi.createExtractionField
+      .mockRejectedValueOnce(new ExtractionFieldNameTakenError("Name taken already"))
+      .mockResolvedValueOnce(sampleSizeField);
+
+    render(<ExtractionFieldsPanel reviewProjectId="1" />);
+
+    await waitFor(() => expect(mockedApi.listExtractionFields).toHaveBeenCalledTimes(1));
+    fireEvent.change(screen.getByLabelText(/^name$/i), { target: { value: "Sample size" } });
+    fireEvent.click(screen.getByRole("button", { name: /add field/i }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Name taken already");
+
+    fireEvent.change(screen.getByLabelText(/^name$/i), { target: { value: "Follow-up" } });
+    fireEvent.click(screen.getByRole("button", { name: /add field/i }));
+
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
   });
 
   it("edits a field's name and description", async () => {

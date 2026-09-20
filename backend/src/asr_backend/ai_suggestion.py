@@ -208,10 +208,9 @@ def _build_user_message(
 
 
 def _build_full_text_tool(extraction_fields: list[ExtractionFieldSpec]) -> dict[str, Any]:
-    # Keyed by field id, not name: Extraction Field names aren't required to
-    # be unique (asr_backend.main's extraction-field routes don't enforce
-    # it), so a name-keyed schema could collapse two fields into one
-    # property and silently drop a proposed value.
+    # Keyed by field id, not name. Active names are unique per Review Project
+    # now (#67), but the id is what stays fixed when a field is renamed, and a
+    # name-keyed schema would silently drop a value if two ever collided.
     field_properties = {
         field.id: {
             "type": "string",

@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from asr_backend import models, schemas
@@ -160,6 +161,31 @@ def remove_co_reviewer(db: Session, project: models.ReviewProject) -> models.Rev
     return project
 
 
+class DuplicateExtractionFieldNameError(Exception):
+    def __init__(self, name: str):
+        super().__init__(
+            f'An active Extraction Field named "{name}" already exists in this Review Project'
+        )
+
+
+def _commit_extraction_field(db: Session, name: str) -> None:
+    """Commits, turning the unique name index refusing the write into a domain error (#67).
+
+    The index alone decides what counts as a duplicate (models.ExtractionField:
+    active fields only, case and edge whitespace ignored). Leaning on it, rather
+    than reading first and then writing, means two simultaneous requests cannot
+    both get through.
+    """
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        constraint = getattr(getattr(exc.orig, "diag", None), "constraint_name", None)
+        if constraint != models.EXTRACTION_FIELD_NAME_INDEX:
+            raise
+        raise DuplicateExtractionFieldNameError(name) from exc
+
+
 def create_extraction_field(
     db: Session, review_project_id: uuid.UUID, payload: schemas.ExtractionFieldCreate
 ) -> models.ExtractionField:
@@ -169,7 +195,7 @@ def create_extraction_field(
         description=payload.description,
     )
     db.add(field)
-    db.commit()
+    _commit_extraction_field(db, payload.name)
     db.refresh(field)
     return field
 
@@ -208,7 +234,7 @@ def update_extraction_field(
 ) -> models.ExtractionField:
     extraction_field.name = payload.name
     extraction_field.description = payload.description
-    db.commit()
+    _commit_extraction_field(db, payload.name)
     db.refresh(extraction_field)
     return extraction_field
 
@@ -540,8 +566,8 @@ def create_full_text_suggestion(
         db.rollback()
         return get_full_text_suggestion(db, citation_id)
 
-    # Keyed by field id, not name, since Extraction Field names aren't
-    # unique — see the matching note in asr_backend.ai_suggestion.
+    # Keyed by field id, not name — see the matching note in
+    # asr_backend.ai_suggestion.
     field_by_id = {str(field.id): field for field in active_fields}
     for field_id, value in extraction_values.items():
         field = field_by_id.get(field_id)
