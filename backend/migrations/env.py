@@ -59,6 +59,15 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
+    # A caller (the migration tests) can hand in its own connection, to run the
+    # migrations in a scratch schema instead of the configured database.
+    existing_connection = config.attributes.get("connection")
+    if existing_connection is not None:
+        context.configure(connection=existing_connection, target_metadata=target_metadata)
+        with context.begin_transaction():
+            context.run_migrations()
+        return
+
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",

@@ -22,6 +22,7 @@ from asr_backend import (
     schemas,
     screening,
     search_terms,
+    signup,
     upload_limits,
 )
 from asr_backend.ai_suggestion import AISuggester, get_ai_suggester
@@ -56,6 +57,14 @@ def register(
     payload: schemas.ReviewerCreate, request: Request, db: Session = Depends(get_db)
 ) -> models.Reviewer:
     rate_limit.register_attempts.enforce(request, payload.email)
+    if not signup.is_allowlisted(payload.email):
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Sign-up is invite only during the pilot. "
+                "Ask to be added, or accept an invitation from a Review Project's owner."
+            ),
+        )
     hashed_password = auth.hash_password(payload.password)
     reviewer = crud.create_reviewer(db, payload.email, hashed_password)
     if reviewer is None:
@@ -215,7 +224,10 @@ def accept_invitation_by_registering(
     if invitation.review_project.co_reviewer_id is not None:
         raise HTTPException(status_code=409, detail="Review Project already has a Co-Reviewer")
     hashed_password = auth.hash_password(payload.password)
-    reviewer = crud.create_reviewer(db, payload.email, hashed_password)
+    # Not subject to the sign-up allowlist: the Invitation is the admission. The
+    # account is marked invited_only, so it can work in this project but not
+    # create Review Projects of its own (#60).
+    reviewer = crud.create_reviewer(db, payload.email, hashed_password, invited_only=True)
     if reviewer is None:
         raise HTTPException(status_code=409, detail="Email is already registered")
     try:
@@ -263,6 +275,14 @@ def create_review_project(
     reviewer: models.Reviewer = Depends(auth.get_current_reviewer),
     db: Session = Depends(get_db),
 ) -> models.ReviewProject:
+    if not signup.can_create_review_projects(reviewer):
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Your account can work in the Review Project that invited you, "
+                "but creating Review Projects is invite only during the pilot."
+            ),
+        )
     try:
         billing.check_review_project_cap(db, reviewer.id)
     except billing.ReviewProjectCapError as exc:

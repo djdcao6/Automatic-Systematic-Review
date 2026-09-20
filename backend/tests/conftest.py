@@ -79,6 +79,12 @@ def _reset_rate_limits():
 
 
 @pytest.fixture(autouse=True)
+def _open_signup(monkeypatch):
+    # Tests register arbitrary emails; the allowlist tests set their own list (#60).
+    monkeypatch.setattr(settings, "signup_allowlist", "*")
+
+
+@pytest.fixture(autouse=True)
 def _full_text_storage(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "full_text_storage_path", str(tmp_path / "full_texts"))
 

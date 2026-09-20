@@ -80,7 +80,9 @@ export default function Home() {
       {error && (
         <p role="alert">
           {error.message}
-          {error.isCapError && <> <Link href="/account">Go to Account/Billing</Link></>}
+          {error.isCapError && billingEnabled && (
+            <> <Link href="/account">Go to Account/Billing</Link></>
+          )}
         </p>
       )}
       <form onSubmit={handleSubmit} className="create-form panel">

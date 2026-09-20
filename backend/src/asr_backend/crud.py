@@ -19,8 +19,12 @@ def get_reviewer_by_email(db: Session, email: str) -> models.Reviewer | None:
     return db.query(models.Reviewer).filter(models.Reviewer.email == email).one_or_none()
 
 
-def create_reviewer(db: Session, email: str, hashed_password: str) -> models.Reviewer | None:
-    stmt = pg_insert(models.Reviewer).values(email=email, hashed_password=hashed_password)
+def create_reviewer(
+    db: Session, email: str, hashed_password: str, *, invited_only: bool = False
+) -> models.Reviewer | None:
+    stmt = pg_insert(models.Reviewer).values(
+        email=email, hashed_password=hashed_password, invited_only=invited_only
+    )
     stmt = stmt.on_conflict_do_nothing(index_elements=[models.Reviewer.email]).returning(
         models.Reviewer.id
     )
