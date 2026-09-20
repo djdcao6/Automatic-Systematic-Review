@@ -21,6 +21,7 @@ from asr_backend import (
     schemas,
     screening,
     search_terms,
+    upload_limits,
 )
 from asr_backend.ai_suggestion import AISuggester, get_ai_suggester
 from asr_backend.db import get_db
@@ -34,6 +35,8 @@ from asr_backend.settings import settings
 
 app = FastAPI(title="Automatic Systematic Review API")
 
+# Added before CORS so CORS wraps it and a browser can read the 413 message.
+app.add_middleware(upload_limits.UploadSizeLimitMiddleware, rules=upload_limits.default_rules())
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[settings.frontend_origin],
@@ -491,12 +494,18 @@ def archive_extraction_field(
     response_model=schemas.CitationUploadResult,
     status_code=201,
 )
-async def upload_citations(
+def upload_citations(
     file: UploadFile,
     project: models.ReviewProject = Depends(get_review_project_or_404),
     db: Session = Depends(get_db),
 ) -> schemas.CitationUploadResult:
-    raw = await file.read()
+    # A plain `def`, so FastAPI runs it in a worker thread: parsing and the
+    # per-row import commits can't stall the event loop for other requests (#55).
+    raw = file.file.read(upload_limits.MAX_CITATION_FILE_BYTES + 1)
+    if len(raw) > upload_limits.MAX_CITATION_FILE_BYTES:
+        raise HTTPException(
+            status_code=413, detail=upload_limits.citation_file_too_large_message()
+        )
     try:
         content = raw.decode("utf-8")
     except UnicodeDecodeError as exc:
@@ -504,7 +513,7 @@ async def upload_citations(
 
     try:
         parsed = citation_import.parse_upload(file.filename or "", content)
-    except citation_import.UnsupportedFileType as exc:
+    except (citation_import.UnsupportedFileType, citation_import.TooManyRecords) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     created_ids = duplicates.import_citations(db, project, parsed.citations)
@@ -652,16 +661,34 @@ def record_screening_decision(
     response_model=schemas.FullTextRead,
     status_code=201,
 )
-async def upload_full_text(
+def upload_full_text(
     file: UploadFile,
     citation: models.Citation = Depends(get_citation_or_404),
     db: Session = Depends(get_db),
 ) -> models.FullText:
+    # A plain `def`, so PDF parsing runs in a worker thread and can't stall the
+    # event loop for other requests (#55).
+    if citation.archived:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "This Citation was merged into another as a duplicate. "
+                "Attach the Full Text to the Citation it was merged into."
+            ),
+        )
     if not full_text.is_pdf_upload(file.filename, file.content_type):
         raise HTTPException(status_code=422, detail="File must be a PDF")
 
-    raw = await file.read()
-    parsed_text, parse_status = full_text.extract_text(raw)
+    raw = file.file.read(upload_limits.MAX_PDF_BYTES + 1)
+    if len(raw) > upload_limits.MAX_PDF_BYTES:
+        raise HTTPException(status_code=413, detail=upload_limits.pdf_too_large_message())
+    if not full_text.has_pdf_header(raw):
+        raise HTTPException(status_code=422, detail="File is not a valid PDF")
+
+    try:
+        parsed_text, parse_status = full_text.extract_text(raw)
+    except full_text.PdfTooManyPages as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     file_path = full_text.save_pdf(citation.id, raw)
     result = crud.upsert_full_text(
         db,

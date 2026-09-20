@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 
 import rispy
 
+from asr_backend import upload_limits
+
 
 @dataclass
 class ParsedCitation:
@@ -23,6 +25,14 @@ class ImportResult:
 
 class UnsupportedFileType(Exception):
     pass
+
+
+class TooManyRecords(Exception):
+    def __init__(self, limit: int):
+        super().__init__(
+            f"File has more than {limit:,} records. "
+            "Split it into smaller files and upload them one at a time."
+        )
 
 
 def _clean(value: str | None) -> str | None:
@@ -46,7 +56,10 @@ def _parse_year(value: str | None) -> int | None:
 
 def parse_ris(content: str) -> ImportResult:
     result = ImportResult()
-    for index, entry in enumerate(rispy.loads(content), start=1):
+    entries = rispy.loads(content)
+    if len(entries) > upload_limits.MAX_CITATION_RECORDS:
+        raise TooManyRecords(upload_limits.MAX_CITATION_RECORDS)
+    for index, entry in enumerate(entries, start=1):
         title = _clean(entry.get("title"))
         if title is None:
             result.skipped.append((index, "missing title"))
@@ -74,6 +87,9 @@ def parse_csv(content: str) -> ImportResult:
         return row.get(source_key) if source_key else None
 
     for index, row in enumerate(reader, start=1):
+        # Checked per row so a file of blank-titled rows can't pile up in `skipped`.
+        if index > upload_limits.MAX_CITATION_RECORDS:
+            raise TooManyRecords(upload_limits.MAX_CITATION_RECORDS)
         title = _clean(get(row, "title"))
         if title is None:
             result.skipped.append((index, "missing title"))
