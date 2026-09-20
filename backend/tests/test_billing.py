@@ -259,7 +259,7 @@ def test_checkout_session_reuses_existing_stripe_customer(
 # --- POST /billing/webhook ---
 
 
-def test_webhook_rejects_invalid_signature(client, fake_gateway):
+def test_webhook_rejects_invalid_signature(client, billing_enabled, fake_gateway):
     response = client.post(
         "/billing/webhook",
         content=b"{}",
@@ -269,7 +269,9 @@ def test_webhook_rejects_invalid_signature(client, fake_gateway):
     assert response.status_code == 400
 
 
-def test_webhook_checkout_completed_creates_subscription(client, fake_gateway, db_session):
+def test_webhook_checkout_completed_creates_subscription(
+    client, billing_enabled, fake_gateway, db_session
+):
     headers = auth_headers_for(client, "owner@example.com")
     reviewer_id = client.get("/me", headers=headers).json()["id"]
     fake_gateway.event = {
@@ -298,7 +300,9 @@ def test_webhook_checkout_completed_creates_subscription(client, fake_gateway, d
     assert subscription.stripe_subscription_id == "sub_new"
 
 
-def test_webhook_subscription_updated_syncs_status(client, fake_gateway, db_session):
+def test_webhook_subscription_updated_syncs_status(
+    client, billing_enabled, fake_gateway, db_session
+):
     headers = auth_headers_for(client, "owner@example.com")
     reviewer_id = client.get("/me", headers=headers).json()["id"]
     db_session.add(
@@ -401,7 +405,7 @@ def test_portal_session_returns_stripe_url_for_paid_reviewer(
 
 
 def test_cancel_scheduled_but_not_effective_keeps_plan_paid(
-    client, fake_gateway, db_session
+    client, billing_enabled, fake_gateway, db_session
 ):
     """A Portal cancel sets cancel_at_period_end but Stripe's status stays
     'active' until the period actually ends — only then does it send
@@ -446,7 +450,9 @@ def test_cancel_scheduled_but_not_effective_keeps_plan_paid(
     assert billing.derive_plan(subscription) == "paid"
 
 
-def test_webhook_subscription_deleted_marks_canceled(client, fake_gateway, db_session):
+def test_webhook_subscription_deleted_marks_canceled(
+    client, billing_enabled, fake_gateway, db_session
+):
     headers = auth_headers_for(client, "owner@example.com")
     reviewer_id = client.get("/me", headers=headers).json()["id"]
     db_session.add(

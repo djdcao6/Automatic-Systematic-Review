@@ -97,13 +97,13 @@ def get_me(
 
 
 def require_billing_enabled() -> None:
-    """Gates every Reviewer-facing billing endpoint per #39's dark launch.
+    """Gates every billing endpoint per #39's dark launch, the webhook included (#58).
 
     While `billing_enabled` is False, these 404 exactly like a route that
     doesn't exist, rather than exposing Plan/Subscription state, so the
-    Account/Billing page has nothing to show. The webhook endpoint is
-    intentionally not gated by this — it's server-to-server, verified by
-    Stripe's signature rather than a Reviewer session.
+    Account/Billing page has nothing to show. The webhook is server-to-server,
+    verified by Stripe's signature rather than a Reviewer session; it is gated
+    too, because with billing off the Stripe settings may not exist.
     """
     if not settings.billing_enabled:
         raise HTTPException(status_code=404, detail="Not Found")
@@ -170,7 +170,11 @@ def create_portal_session(
     return schemas.PortalSessionRead(url=session.url)
 
 
-@app.post("/billing/webhook", status_code=204)
+@app.post(
+    "/billing/webhook",
+    status_code=204,
+    dependencies=[Depends(require_billing_enabled)],
+)
 async def stripe_webhook(
     request: Request,
     db: Session = Depends(get_db),
