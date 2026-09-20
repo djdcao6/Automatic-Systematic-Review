@@ -855,6 +855,7 @@ describe("CitationScreeningPage", () => {
 
     await waitFor(() => expect(mockedApi.uploadFullText).toHaveBeenCalled());
     await waitFor(() => expect(screen.queryByText(/old reasoning/i)).not.toBeInTheDocument());
+    expect(await screen.findByText(/could not check for a full-text suggestion/i)).toBeInTheDocument();
     expect(mockedApi.generateFullTextSuggestion).not.toHaveBeenCalled();
   });
 
