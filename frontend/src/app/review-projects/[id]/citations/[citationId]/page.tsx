@@ -155,6 +155,8 @@ function CitationScreening({
   const [ftDecision, setFtDecision] = useState<Decision | null>(null);
   const [needsFtChoice, setNeedsFtChoice] = useState(false);
   const [ftReason, setFtReason] = useState("");
+  // A Full-Text Exclude needs a reason, so PRISMA can itemize the exclusions (#66).
+  const [needsFtReason, setNeedsFtReason] = useState(false);
   const [ftError, setFtError] = useState<string | null>(null);
   const [ftSaved, setFtSaved] = useState(false);
   const [extractionInputs, setExtractionInputs] = useState<Record<string, string>>({});
@@ -326,11 +328,16 @@ function CitationScreening({
       setNeedsFtChoice(true);
       return;
     }
+    const ftReasonToSave = ftDecision === "exclude" ? blankOrValue(ftReason) : null;
+    if (ftDecision === "exclude" && ftReasonToSave === null) {
+      setNeedsFtReason(true);
+      return;
+    }
 
     try {
       const updated = await recordFullTextDecision(reviewProjectId, citationId, {
         decision: ftDecision,
-        reason: ftDecision === "exclude" ? blankOrValue(ftReason) : null,
+        reason: ftReasonToSave,
       });
       setCitation((current) => (current ? { ...current, full_text_decision: updated } : current));
       setFtSaved(true);
@@ -646,6 +653,7 @@ function CitationScreening({
                     onChange={(option) => {
                       setFtDecision(option);
                       setNeedsFtChoice(false);
+                      setNeedsFtReason(false);
                     }}
                   />
                   {needsFtChoice && <p role="alert">Choose Include, Exclude or Maybe first.</p>}
@@ -653,18 +661,37 @@ function CitationScreening({
                   {ftDecision === "exclude" && (
                     <>
                       <label htmlFor="full-text-decision-reason">Reason</label>
-                      <select
-                        id="full-text-decision-reason"
-                        value={ftReason}
-                        onChange={(event) => setFtReason(event.target.value)}
-                      >
-                        <option value="">Select a reason</option>
-                        {exclusionRules.map((rule) => (
-                          <option key={rule} value={rule}>
-                            {rule}
-                          </option>
-                        ))}
-                      </select>
+                      {exclusionRules.length > 0 ? (
+                        <select
+                          id="full-text-decision-reason"
+                          value={ftReason}
+                          onChange={(event) => {
+                            setFtReason(event.target.value);
+                            setNeedsFtReason(false);
+                          }}
+                        >
+                          <option value="">Select a reason</option>
+                          {exclusionRules.map((rule) => (
+                            <option key={rule} value={rule}>
+                              {rule}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        // No Exclusion Rules to pick from, and Criteria may already be
+                        // locked, so the Reviewer writes the reason instead of being
+                        // unable to exclude at all.
+                        <input
+                          id="full-text-decision-reason"
+                          type="text"
+                          value={ftReason}
+                          onChange={(event) => {
+                            setFtReason(event.target.value);
+                            setNeedsFtReason(false);
+                          }}
+                        />
+                      )}
+                      {needsFtReason && <p role="alert">Give a reason for the Exclude.</p>}
                     </>
                   )}
                 </fieldset>

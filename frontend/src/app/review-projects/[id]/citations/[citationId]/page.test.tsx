@@ -1023,6 +1023,111 @@ describe("CitationScreeningPage", () => {
     );
   });
 
+  it("will not save a Full-Text Exclude until a reason is chosen", async () => {
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+      screening_decision: null,
+      full_text: parsedFullText,
+    });
+    mockedApi.recordFullTextDecision.mockResolvedValue({
+      decision: "exclude",
+      reason: "Wrong population",
+      created_at: "2026-01-02T00:00:00Z",
+      updated_at: "2026-01-02T00:00:00Z",
+    });
+
+    renderPage();
+    const group = within(await screen.findByRole("group", { name: /full-text decision/i }));
+    fireEvent.click(group.getByLabelText("exclude"));
+    fireEvent.click(screen.getByRole("button", { name: /save full-text decision/i }));
+
+    expect(await screen.findByText(/give a reason for the exclude/i)).toBeInTheDocument();
+    expect(mockedApi.recordFullTextDecision).not.toHaveBeenCalled();
+
+    fireEvent.change(group.getByLabelText(/reason/i), { target: { value: "Wrong population" } });
+
+    expect(screen.queryByText(/give a reason for the exclude/i)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /save full-text decision/i }));
+    await waitFor(() =>
+      expect(mockedApi.recordFullTextDecision).toHaveBeenCalledWith("1", "c1", {
+        decision: "exclude",
+        reason: "Wrong population",
+      })
+    );
+  });
+
+  it("does not ask for a reason on an Include or a Maybe", async () => {
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+      screening_decision: null,
+      full_text: parsedFullText,
+    });
+    mockedApi.recordFullTextDecision.mockResolvedValue({
+      decision: "maybe",
+      reason: null,
+      created_at: "2026-01-02T00:00:00Z",
+      updated_at: "2026-01-02T00:00:00Z",
+    });
+
+    renderPage();
+    const group = within(await screen.findByRole("group", { name: /full-text decision/i }));
+    fireEvent.click(group.getByLabelText("maybe"));
+    fireEvent.click(screen.getByRole("button", { name: /save full-text decision/i }));
+
+    await waitFor(() =>
+      expect(mockedApi.recordFullTextDecision).toHaveBeenCalledWith("1", "c1", {
+        decision: "maybe",
+        reason: null,
+      })
+    );
+    expect(screen.queryByText(/give a reason for the exclude/i)).not.toBeInTheDocument();
+  });
+
+  it("lets the Reviewer write the reason when the Criteria have no exclusion rules to pick from", async () => {
+    mockedApi.getReviewProject.mockResolvedValue({
+      ...dualReviewProject,
+      review_mode: "solo",
+      co_reviewer_id: null,
+    });
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+      screening_decision: null,
+      full_text: parsedFullText,
+    });
+    mockedApi.recordFullTextDecision.mockResolvedValue({
+      decision: "exclude",
+      reason: "Conference abstract only",
+      created_at: "2026-01-02T00:00:00Z",
+      updated_at: "2026-01-02T00:00:00Z",
+    });
+
+    renderPage();
+    const group = within(await screen.findByRole("group", { name: /full-text decision/i }));
+    fireEvent.click(group.getByLabelText("exclude"));
+
+    const reasonField = group.getByLabelText(/reason/i);
+    expect(reasonField.tagName).toBe("INPUT");
+    fireEvent.click(screen.getByRole("button", { name: /save full-text decision/i }));
+    expect(await screen.findByText(/give a reason for the exclude/i)).toBeInTheDocument();
+    expect(mockedApi.recordFullTextDecision).not.toHaveBeenCalled();
+
+    fireEvent.change(reasonField, { target: { value: "  Conference abstract only  " } });
+    fireEvent.click(screen.getByRole("button", { name: /save full-text decision/i }));
+
+    await waitFor(() =>
+      expect(mockedApi.recordFullTextDecision).toHaveBeenCalledWith("1", "c1", {
+        decision: "exclude",
+        reason: "Conference abstract only",
+      })
+    );
+  });
+
   it("pre-fills the Full-Text Decision form from an existing decision", async () => {
     mockedApi.getCitation.mockResolvedValue({
       ...baseCitation,

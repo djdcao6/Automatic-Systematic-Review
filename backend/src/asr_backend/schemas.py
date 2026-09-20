@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 from pydantic_core import PydanticCustomError
 
 MAX_PASSWORD_BYTES = 72
@@ -236,6 +236,22 @@ class FullTextRead(BaseModel):
 class FullTextDecisionCreate(BaseModel):
     decision: Literal["include", "exclude", "maybe"]
     reason: str | None = None
+
+    @model_validator(mode="after")
+    def exclude_needs_a_reason(self) -> "FullTextDecisionCreate":
+        # PRISMA itemizes the reasons for full-text exclusions, so an Exclude
+        # without one is refused (#66). Title/abstract screening keeps its reason
+        # optional. Only requests are validated: rows recorded before this rule
+        # can have no reason, and copying one (duplicates.py) builds the model
+        # with model_construct, which skips this.
+        if self.decision == "exclude":
+            reason = (self.reason or "").strip()
+            if not reason:
+                raise PydanticCustomError(
+                    "reason_required", "A Full-Text Exclude needs a reason"
+                )
+            self.reason = reason
+        return self
 
 
 class FullTextDecisionRead(BaseModel):

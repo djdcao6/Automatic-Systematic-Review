@@ -1,6 +1,10 @@
 import io
+import uuid
 
 import pymupdf
+import pytest
+
+from asr_backend import models
 
 
 def create_project(authed_client, name: str = "My Review") -> str:
@@ -217,3 +221,116 @@ def test_record_full_text_decision_for_missing_citation_returns_404(authed_clien
     )
 
     assert response.status_code == 404
+
+
+# --- A Full-Text Exclude needs a reason (#66) ---------------------------------------------
+
+
+def _full_text_decision_url(project_id: str, citation_id: str) -> str:
+    return f"/review-projects/{project_id}/citations/{citation_id}/full-text-decision"
+
+
+def _citation_with_full_text(authed_client) -> tuple[str, str]:
+    project_id = create_project(authed_client)
+    citation_id = create_citation(authed_client, project_id)
+    attach_full_text(authed_client, project_id, citation_id)
+    return project_id, citation_id
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"decision": "exclude"},
+        {"decision": "exclude", "reason": None},
+        {"decision": "exclude", "reason": ""},
+        {"decision": "exclude", "reason": "   "},
+    ],
+)
+def test_a_full_text_exclude_without_a_reason_is_refused(authed_client, payload):
+    project_id, citation_id = _citation_with_full_text(authed_client)
+
+    response = authed_client.post(_full_text_decision_url(project_id, citation_id), json=payload)
+
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["msg"] == "A Full-Text Exclude needs a reason"
+    assert get_detail(authed_client, project_id, citation_id)["full_text_decision"] is None
+
+
+def test_a_full_text_exclude_with_a_reason_is_recorded_trimmed(authed_client):
+    project_id, citation_id = _citation_with_full_text(authed_client)
+
+    response = authed_client.post(
+        _full_text_decision_url(project_id, citation_id),
+        json={"decision": "exclude", "reason": "  Wrong population  "},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["reason"] == "Wrong population"
+
+
+@pytest.mark.parametrize("decision", ["include", "maybe"])
+def test_include_and_maybe_still_need_no_reason(authed_client, decision):
+    project_id, citation_id = _citation_with_full_text(authed_client)
+
+    response = authed_client.post(
+        _full_text_decision_url(project_id, citation_id), json={"decision": decision}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["reason"] is None
+
+
+def test_editing_an_exclude_to_have_no_reason_is_refused_and_keeps_the_old_one(authed_client):
+    project_id, citation_id = _citation_with_full_text(authed_client)
+    url = _full_text_decision_url(project_id, citation_id)
+    authed_client.post(url, json={"decision": "exclude", "reason": "Wrong population"})
+
+    response = authed_client.post(url, json={"decision": "exclude", "reason": ""})
+
+    assert response.status_code == 422
+    kept = get_detail(authed_client, project_id, citation_id)["full_text_decision"]
+    assert (kept["decision"], kept["reason"]) == ("exclude", "Wrong population")
+
+
+def test_title_and_abstract_screening_keeps_its_reason_optional(authed_client):
+    project_id = create_project(authed_client)
+    citation_id = create_citation(authed_client, project_id)
+
+    response = authed_client.post(
+        f"/review-projects/{project_id}/citations/{citation_id}/decision",
+        json={"decision": "exclude"},
+    )
+
+    assert response.status_code == 200
+
+
+def _legacy_reasonless_exclude(db_session, citation_id: str) -> None:
+    """A Full-Text Exclude recorded before a reason was required."""
+    db_session.add(
+        models.FullTextDecision(
+            citation_id=uuid.UUID(citation_id), decision="exclude", reason=None
+        )
+    )
+    db_session.commit()
+
+
+def test_a_legacy_exclude_without_a_reason_still_renders(authed_client, db_session):
+    project_id, citation_id = _citation_with_full_text(authed_client)
+    _legacy_reasonless_exclude(db_session, citation_id)
+
+    detail = get_detail(authed_client, project_id, citation_id)
+
+    assert detail["full_text_decision"]["decision"] == "exclude"
+    assert detail["full_text_decision"]["reason"] is None
+
+
+def test_a_legacy_exclude_without_a_reason_is_counted_in_the_flow_diagram(
+    authed_client, db_session
+):
+    project_id, citation_id = _citation_with_full_text(authed_client)
+    record_screening_decision(authed_client, project_id, citation_id, "include")
+    _legacy_reasonless_exclude(db_session, citation_id)
+
+    diagram = authed_client.get(f"/review-projects/{project_id}/flow-diagram").json()
+
+    assert diagram["full_text_excluded_by_reason"] == {"": 1}

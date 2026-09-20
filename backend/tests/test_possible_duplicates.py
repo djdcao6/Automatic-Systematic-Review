@@ -2,7 +2,7 @@ import uuid
 
 from conftest import auth_headers_for
 
-from asr_backend import crud, duplicates, schemas
+from asr_backend import crud, duplicates, models, schemas
 from asr_backend.citation_import import ParsedCitation
 
 CSV_HEADER = "title,abstract,authors,year,source,doi\n"
@@ -389,3 +389,61 @@ def test_solo_possible_duplicates_still_show_the_screening_decisions(authed_clie
 
     assert possible_duplicate["survivor"]["screening_decision"]["decision"] == "include"
     assert possible_duplicate["loser"]["screening_decision"]["decision"] == "exclude"
+
+
+# --- Copying a legacy Full-Text Exclude that has no reason (#66) -------------------------
+
+
+def _add_full_text_decision(db_session, citation_id, decision: str, reason: str | None) -> None:
+    db_session.add(
+        models.FullTextDecision(
+            citation_id=uuid.UUID(str(citation_id)), decision=decision, reason=reason
+        )
+    )
+    db_session.commit()
+
+
+def test_merging_copies_a_legacy_full_text_exclude_that_has_no_reason(authed_client, db_session):
+    project_id = create_project(authed_client)
+    upload_csv(authed_client, project_id, CSV_HEADER + row("Study", doi="10.1/x"))
+    survivor_id = list_citations(authed_client, project_id)[0]["id"]
+    loser = _seed_unmatched_citation(db_session, project_id, "Study", doi="10.1/x")
+    _add_full_text_decision(db_session, loser.id, "exclude", None)
+
+    duplicates.process_upload_matches(db_session, _get_project(db_session, project_id), [loser])
+
+    survivor = crud.get_citation(
+        db_session, _get_project(db_session, project_id).id, uuid.UUID(survivor_id)
+    )
+    assert survivor.full_text_decision.decision == "exclude"
+    assert survivor.full_text_decision.reason is None
+
+
+def test_resolving_can_pick_a_legacy_full_text_exclude_that_has_no_reason(
+    authed_client, db_session
+):
+    project_id = create_project(authed_client)
+    upload_csv(authed_client, project_id, CSV_HEADER + row("Study", doi="10.1/x"))
+    survivor_id = list_citations(authed_client, project_id)[0]["id"]
+    _add_full_text_decision(db_session, survivor_id, "include", None)
+    loser = _seed_unmatched_citation(db_session, project_id, "Study", doi="10.1/x")
+    _add_full_text_decision(db_session, loser.id, "exclude", None)
+    duplicates.process_upload_matches(db_session, _get_project(db_session, project_id), [loser])
+    pd_id = _get_pending_id(authed_client, project_id)
+
+    response = authed_client.post(
+        f"/review-projects/{project_id}/possible-duplicates/{pd_id}/resolve",
+        json={
+            "choices": [
+                {"field": "full_text_decision", "extraction_field_id": None, "winner": "loser"}
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    db_session.expire_all()
+    survivor = crud.get_citation(
+        db_session, _get_project(db_session, project_id).id, uuid.UUID(survivor_id)
+    )
+    assert survivor.full_text_decision.decision == "exclude"
+    assert survivor.full_text_decision.reason is None

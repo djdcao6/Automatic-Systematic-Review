@@ -171,6 +171,32 @@ describe("FlowDiagramPage", () => {
     expect(screen.getByText(/included: 1/i)).toBeInTheDocument();
   });
 
+  it("shows a full-text Exclude recorded without a reason as 'No reason recorded'", async () => {
+    mockedApi.getFlowDiagram.mockResolvedValue({
+      criteria: null,
+      identification_counts: { PubMed: 5 },
+      duplicates_removed: 0,
+      screened: 5,
+      excluded: 0,
+      pending: 0,
+      full_text_assessed: 3,
+      full_text_excluded_by_reason: { "Wrong population": 1, "": 2 },
+      full_text_included: 0,
+      full_text_pending: 0,
+    });
+
+    renderPage();
+
+    // In the funnel's itemized list...
+    expect(await screen.findByText(/^No reason recorded: 2$/)).toBeInTheDocument();
+    expect(screen.getByText(/^wrong population: 1$/i)).toBeInTheDocument();
+    // ...and in the plain numeric summary table.
+    expect(
+      screen.getByRole("rowheader", { name: "Full-Text Excluded (No reason recorded)" })
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/no reason given/i)).not.toBeInTheDocument();
+  });
+
   it("notes the full-text pending-decision count", async () => {
     mockedApi.getFlowDiagram.mockResolvedValue({
       criteria: null,
