@@ -9,7 +9,7 @@ import pymupdf
 import pytest
 from sqlalchemy.orm import Session
 
-from asr_backend import crud
+from asr_backend import crud, full_text_suggestion
 from asr_backend.ai_suggestion import (
     FullTextSuggestionResult,
     SuggestionGenerationError,
@@ -432,6 +432,70 @@ def test_a_failed_generation_is_reported_and_the_next_request_tries_again(authed
     assert detail["full_text_suggestion"] is None
     assert detail["full_text_suggestion_needs_generation"] is True
     assert failing.full_text_calls == 2
+
+
+class _HangingSuggester(_FakeSuggester):
+    """Never answers, like a model call that has stopped responding."""
+
+    async def suggest_full_text_decision(self, **kwargs):
+        self.full_text_calls += 1
+        await asyncio.sleep(3600)
+
+
+def test_a_model_call_that_never_answers_is_reported_and_frees_the_next_request(
+    authed_client, monkeypatch
+):
+    monkeypatch.setattr(full_text_suggestion, "GENERATION_TIMEOUT_SECONDS", 0.05)
+    project_id = create_project(authed_client)
+    citation_id = create_citation(authed_client, project_id)
+    upload_full_text(authed_client, project_id, citation_id, make_pdf())
+    hanging = _HangingSuggester()
+    app.dependency_overrides[get_ai_suggester] = lambda: hanging
+    try:
+        first = generate_suggestion(authed_client, project_id, citation_id)
+        second = generate_suggestion(authed_client, project_id, citation_id)
+    finally:
+        app.dependency_overrides.pop(get_ai_suggester, None)
+
+    for response in (first, second):
+        assert response.status_code == 200
+        assert response.json() == {
+            "suggestion": None,
+            "suggestion_unavailable_reason": "generation_failed",
+        }
+    # The second request got the lock back and tried the model itself.
+    assert hanging.full_text_calls == 2
+
+
+def test_a_request_stops_waiting_for_a_generation_that_takes_too_long(
+    authed_client, monkeypatch
+):
+    monkeypatch.setattr(full_text_suggestion, "GENERATION_WAIT_LIMIT_SECONDS", 0.3)
+    project_id = create_project(authed_client)
+    citation_id = create_citation(authed_client, project_id)
+    upload_full_text(authed_client, project_id, citation_id, make_pdf())
+    suggester = _GatedSuggester()
+    app.dependency_overrides[get_ai_suggester] = lambda: suggester
+    try:
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            leader = pool.submit(generate_suggestion, authed_client, project_id, citation_id)
+            assert suggester.entered.wait(timeout=10)
+            follower = generate_suggestion(authed_client, project_id, citation_id)
+            suggester.release.set()
+            leader_response = leader.result()
+    finally:
+        suggester.release.set()
+        app.dependency_overrides.pop(get_ai_suggester, None)
+
+    assert follower.status_code == 200
+    assert follower.json() == {
+        "suggestion": None,
+        "suggestion_unavailable_reason": "generation_failed",
+    }
+    # Giving up did not disturb the request that was doing the work.
+    assert leader_response.status_code == 200
+    assert leader_response.json()["suggestion"]["reason"] == "Answer 1"
+    assert suggester.full_text_calls == 1
 
 
 def test_replacing_the_pdf_clears_the_suggestion_and_the_next_request_generates_a_new_one(

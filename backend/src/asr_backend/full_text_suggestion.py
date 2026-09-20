@@ -1,4 +1,5 @@
 import asyncio
+import time
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -11,6 +12,12 @@ NO_FULL_TEXT = "no_full_text"
 PARSE_FAILED = "parse_failed"
 GENERATION_FAILED = "generation_failed"
 GENERATION_WAIT_SECONDS = 0.1
+# A model call that hangs must not hold the generation lock, or keep every other
+# request for the Citation polling, for the SDK's default of ten minutes and
+# retries. The wait limit is longer than one call so a follower can outlast a
+# leader that is merely slow, but not one that is stuck.
+GENERATION_TIMEOUT_SECONDS = 90
+GENERATION_WAIT_LIMIT_SECONDS = 120
 
 
 def read_full_text_suggestion(
@@ -46,6 +53,7 @@ async def get_or_generate_full_text_suggestion(
     prior Suggestion (asr_backend.crud.delete_full_text_suggestion, called
     from the full-text upload route), so the next access here regenerates it.
     """
+    waiting_since = time.monotonic()
     while True:
         existing, unavailable_reason, needs_generation = read_full_text_suggestion(
             db, citation, full_text
@@ -61,6 +69,8 @@ async def get_or_generate_full_text_suggestion(
         )
         if not has_generation_lock:
             db.rollback()
+            if time.monotonic() - waiting_since >= GENERATION_WAIT_LIMIT_SECONDS:
+                return None, GENERATION_FAILED
             await asyncio.sleep(GENERATION_WAIT_SECONDS)
             full_text = crud.get_full_text(db, citation.id)
             continue
@@ -83,22 +93,25 @@ async def get_or_generate_full_text_suggestion(
     full_text_stamp = full_text.updated_at
 
     try:
-        result = await suggester.suggest_full_text_decision(
-            full_text=full_text.parsed_text or "",
-            extraction_fields=[
-                ExtractionFieldSpec(
-                    id=str(field.id), name=field.name, description=field.description
-                )
-                for field in active_fields
-            ],
-            population=criteria.population if criteria else None,
-            intervention=criteria.intervention if criteria else None,
-            comparison=criteria.comparison if criteria else None,
-            outcome=criteria.outcome if criteria else None,
-            exclusion_rules=criteria.exclusion_rules if criteria else [],
-            notes=criteria.notes if criteria else None,
+        result = await asyncio.wait_for(
+            suggester.suggest_full_text_decision(
+                full_text=full_text.parsed_text or "",
+                extraction_fields=[
+                    ExtractionFieldSpec(
+                        id=str(field.id), name=field.name, description=field.description
+                    )
+                    for field in active_fields
+                ],
+                population=criteria.population if criteria else None,
+                intervention=criteria.intervention if criteria else None,
+                comparison=criteria.comparison if criteria else None,
+                outcome=criteria.outcome if criteria else None,
+                exclusion_rules=criteria.exclusion_rules if criteria else [],
+                notes=criteria.notes if criteria else None,
+            ),
+            timeout=GENERATION_TIMEOUT_SECONDS,
         )
-    except SuggestionGenerationError:
+    except (SuggestionGenerationError, TimeoutError):
         db.rollback()
         return None, GENERATION_FAILED
 
