@@ -5,20 +5,26 @@ import { type FormEvent, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
+import { AiConsentField } from "@/components/AiConsentField";
 import { registerReviewer } from "@/lib/api";
 
 export default function RegisterPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [aiConsent, setAiConsent] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+    if (!aiConsent) {
+      setError("Accept the AI disclosure to create an account.");
+      return;
+    }
 
     try {
-      await registerReviewer({ email, password });
+      await registerReviewer({ email, password, ai_consent: true });
       router.push("/login");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to register");
@@ -44,6 +50,7 @@ export default function RegisterPage() {
           value={password}
           onChange={(event) => setPassword(event.target.value)}
         />
+        <AiConsentField id="ai-consent" checked={aiConsent} onChange={setAiConsent} />
         <div className="form-actions">
           <button type="submit">Register</button>
         </div>

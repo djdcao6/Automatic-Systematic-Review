@@ -4,7 +4,7 @@ from asr_backend.settings import settings
 
 
 def _register(client, email="reviewer@example.com", password="correcthorse"):
-    return client.post("/register", json={"email": email, "password": password})
+    return client.post("/register", json={"email": email, "password": password, "ai_consent": True})
 
 
 def test_register_creates_reviewer(client):
@@ -47,7 +47,7 @@ def test_login_is_case_insensitive_on_email(client):
 
 def test_register_rejects_short_password(client):
     response = client.post(
-        "/register", json={"email": "reviewer@example.com", "password": "short"}
+        "/register", json={"email": "reviewer@example.com", "password": "short", "ai_consent": True}
     )
 
     assert response.status_code == 422
@@ -55,7 +55,7 @@ def test_register_rejects_short_password(client):
 
 def test_register_rejects_invalid_email(client):
     response = client.post(
-        "/register", json={"email": "not-an-email", "password": "correcthorse"}
+        "/register", json={"email": "not-an-email", "password": "correcthorse", "ai_consent": True}
     )
 
     assert response.status_code == 422

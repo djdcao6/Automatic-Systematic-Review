@@ -4,6 +4,7 @@ import { type FormEvent, useEffect, useState } from "react";
 
 import { useRouter } from "next/navigation";
 
+import { AiConsentField } from "@/components/AiConsentField";
 import {
   acceptInvitationByLoggingIn,
   acceptInvitationByRegistering,
@@ -24,6 +25,7 @@ export default function AcceptInvitationPage({
 
   const [registerEmail, setRegisterEmail] = useState("");
   const [registerPassword, setRegisterPassword] = useState("");
+  const [aiConsent, setAiConsent] = useState(false);
   const [registerError, setRegisterError] = useState<string | null>(null);
 
   const [loginEmail, setLoginEmail] = useState("");
@@ -47,10 +49,15 @@ export default function AcceptInvitationPage({
     event.preventDefault();
     if (!token) return;
     setRegisterError(null);
+    if (!aiConsent) {
+      setRegisterError("Accept the AI disclosure to create an account.");
+      return;
+    }
     try {
       const result = await acceptInvitationByRegistering(token, {
         email: registerEmail,
         password: registerPassword,
+        ai_consent: true,
       });
       storeToken(result.access_token);
       router.push(`/review-projects/${result.review_project_id}`);
@@ -124,6 +131,7 @@ export default function AcceptInvitationPage({
             value={registerPassword}
             onChange={(event) => setRegisterPassword(event.target.value)}
           />
+          <AiConsentField id="register-ai-consent" checked={aiConsent} onChange={setAiConsent} />
           <div className="form-actions">
             <button type="submit">Register &amp; Join</button>
           </div>

@@ -156,7 +156,7 @@ def _login(client, email, password=PASSWORD, **kwargs):
 
 
 def _register(client, email, password=PASSWORD):
-    return client.post("/register", json={"email": email, "password": password})
+    return client.post("/register", json={"email": email, "password": password, "ai_consent": True})
 
 
 def _invitation_token(client) -> str:
@@ -285,7 +285,7 @@ def test_invitation_accept_register_shares_the_register_budget(client, monkeypat
 
     response = client.post(
         f"/invitations/{token}/accept-register",
-        json={"email": "second@example.com", "password": PASSWORD},
+        json={"email": "second@example.com", "password": PASSWORD, "ai_consent": True},
     )
 
     assert response.status_code == 429

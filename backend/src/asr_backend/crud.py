@@ -3,7 +3,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -20,11 +20,35 @@ def get_reviewer_by_email(db: Session, email: str) -> models.Reviewer | None:
     return db.query(models.Reviewer).filter(models.Reviewer.email == email).one_or_none()
 
 
+def record_ai_consent(db: Session, reviewer: models.Reviewer) -> models.Reviewer:
+    """Stamps the time a Reviewer accepted the AI disclosure, keeping the first one.
+
+    A no-op if they already accepted, so asking twice (two tabs, a retry) never
+    moves the recorded time.
+    """
+    db.execute(
+        update(models.Reviewer)
+        .where(models.Reviewer.id == reviewer.id, models.Reviewer.ai_consent_at.is_(None))
+        .values(ai_consent_at=datetime.now(UTC))
+    )
+    db.commit()
+    db.refresh(reviewer)
+    return reviewer
+
+
 def create_reviewer(
-    db: Session, email: str, hashed_password: str, *, invited_only: bool = False
+    db: Session,
+    email: str,
+    hashed_password: str,
+    *,
+    invited_only: bool = False,
+    ai_consent_at: datetime | None = None,
 ) -> models.Reviewer | None:
     stmt = pg_insert(models.Reviewer).values(
-        email=email, hashed_password=hashed_password, invited_only=invited_only
+        email=email,
+        hashed_password=hashed_password,
+        invited_only=invited_only,
+        ai_consent_at=ai_consent_at,
     )
     stmt = stmt.on_conflict_do_nothing(index_elements=[models.Reviewer.email]).returning(
         models.Reviewer.id

@@ -110,7 +110,7 @@ def auth_headers_for(client, email: str) -> dict[str, str]:
     Shared by tests that need more than one distinct Reviewer identity (e.g.
     an owner and a non-owner) to check #24's ownership scoping.
     """
-    client.post("/register", json={"email": email, "password": "correcthorse"})
+    client.post("/register", json={"email": email, "password": "correcthorse", "ai_consent": True})
     token = client.post(
         "/login", json={"email": email, "password": "correcthorse"}
     ).json()["access_token"]

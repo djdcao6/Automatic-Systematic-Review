@@ -335,3 +335,59 @@ def test_the_truncated_downgrade_drops_the_column_and_keeps_the_suggestions(migr
 
     assert _truncated_column(connection) is None
     assert connection.execute(text("SELECT count(*) FROM full_text_suggestions")).scalar_one() == 1
+
+
+# --- AI consent time on Reviewers (#61) -----------------------------------------------------
+
+AI_CONSENT = "d5a1e8c47b02"
+
+
+def _ai_consent_column(connection):
+    return connection.execute(
+        text(
+            "SELECT is_nullable, data_type FROM information_schema.columns "
+            "WHERE table_schema = :schema AND table_name = 'reviewers' "
+            "AND column_name = 'ai_consent_at'"
+        ),
+        {"schema": SCHEMA},
+    ).one_or_none()
+
+
+def test_ai_consent_at_is_added_nullable_and_empty_for_existing_reviewers(migrations):
+    config, connection = migrations
+    _upgrade(config, connection, TRUNCATED_SUGGESTIONS)
+    assert _ai_consent_column(connection) is None
+    connection.execute(
+        text(
+            "INSERT INTO reviewers (id, email, hashed_password, created_at) "
+            "VALUES (gen_random_uuid(), 'existing@example.com', 'x', now())"
+        )
+    )
+    connection.commit()
+
+    _upgrade(config, connection, AI_CONSENT)
+
+    is_nullable, data_type = _ai_consent_column(connection)
+    assert is_nullable == "YES"
+    assert data_type == "timestamp with time zone"
+    # An existing account has not been shown the notice, so it has no consent time.
+    assert connection.execute(text("SELECT ai_consent_at FROM reviewers")).scalar_one() is None
+
+
+def test_the_ai_consent_downgrade_drops_the_column_and_keeps_the_reviewers(migrations):
+    config, connection = migrations
+    _upgrade(config, connection, AI_CONSENT)
+    connection.execute(
+        text(
+            "INSERT INTO reviewers (id, email, hashed_password, created_at, ai_consent_at) "
+            "VALUES (gen_random_uuid(), 'member@example.com', 'x', now(), now())"
+        )
+    )
+    connection.commit()
+
+    _downgrade(config, connection, TRUNCATED_SUGGESTIONS)
+
+    assert _ai_consent_column(connection) is None
+    assert connection.execute(text("SELECT email FROM reviewers")).scalar_one() == (
+        "member@example.com"
+    )

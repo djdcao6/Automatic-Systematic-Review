@@ -144,7 +144,7 @@ def test_co_reviewer_passes_the_representative_endpoints_gate(client, owner_head
     ).json()["token"]
     co_reviewer_token = client.post(
         f"/invitations/{invitation_token}/accept-register",
-        json={"email": "co-reviewer@example.com", "password": "correcthorse"},
+        json={"email": "co-reviewer@example.com", "password": "correcthorse", "ai_consent": True},
     ).json()["access_token"]
     co_reviewer_headers = {"Authorization": f"Bearer {co_reviewer_token}"}
     client.post(
@@ -184,7 +184,7 @@ def test_co_reviewer_cannot_manage_invitations(client, owner_headers):
     ).json()["token"]
     co_reviewer_token = client.post(
         f"/invitations/{invitation_token}/accept-register",
-        json={"email": "co-reviewer@example.com", "password": "correcthorse"},
+        json={"email": "co-reviewer@example.com", "password": "correcthorse", "ai_consent": True},
     ).json()["access_token"]
     co_reviewer_headers = {"Authorization": f"Bearer {co_reviewer_token}"}
 

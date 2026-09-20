@@ -37,6 +37,10 @@ class Reviewer(Base):
     invited_only: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=false()
     )
+    # When the Reviewer accepted that abstracts, PDFs and criteria are sent to
+    # Anthropic's API (#61). Set at sign-up; null on an account that pre-dates the
+    # notice, which is asked once, before its first AI request.
+    ai_consent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class Subscription(Base):

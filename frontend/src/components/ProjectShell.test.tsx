@@ -52,6 +52,7 @@ describe("ProjectShell", () => {
       id: "owner-1",
       email: "owner@example.com",
       created_at: "2026-01-01T00:00:00Z",
+      ai_consent_at: "2026-01-01T00:00:00Z",
     });
     mockedApi.getReviewProject.mockResolvedValue(baseProject);
   });
@@ -121,6 +122,7 @@ describe("ProjectShell", () => {
       id: "someone-else",
       email: "co@example.com",
       created_at: "2026-01-01T00:00:00Z",
+      ai_consent_at: "2026-01-01T00:00:00Z",
     });
 
     render(
@@ -166,7 +168,7 @@ describe("ProjectShell", () => {
     expect(screen.queryByRole("navigation", { name: "Project" })).not.toBeInTheDocument();
 
     await act(async () => {
-      resolveMe({ id: "owner-1", email: "owner@example.com", created_at: "2026-01-01T00:00:00Z" });
+      resolveMe({ id: "owner-1", email: "owner@example.com", created_at: "2026-01-01T00:00:00Z", ai_consent_at: "2026-01-01T00:00:00Z" });
     });
 
     expect(screen.getByRole("link", { name: "Invitations" })).toBeInTheDocument();
@@ -184,6 +186,98 @@ describe("ProjectShell", () => {
 
     expect(await screen.findByText("probe: 1 not-owner")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Invitations" })).not.toBeInTheDocument();
+  });
+
+  describe("an account that pre-dates the AI disclosure", () => {
+    const withoutConsent = {
+      id: "owner-1",
+      email: "owner@example.com",
+      created_at: "2026-01-01T00:00:00Z",
+      ai_consent_at: null,
+    };
+
+    it("is shown the notice instead of the project, so no page can send an AI request first", async () => {
+      mockedApi.getMe.mockResolvedValue(withoutConsent);
+
+      render(
+        <ProjectShell reviewProjectId="1">
+          <Probe />
+        </ProjectShell>
+      );
+
+      const dialog = await screen.findByRole("dialog", { name: /before you continue/i });
+      expect(dialog).toHaveTextContent(/sent to anthropic's api/i);
+      expect(dialog).toHaveTextContent(/patient-identifiable data/i);
+      expect(screen.queryByText(/probe:/)).not.toBeInTheDocument();
+      expect(screen.queryByRole("navigation", { name: "Project" })).not.toBeInTheDocument();
+      expect(mockedApi.acceptAiConsent).not.toHaveBeenCalled();
+    });
+
+    it("records the agreement and then shows the project", async () => {
+      mockedApi.getMe.mockResolvedValue(withoutConsent);
+      mockedApi.acceptAiConsent.mockResolvedValue({
+        ...withoutConsent,
+        ai_consent_at: "2026-09-20T12:00:00Z",
+      });
+      render(
+        <ProjectShell reviewProjectId="1">
+          <Probe />
+        </ProjectShell>
+      );
+
+      fireEvent.click(await screen.findByRole("button", { name: "I understand" }));
+
+      expect(await screen.findByText("probe: 1 owner")).toBeInTheDocument();
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+      expect(mockedApi.acceptAiConsent).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps the project hidden and says so when the agreement cannot be recorded", async () => {
+      mockedApi.getMe.mockResolvedValue(withoutConsent);
+      mockedApi.acceptAiConsent.mockRejectedValue(new Error("Failed to record your agreement"));
+      render(
+        <ProjectShell reviewProjectId="1">
+          <Probe />
+        </ProjectShell>
+      );
+
+      fireEvent.click(await screen.findByRole("button", { name: "I understand" }));
+
+      expect(await screen.findByRole("alert")).toHaveTextContent("Failed to record your agreement");
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+      expect(screen.queryByText(/probe:/)).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "I understand" })).toBeEnabled();
+    });
+
+    it("can try again after a failure", async () => {
+      mockedApi.getMe.mockResolvedValue(withoutConsent);
+      mockedApi.acceptAiConsent
+        .mockRejectedValueOnce(new Error("Failed to record your agreement"))
+        .mockResolvedValueOnce({ ...withoutConsent, ai_consent_at: "2026-09-20T12:00:00Z" });
+      render(
+        <ProjectShell reviewProjectId="1">
+          <Probe />
+        </ProjectShell>
+      );
+      fireEvent.click(await screen.findByRole("button", { name: "I understand" }));
+      await screen.findByRole("alert");
+
+      fireEvent.click(screen.getByRole("button", { name: "I understand" }));
+
+      expect(await screen.findByText("probe: 1 owner")).toBeInTheDocument();
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    });
+  });
+
+  it("does not show the notice to an account that already agreed", async () => {
+    render(
+      <ProjectShell reviewProjectId="1">
+        <Probe />
+      </ProjectShell>
+    );
+
+    expect(await screen.findByText("probe: 1 owner")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("never shows the previous project while a different one loads", async () => {

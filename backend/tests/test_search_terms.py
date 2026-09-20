@@ -554,7 +554,7 @@ def test_co_reviewer_can_use_search_terms_endpoints(client):
     ).json()["token"]
     co_reviewer_token = client.post(
         f"/invitations/{invitation_token}/accept-register",
-        json={"email": "co-reviewer-search-terms@example.com", "password": "correcthorse"},
+        json={"email": "co-reviewer-search-terms@example.com", "password": "correcthorse", "ai_consent": True},
     ).json()["access_token"]
     co_reviewer_headers = {"Authorization": f"Bearer {co_reviewer_token}"}
 

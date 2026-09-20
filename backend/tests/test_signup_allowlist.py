@@ -14,7 +14,7 @@ def _allow(monkeypatch, value: str) -> None:
 
 
 def _register(client, email: str):
-    return client.post("/register", json={"email": email, "password": PASSWORD})
+    return client.post("/register", json={"email": email, "password": PASSWORD, "ai_consent": True})
 
 
 def _login(client, email: str):
@@ -37,7 +37,7 @@ def _dual_project_with_invitation(client, owner_headers) -> tuple[str, str]:
 
 def _accept_by_registering(client, token: str, email: str):
     return client.post(
-        f"/invitations/{token}/accept-register", json={"email": email, "password": PASSWORD}
+        f"/invitations/{token}/accept-register", json={"email": email, "password": PASSWORD, "ai_consent": True}
     )
 
 

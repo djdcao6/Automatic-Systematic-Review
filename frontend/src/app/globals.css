@@ -281,6 +281,23 @@
     cursor: pointer;
   }
 
+  /* The required AI-disclosure checkbox on the sign-up forms (#61): a checkbox
+     beside sentence-length text, so the box sits on the first line. */
+  label.consent {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.625rem;
+    margin: 1.25rem 0 0;
+    font-size: 0.875rem;
+    font-weight: 400;
+    line-height: 1.45;
+    cursor: pointer;
+  }
+  label.consent input {
+    flex: none;
+    margin-top: 0.1875rem;
+  }
+
   /* Messages */
   [role="alert"],
   [role="status"] {
