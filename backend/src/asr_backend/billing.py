@@ -118,6 +118,13 @@ class StripeGateway:
 
 @lru_cache
 def get_stripe_gateway() -> StripeGateway:
+    # Settings refuses to start with billing on and a Stripe value missing, and
+    # every route that reaches here is gated on billing being on. This only
+    # turns a wiring mistake into a clear error instead of a Stripe 401.
+    if not (
+        settings.stripe_secret_key and settings.stripe_webhook_secret and settings.stripe_price_id
+    ):
+        raise RuntimeError("Stripe is not configured (see the STRIPE_* settings)")
     return StripeGateway(
         secret_key=settings.stripe_secret_key,
         webhook_secret=settings.stripe_webhook_secret,
