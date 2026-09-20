@@ -3,6 +3,7 @@ import io
 import uuid
 
 import pymupdf
+import pytest
 from conftest import auth_headers_for
 
 from asr_backend import export, models
@@ -701,3 +702,151 @@ def test_solo_export_is_byte_for_byte_unchanged_for_an_undecided_citation(authed
     response = authed_client.get(f"/review-projects/{project_id}/export")
 
     assert response.text == SOLO_BARE_EXPORT
+
+
+# --- Spreadsheet formulas (#57) ------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        # Each prefix a spreadsheet reads as a formula gets a single quote.
+        ("=1+1", "'=1+1"),
+        ("+1", "'+1"),
+        ("@SUM(A1)", "'@SUM(A1)"),
+        ("\tcell", "'\tcell"),
+        ("\rcell", "'\rcell"),
+        # A minus does too, unless a digit follows it.
+        ("-", "'-"),
+        ("-abc", "'-abc"),
+        ("--1", "'--1"),
+        ("- 5", "'- 5"),
+        ("-.5", "'-.5"),
+        ("-²", "'-²"),
+        # A negative number with an optional unit is a result, not a formula.
+        ("-5", "-5"),
+        ("-5 mmHg", "-5 mmHg"),
+        ("-0.3", "-0.3"),
+        ("-5mmHg", "-5mmHg"),
+        ("-5 mg/dL", "-5 mg/dL"),
+        ("-5%", "-5%"),
+        ("-2.5 °C", "-2.5 °C"),
+        ("-1,000 mL", "-1,000 mL"),
+        ("-5 mm Hg", "-5 mm Hg"),
+        # Anything else after the number gets the quote.
+        ("-5+2", "'-5+2"),
+        ("-5-2", "'-5-2"),
+        ("-1 =2", "'-1 =2"),
+        ("-5 to -2 mmHg", "'-5 to -2 mmHg"),
+        ("-0.3 (95% CI -0.5 to -0.1)", "'-0.3 (95% CI -0.5 to -0.1)"),
+        ("-5 A1", "'-5 A1"),
+        ("-5 mm|x", "'-5 mm|x"),
+        ("-5 mmHg ", "'-5 mmHg "),
+        ("-5  mmHg", "'-5  mmHg"),
+        ("-5\tmmHg", "'-5\tmmHg"),
+        ("-5\nmmHg", "'-5\nmmHg"),
+        ("-5\r", "'-5\r"),
+        # Anything else passes through unchanged, including trigger characters
+        # that are not first.
+        ("", ""),
+        ("Study", "Study"),
+        ("5", "5"),
+        ("a=b", "a=b"),
+        ("x+y", "x+y"),
+        ("x-y", "x-y"),
+        ("email me @ home", "email me @ home"),
+        (" =1+1", " =1+1"),
+        ("# comment", "# comment"),
+        # Not text: left alone (the year).
+        (2020, 2020),
+        (-5, -5),
+    ],
+)
+def test_neutralize_cell(value, expected):
+    assert export.neutralize_cell(value) == expected
+
+
+def test_neutralize_cell_stays_fast_on_a_long_value_that_almost_matches():
+    # A pattern that backtracks badly would hang here instead of failing.
+    almost = "-5 " + "mmHg " * 20_000 + "!"
+
+    assert export.neutralize_cell(almost) == "'" + almost
+
+
+def test_export_neutralizes_formulas_in_every_text_column_and_the_header_row(authed_client):
+    project_id = create_project(authed_client)
+    field = create_extraction_field(authed_client, project_id, name="=cmd")
+    upload_csv(
+        authed_client,
+        project_id,
+        CSV_HEADER + "=title,+abstract,@author,2020,-source\n",
+    )
+    citation_id = authed_client.get(f"/review-projects/{project_id}/citations").json()[0]["id"]
+    generate_ai_suggestion(authed_client, project_id, citation_id, "include", "=ai reason")
+    authed_client.post(
+        f"/review-projects/{project_id}/citations/{citation_id}/decision",
+        json={"decision": "exclude", "reason": "+human reason"},
+    )
+    attach_full_text(authed_client, project_id, citation_id)
+    record_full_text_decision(authed_client, project_id, citation_id, "exclude", "@full text reason")
+    record_extraction_value(authed_client, project_id, citation_id, field["id"], "=1+1")
+
+    response = authed_client.get(f"/review-projects/{project_id}/export")
+
+    assert response.text.splitlines()[0].endswith(",'=cmd")
+    row = parse_export(response)[0]
+    assert row["title"] == "'=title"
+    assert row["abstract"] == "'+abstract"
+    assert row["authors"] == "'@author"
+    assert row["source"] == "'-source"
+    assert row["reason"] == "'+human reason"
+    assert row["ai_suggestion_reason"] == "'=ai reason"
+    assert row["full_text_reason"] == "'@full text reason"
+    assert row["'=cmd"] == "'=1+1"
+    # Numbers and clean text are untouched.
+    assert row["year"] == "2020"
+    assert row["screening_decision"] == "exclude"
+
+
+def test_export_leaves_a_negative_number_in_an_extraction_value_as_is(authed_client):
+    project_id = create_project(authed_client)
+    field = create_extraction_field(authed_client, project_id, name="Change")
+    upload_csv(authed_client, project_id, CSV_HEADER + "Study,An abstract,Author,2020,PubMed\n")
+    citation_id = authed_client.get(f"/review-projects/{project_id}/citations").json()[0]["id"]
+    record_extraction_value(authed_client, project_id, citation_id, field["id"], "-5 mmHg")
+
+    response = authed_client.get(f"/review-projects/{project_id}/export")
+
+    assert parse_export(response)[0]["Change"] == "-5 mmHg"
+
+
+def test_export_criteria_block_stays_inert_when_a_value_has_line_breaks(authed_client):
+    project_id = create_project(authed_client)
+    save_criteria(
+        authed_client,
+        project_id,
+        population="Adults\n=1+1",
+        notes="first\r\n+second\r@third",
+        exclusion_rules=["one\n-two", "plain"],
+    )
+    upload_csv(authed_client, project_id, CSV_HEADER + "Study,An abstract,Author,2020,PubMed\n")
+
+    response = authed_client.get(f"/review-projects/{project_id}/export")
+
+    lines = response.text.splitlines()
+    block = lines[: lines.index("")]
+    assert all(line.startswith("# ") for line in block)
+    assert block == [
+        "# Review Project Criteria",
+        "# Population: Adults",
+        "# =1+1",
+        "# Intervention: ",
+        "# Comparison: ",
+        "# Outcome: ",
+        "# Exclusion Rules: one",
+        "# -two; plain",
+        "# Notes: first",
+        "# +second",
+        "# @third",
+    ]
+    assert lines[len(block) + 1] == ",".join(export.CSV_HEADER)
