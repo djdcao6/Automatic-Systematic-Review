@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
+from asr_backend import rate_limit
 from asr_backend.db import Base, get_db
 from asr_backend.main import app
 from asr_backend.settings import settings
@@ -66,6 +67,14 @@ def _serialize_test_database_access(request):
 def _reset_db():
     Base.metadata.drop_all(bind=test_engine)
     Base.metadata.create_all(bind=test_engine)
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limits():
+    # Every test signs in from the same address; without this the limits (#59)
+    # would trip partway through the suite.
+    rate_limit.reset_all()
     yield
 
 

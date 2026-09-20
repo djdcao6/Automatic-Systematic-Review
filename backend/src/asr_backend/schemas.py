@@ -3,6 +3,9 @@ from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic_core import PydanticCustomError
+
+MAX_PASSWORD_BYTES = 72
 
 
 def _require_non_blank(value: str) -> str:
@@ -18,12 +21,28 @@ def _normalize_email(value: EmailStr) -> str:
 
 class ReviewerCreate(BaseModel):
     email: EmailStr
-    password: str = Field(min_length=8, max_length=72)
+    password: str = Field(min_length=8)
 
     @field_validator("email")
     @classmethod
     def normalize_email(cls, value: EmailStr) -> str:
         return _normalize_email(value)
+
+    @field_validator("password")
+    @classmethod
+    def password_fits_bcrypt(cls, value: str) -> str:
+        # bcrypt reads at most 72 bytes. Counted in bytes, not characters: accented
+        # letters and emoji take 2 to 4 bytes each.
+        if len(value.encode("utf-8")) > MAX_PASSWORD_BYTES:
+            # A custom error, so the message reaches the user without Pydantic's
+            # "Value error, " prefix.
+            raise PydanticCustomError(
+                "password_too_long",
+                "Password must be at most {max_bytes} bytes "
+                "(accented letters and emoji count as more than one)",
+                {"max_bytes": MAX_PASSWORD_BYTES},
+            )
+        return value
 
 
 class ReviewerRead(BaseModel):

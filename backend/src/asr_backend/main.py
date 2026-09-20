@@ -18,6 +18,7 @@ from asr_backend import (
     full_text_suggestion,
     invitations,
     models,
+    rate_limit,
     schemas,
     screening,
     search_terms,
@@ -51,7 +52,10 @@ def health() -> dict[str, str]:
 
 
 @app.post("/register", response_model=schemas.ReviewerRead, status_code=201)
-def register(payload: schemas.ReviewerCreate, db: Session = Depends(get_db)) -> models.Reviewer:
+def register(
+    payload: schemas.ReviewerCreate, request: Request, db: Session = Depends(get_db)
+) -> models.Reviewer:
+    rate_limit.register_attempts.enforce(request, payload.email)
     hashed_password = auth.hash_password(payload.password)
     reviewer = crud.create_reviewer(db, payload.email, hashed_password)
     if reviewer is None:
@@ -60,7 +64,10 @@ def register(payload: schemas.ReviewerCreate, db: Session = Depends(get_db)) -> 
 
 
 @app.post("/login", response_model=schemas.Token)
-def login(payload: schemas.ReviewerLogin, db: Session = Depends(get_db)) -> schemas.Token:
+def login(
+    payload: schemas.ReviewerLogin, request: Request, db: Session = Depends(get_db)
+) -> schemas.Token:
+    rate_limit.login_attempts.enforce(request, payload.email)
     reviewer = crud.get_reviewer_by_email(db, payload.email)
     # Verify against a dummy hash when the email is unknown so an unknown
     # email doesn't return measurably faster than a wrong password would,
@@ -193,9 +200,11 @@ def get_invitation_public(
 )
 def accept_invitation_by_registering(
     payload: schemas.ReviewerCreate,
+    request: Request,
     invitation: models.Invitation = Depends(get_invitation_by_token_or_404),
     db: Session = Depends(get_db),
 ) -> schemas.InvitationAcceptRead:
+    rate_limit.register_attempts.enforce(request, payload.email)
     # Both checked before creating an account, so a revoked/already-accepted
     # link, or one for a project that already has a Co-Reviewer, can't leave
     # behind a Reviewer account no Invitation actually admits. accept_invitation
@@ -223,9 +232,11 @@ def accept_invitation_by_registering(
 )
 def accept_invitation_by_logging_in(
     payload: schemas.ReviewerLogin,
+    request: Request,
     invitation: models.Invitation = Depends(get_invitation_by_token_or_404),
     db: Session = Depends(get_db),
 ) -> schemas.InvitationAcceptRead:
+    rate_limit.login_attempts.enforce(request, payload.email)
     if invitation.status != "pending":
         raise HTTPException(status_code=409, detail="Invitation is no longer valid")
     reviewer = crud.get_reviewer_by_email(db, payload.email)

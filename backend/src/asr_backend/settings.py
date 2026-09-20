@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     anthropic_model: str = "claude-haiku-4-5"
     full_text_storage_path: str = "./storage/full_texts"
     jwt_secret_key: str
+    # Reverse proxies in front of the app. Used to find the caller's address for
+    # the login and sign-up rate limits; leave at 0 when nothing is in front.
+    trusted_proxy_count: int = 0
     billing_enabled: bool = False
     stripe_secret_key: str
     stripe_publishable_key: str
