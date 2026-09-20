@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from asr_backend import crud, models
 from asr_backend.db import get_db
+from asr_backend.schemas import MAX_PASSWORD_BYTES
 from asr_backend.settings import settings
 
 _ALGORITHM = "HS256"
@@ -29,7 +30,12 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(password: str, hashed_password: str) -> bool:
-    return bcrypt.checkpw(password.encode("utf-8"), hashed_password.encode("utf-8"))
+    encoded = password.encode("utf-8")
+    # bcrypt raises on more than 72 bytes. Registration rejects such passwords, so
+    # no account has one: report it as a wrong password, like any other.
+    if len(encoded) > MAX_PASSWORD_BYTES:
+        return False
+    return bcrypt.checkpw(encoded, hashed_password.encode("utf-8"))
 
 
 # Verified on login when the email is unknown, so that path takes about as
