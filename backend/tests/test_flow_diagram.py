@@ -303,6 +303,67 @@ def test_dual_project_conflict_resolution_feeds_the_funnel(client):
     assert diagram["pending"] == 0
 
 
+def _funnel(client, project_id, headers) -> tuple[int, int, int]:
+    diagram = client.get(f"/review-projects/{project_id}/flow-diagram", headers=headers).json()
+    return diagram["screened"], diagram["excluded"], diagram["pending"]
+
+
+def test_dual_funnel_does_not_count_a_citation_until_both_reviewers_have_decided(client):
+    """Counts that moved when one Reviewer decided would tell the other, who has
+    not decided yet, what that decision was (ADR 0006, #54)."""
+    owner_headers = auth_headers_for(client, "owner@example.com")
+    project_id = _create_dual_project(client, owner_headers)
+    co_reviewer_headers = _add_co_reviewer(client, owner_headers, project_id)
+    citation_id = _upload_citation(client, owner_headers, project_id)
+    before = _funnel(client, project_id, co_reviewer_headers)
+
+    _record_decision(client, project_id, citation_id, owner_headers, "exclude")
+
+    assert _funnel(client, project_id, co_reviewer_headers) == before == (0, 0, 1)
+    assert _funnel(client, project_id, owner_headers) == before
+
+
+def test_dual_funnel_counts_a_citation_once_both_have_decided_the_same_way(client):
+    owner_headers = auth_headers_for(client, "owner@example.com")
+    project_id = _create_dual_project(client, owner_headers)
+    co_reviewer_headers = _add_co_reviewer(client, owner_headers, project_id)
+    citation_id = _upload_citation(client, owner_headers, project_id)
+    _record_decision(client, project_id, citation_id, owner_headers, "exclude")
+
+    _record_decision(client, project_id, citation_id, co_reviewer_headers, "exclude")
+
+    assert _funnel(client, project_id, co_reviewer_headers) == (1, 1, 0)
+    assert _funnel(client, project_id, owner_headers) == (1, 1, 0)
+
+
+def test_dual_funnel_shows_both_reviewers_the_same_numbers_at_every_step(client):
+    owner_headers = auth_headers_for(client, "owner@example.com")
+    project_id = _create_dual_project(client, owner_headers)
+    co_reviewer_headers = _add_co_reviewer(client, owner_headers, project_id)
+    citation_id = _upload_citation(client, owner_headers, project_id)
+
+    for headers in (co_reviewer_headers, owner_headers):
+        _record_decision(client, project_id, citation_id, headers, "include")
+        assert _funnel(client, project_id, owner_headers) == _funnel(
+            client, project_id, co_reviewer_headers
+        )
+
+
+def test_dual_full_text_funnel_does_not_reveal_a_decision_the_reviewer_has_not_made(client):
+    owner_headers = auth_headers_for(client, "owner@example.com")
+    project_id = _create_dual_project(client, owner_headers)
+    co_reviewer_headers = _add_co_reviewer(client, owner_headers, project_id)
+    citation_id = _upload_citation(client, owner_headers, project_id)
+    _record_decision(client, project_id, citation_id, owner_headers, "include")
+
+    diagram = client.get(
+        f"/review-projects/{project_id}/flow-diagram", headers=co_reviewer_headers
+    ).json()
+
+    # An Include would put the Citation in the full-text stage's pending count.
+    assert diagram["full_text_pending"] == 0
+
+
 def test_flow_diagram_includes_criteria(authed_client):
     project_id = create_project(authed_client)
     authed_client.put(

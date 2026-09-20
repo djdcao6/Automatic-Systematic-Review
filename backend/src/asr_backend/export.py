@@ -2,7 +2,7 @@ import csv
 import io
 import re
 
-from asr_backend import models
+from asr_backend import models, screening
 
 CSV_HEADER = [
     "title",
@@ -42,8 +42,17 @@ def build_export_filename(review_project: models.ReviewProject) -> str:
 
 
 def build_export_csv(
-    review_project: models.ReviewProject, citations: list[models.Citation]
+    review_project: models.ReviewProject,
+    citations: list[models.Citation],
+    requester: models.Reviewer,
 ) -> str:
+    """The Review Project's export, as `requester` is allowed to see it.
+
+    In a Dual project, a Citation the requester has not screened yet has its
+    peer decisions, final decision and AI Suggestion columns left blank, the
+    same per-Citation blinding as the detail view (ADR 0006, #54). Once the
+    requester has decided it, that row shows everything. Solo is never blinded.
+    """
     buffer = io.StringIO()
     _write_criteria_header(buffer, review_project.criteria)
     is_dual = review_project.review_mode == "dual"
@@ -52,21 +61,30 @@ def build_export_csv(
     header = [*CSV_HEADER, *(DUAL_REVIEWER_HEADER if is_dual else [])]
     writer.writerow([*header, *(field.name for field in extraction_fields)])
     for citation in citations:
+        blind = screening.is_blind(
+            review_project, citation.screening_decision_for(requester.id)
+        )
         row = [
             citation.title,
             citation.abstract or "",
             "; ".join(citation.authors),
             citation.year or "",
             "; ".join(citation.source),
-            citation.decision_label,
-            citation.screening_reason,
-            citation.ai_suggestion_decision_label,
-            citation.ai_suggestion_reason_label,
+            "" if blind else citation.decision_label,
+            "" if blind else citation.screening_reason,
+            "" if blind else citation.ai_suggestion_decision_label,
+            "" if blind else citation.ai_suggestion_reason_label,
             citation.full_text_decision_label,
             citation.full_text_reason_label,
         ]
         if is_dual:
-            row += [citation.owner_decision_label, citation.co_reviewer_decision_label]
+            # Blind means the requester has no decision of their own here, so
+            # neither column is theirs: both are the peer's (or a former peer's).
+            row += (
+                ["", ""]
+                if blind
+                else [citation.owner_decision_label, citation.co_reviewer_decision_label]
+            )
         row += [citation.extraction_value_for(field.id) for field in extraction_fields]
         writer.writerow(row)
     return buffer.getvalue()

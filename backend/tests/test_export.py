@@ -1,5 +1,6 @@
 import csv
 import io
+import uuid
 
 import pymupdf
 from conftest import auth_headers_for
@@ -477,7 +478,226 @@ def test_export_joins_multiple_source_values_like_authors():
         source=["PubMed", "Embase"],
     )
 
-    csv_text = export.build_export_csv(project, [citation])
+    csv_text = export.build_export_csv(project, [citation], requester=models.Reviewer(id=uuid.uuid4()))
 
     row = next(csv.DictReader(io.StringIO(csv_text)))
     assert row["source"] == "PubMed; Embase"
+
+
+# --- Dual mode: per-citation blinding (#54, ADR 0006) -----------------------------------
+
+BLINDED_COLUMNS = [
+    "owner_decision",
+    "co_reviewer_decision",
+    "screening_decision",
+    "reason",
+    "ai_suggestion_decision",
+    "ai_suggestion_reason",
+]
+
+# What a Solo export looked like before blinding existed; it must not change.
+SOLO_FULL_EXPORT = (
+    "# Review Project Criteria\r\n# Population: Adults\r\n# Intervention: \r\n"
+    "# Comparison: \r\n# Outcome: \r\n# Exclusion Rules: wrong design\r\n# Notes: n\r\n\r\n"
+    "title,abstract,authors,year,source,screening_decision,reason,ai_suggestion_decision,"
+    "ai_suggestion_reason,full_text_decision,full_text_reason,Sample size\r\n"
+    "Study A,An abstract,Jane Doe; John Smith,2020,PubMed,include,Human reason,exclude,"
+    "AI reason,exclude,wrong design,120\r\n"
+)
+SOLO_BARE_EXPORT = (
+    "title,abstract,authors,year,source,screening_decision,reason,ai_suggestion_decision,"
+    "ai_suggestion_reason,full_text_decision,full_text_reason\r\n"
+    "Study B,,Jane Doe,,PubMed,unscreened,,not_available,not_available,,\r\n"
+)
+
+
+def _upload_titled_citation(client, headers, project_id: str, title: str) -> str:
+    client.post(
+        f"/review-projects/{project_id}/citations",
+        files={"file": ("c.csv", CSV_HEADER + f"{title},An abstract,Author,2020,PubMed\n", "text/csv")},
+        headers=headers,
+    )
+    listed = client.get(f"/review-projects/{project_id}/citations", headers=headers).json()
+    return next(c["id"] for c in listed if c["title"] == title)
+
+
+def _generate_ai_suggestion_as(
+    client, project_id, citation_id, headers, decision="exclude", reason="AI reason"
+) -> None:
+    app.dependency_overrides[get_ai_suggester] = lambda: _FakeSuggester(
+        decision=decision, reason=reason
+    )
+    try:
+        client.post(
+            f"/review-projects/{project_id}/citations/{citation_id}/suggestion", headers=headers
+        )
+    finally:
+        app.dependency_overrides.pop(get_ai_suggester, None)
+
+
+def _export_records(client, project_id, headers) -> dict[str, dict[str, str]]:
+    """The export's rows keyed by title, with the leading Criteria block skipped."""
+    text = client.get(f"/review-projects/{project_id}/export", headers=headers).text
+    lines = [line for line in text.splitlines() if not line.startswith("#")]
+    return {row["title"]: row for row in csv.DictReader(io.StringIO("\n".join(lines)))}
+
+
+def _dual_project_with_reviewers(client):
+    owner_headers = auth_headers_for(client, "owner@example.com")
+    project_id = _create_dual_project(client, owner_headers)
+    co_reviewer_headers = _add_co_reviewer(client, owner_headers, project_id)
+    return project_id, owner_headers, co_reviewer_headers
+
+
+def test_a_reviewer_with_no_decision_gets_blanks_for_peer_final_and_ai_columns(client):
+    project_id, owner_headers, co_reviewer_headers = _dual_project_with_reviewers(client)
+    citation_id = _upload_titled_citation(client, owner_headers, project_id, "Study")
+    _record_decision(client, project_id, citation_id, owner_headers, "include", "Owner's take")
+    _generate_ai_suggestion_as(client, project_id, citation_id, owner_headers)
+
+    row = _export_records(client, project_id, co_reviewer_headers)["Study"]
+
+    assert {column: row[column] for column in BLINDED_COLUMNS} == dict.fromkeys(
+        BLINDED_COLUMNS, ""
+    )
+    assert row["abstract"] == "An abstract"
+
+
+def test_the_owner_with_no_decision_gets_blanks_when_the_co_reviewer_has_decided(client):
+    project_id, owner_headers, co_reviewer_headers = _dual_project_with_reviewers(client)
+    citation_id = _upload_titled_citation(client, owner_headers, project_id, "Study")
+    _record_decision(client, project_id, citation_id, co_reviewer_headers, "exclude", "Their take")
+    _generate_ai_suggestion_as(client, project_id, citation_id, co_reviewer_headers)
+
+    row = _export_records(client, project_id, owner_headers)["Study"]
+
+    assert {column: row[column] for column in BLINDED_COLUMNS} == dict.fromkeys(
+        BLINDED_COLUMNS, ""
+    )
+
+
+def test_a_row_neither_reviewer_has_decided_hides_the_ai_suggestion_from_both(client):
+    project_id, owner_headers, co_reviewer_headers = _dual_project_with_reviewers(client)
+    citation_id = _upload_titled_citation(client, owner_headers, project_id, "Study")
+    _generate_ai_suggestion_as(client, project_id, citation_id, owner_headers)
+
+    for headers in (owner_headers, co_reviewer_headers):
+        row = _export_records(client, project_id, headers)["Study"]
+        assert row["ai_suggestion_decision"] == ""
+        assert row["ai_suggestion_reason"] == ""
+        assert row["screening_decision"] == ""
+
+
+def test_a_reviewer_who_has_decided_sees_the_full_row(client):
+    project_id, owner_headers, co_reviewer_headers = _dual_project_with_reviewers(client)
+    citation_id = _upload_titled_citation(client, owner_headers, project_id, "Study")
+    _record_decision(client, project_id, citation_id, owner_headers, "include", "Owner's take")
+    _generate_ai_suggestion_as(client, project_id, citation_id, owner_headers, "exclude", "AI reason")
+    _record_decision(client, project_id, citation_id, co_reviewer_headers, "include")
+
+    for headers in (owner_headers, co_reviewer_headers):
+        row = _export_records(client, project_id, headers)["Study"]
+        assert row["owner_decision"] == "include"
+        assert row["co_reviewer_decision"] == "include"
+        assert row["screening_decision"] == "include"
+        assert row["reason"] == "Owner's take"
+        assert row["ai_suggestion_decision"] == "exclude"
+        assert row["ai_suggestion_reason"] == "AI reason"
+
+
+def test_deciding_a_citation_unblinds_that_row_for_the_reviewer_who_decided(client):
+    project_id, owner_headers, co_reviewer_headers = _dual_project_with_reviewers(client)
+    citation_id = _upload_titled_citation(client, owner_headers, project_id, "Study")
+    _record_decision(client, project_id, citation_id, owner_headers, "include")
+    assert _export_records(client, project_id, co_reviewer_headers)["Study"]["owner_decision"] == ""
+
+    _record_decision(client, project_id, citation_id, co_reviewer_headers, "exclude")
+
+    row = _export_records(client, project_id, co_reviewer_headers)["Study"]
+    assert row["owner_decision"] == "include"
+    assert row["co_reviewer_decision"] == "exclude"
+
+
+def test_blinding_is_per_citation_not_per_reviewer(client):
+    project_id, owner_headers, co_reviewer_headers = _dual_project_with_reviewers(client)
+    decided_id = _upload_titled_citation(client, owner_headers, project_id, "Decided")
+    open_id = _upload_titled_citation(client, owner_headers, project_id, "Open")
+    _record_decision(client, project_id, decided_id, owner_headers, "include")
+    _record_decision(client, project_id, open_id, owner_headers, "exclude")
+    _record_decision(client, project_id, decided_id, co_reviewer_headers, "include")
+
+    rows = _export_records(client, project_id, co_reviewer_headers)
+
+    assert rows["Decided"]["owner_decision"] == "include"
+    assert rows["Decided"]["screening_decision"] == "include"
+    assert rows["Open"]["owner_decision"] == ""
+    assert rows["Open"]["screening_decision"] == ""
+
+
+def test_blinding_leaves_the_bibliographic_and_full_text_columns_alone(client):
+    project_id, owner_headers, co_reviewer_headers = _dual_project_with_reviewers(client)
+    citation_id = _upload_titled_citation(client, owner_headers, project_id, "Study")
+    client.post(
+        f"/review-projects/{project_id}/citations/{citation_id}/full-text",
+        files={"file": ("paper.pdf", io.BytesIO(make_pdf()), "application/pdf")},
+        headers=owner_headers,
+    )
+    client.post(
+        f"/review-projects/{project_id}/citations/{citation_id}/full-text-decision",
+        json={"decision": "include", "reason": "Fits"},
+        headers=owner_headers,
+    )
+
+    row = _export_records(client, project_id, co_reviewer_headers)["Study"]
+
+    assert (row["title"], row["authors"], row["year"], row["source"]) == (
+        "Study",
+        "Author",
+        "2020",
+        "PubMed",
+    )
+    assert (row["full_text_decision"], row["full_text_reason"]) == ("include", "Fits")
+
+
+def test_a_pending_conflict_shows_both_decisions_to_a_reviewer_who_decided(client):
+    project_id, owner_headers, co_reviewer_headers = _dual_project_with_reviewers(client)
+    citation_id = _upload_titled_citation(client, owner_headers, project_id, "Study")
+    _record_decision(client, project_id, citation_id, owner_headers, "include")
+    _record_decision(client, project_id, citation_id, co_reviewer_headers, "exclude")
+
+    row = _export_records(client, project_id, co_reviewer_headers)["Study"]
+
+    assert (row["owner_decision"], row["co_reviewer_decision"]) == ("include", "exclude")
+
+
+def test_solo_export_is_byte_for_byte_unchanged_with_every_column_filled(authed_client):
+    project_id = create_project(authed_client)
+    save_criteria(
+        authed_client, project_id, population="Adults", exclusion_rules=["wrong design"], notes="n"
+    )
+    upload_csv(
+        authed_client, project_id, CSV_HEADER + "Study A,An abstract,Jane Doe; John Smith,2020,PubMed\n"
+    )
+    citation_id = authed_client.get(f"/review-projects/{project_id}/citations").json()[0]["id"]
+    generate_ai_suggestion(authed_client, project_id, citation_id, "exclude", "AI reason")
+    authed_client.post(
+        f"/review-projects/{project_id}/citations/{citation_id}/decision",
+        json={"decision": "include", "reason": "Human reason"},
+    )
+    attach_full_text(authed_client, project_id, citation_id)
+    record_full_text_decision(authed_client, project_id, citation_id, "exclude", "wrong design")
+    field = create_extraction_field(authed_client, project_id, "Sample size")
+    record_extraction_value(authed_client, project_id, citation_id, field["id"], "120")
+
+    response = authed_client.get(f"/review-projects/{project_id}/export")
+
+    assert response.text == SOLO_FULL_EXPORT
+
+
+def test_solo_export_is_byte_for_byte_unchanged_for_an_undecided_citation(authed_client):
+    project_id = create_project(authed_client)
+    upload_csv(authed_client, project_id, CSV_HEADER + "Study B,,Jane Doe,,PubMed\n")
+
+    response = authed_client.get(f"/review-projects/{project_id}/export")
+
+    assert response.text == SOLO_BARE_EXPORT

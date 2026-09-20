@@ -55,6 +55,20 @@ async def get_or_generate_suggestion(
     return suggestion, None
 
 
+def is_blind(
+    project: models.ReviewProject, own_decision: models.ScreeningDecision | None
+) -> bool:
+    """Whether a Reviewer must not yet see the peer's decision or the AI Suggestion (ADR 0006).
+
+    True in a Dual project for a Reviewer with no Screening Decision of their own
+    on the Citation. Decided per Citation, not per Reviewer: one Reviewer can be
+    blind on some Citations and not on others. Every place that shows a Citation's
+    peer decision, final decision or AI Suggestion (the detail view, the CSV export,
+    the Possible Duplicates list) asks this, so the rule lives in one place.
+    """
+    return project.review_mode == "dual" and own_decision is None
+
+
 def resolve_screening_view(
     db: Session,
     project: models.ReviewProject,
@@ -71,9 +85,9 @@ def resolve_screening_view(
     Solo is never blind — its single Reviewer has no peer to withhold.
     """
     own_decision = crud.get_screening_decision(db, citation.id, reviewer.id)
-    is_blind = project.review_mode == "dual" and own_decision is None
-    if is_blind or project.review_mode != "dual":
-        return own_decision, None, is_blind
+    blind = is_blind(project, own_decision)
+    if blind or project.review_mode != "dual":
+        return own_decision, None, blind
 
     peer_reviewer_id = (
         # Falls back to former_co_reviewer_id so a decision already recorded
@@ -88,4 +102,4 @@ def resolve_screening_view(
         if peer_reviewer_id is not None
         else None
     )
-    return own_decision, peer_decision, is_blind
+    return own_decision, peer_decision, blind

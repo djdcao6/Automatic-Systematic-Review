@@ -797,10 +797,11 @@ def download_full_text(
 )
 def list_possible_duplicates(
     project: models.ReviewProject = Depends(get_review_project_or_404),
+    reviewer: models.Reviewer = Depends(auth.get_current_reviewer),
     db: Session = Depends(get_db),
 ) -> list[schemas.PossibleDuplicateRead]:
     return [
-        duplicates.to_possible_duplicate_read(possible_duplicate)
+        duplicates.to_possible_duplicate_read(possible_duplicate, reviewer)
         for possible_duplicate in crud.list_possible_duplicates(db, project.id)
     ]
 
@@ -899,10 +900,11 @@ def get_flow_diagram(
 @app.get("/review-projects/{review_project_id}/export")
 def export_review_project(
     project: models.ReviewProject = Depends(get_review_project_or_404),
+    reviewer: models.Reviewer = Depends(auth.get_current_reviewer),
     db: Session = Depends(get_db),
 ) -> Response:
     citations = crud.list_citations(db, project.id)
-    csv_content = export.build_export_csv(project, citations)
+    csv_content = export.build_export_csv(project, citations, requester=reviewer)
     filename = export.build_export_filename(project)
     return Response(
         content=csv_content,
