@@ -30,6 +30,33 @@ DUAL_REVIEWER_HEADER = [
 
 _SLUG_NON_ALNUM = re.compile(r"[^a-z0-9]+")
 
+# A spreadsheet reads a cell that starts with one of these as a formula (#57).
+_FORMULA_PREFIXES = ("=", "+", "@", "\t", "\r")
+# A leading minus is a formula too, unless the cell is a plain negative number,
+# optionally followed by a unit: "-5", "-0.3", "-5 mmHg", "-5 mg/dL", "-2.5 °C".
+# Anything else after the number (an operator, a bracket, another number) is not
+# a value a Reviewer reads as a plain result, so it gets the quote. A space, not
+# any whitespace, separates the words, and each word after the first needs its
+# own leading space, so the pattern cannot backtrack badly on long input.
+_NEGATIVE_NUMBER = re.compile(r"-[0-9][0-9.,]*(?: ?[A-Za-z%°µ/]+(?: [A-Za-z%°µ/]+)*)?")
+_LINE_BREAK = re.compile(r"\r\n|\r|\n")
+
+
+def neutralize_cell(value: object) -> object:
+    """Returns `value` safe to open in a spreadsheet, or unchanged if it already is.
+
+    A text cell that would be read as a formula gets a single quote in front.
+    Anything that is not text (the year) is left alone. A negative number with
+    an optional unit ("-5 mmHg") is left as it is.
+    """
+    if not isinstance(value, str):
+        return value
+    if value.startswith(_FORMULA_PREFIXES):
+        return f"'{value}"
+    if value.startswith("-") and not _NEGATIVE_NUMBER.fullmatch(value):
+        return f"'{value}"
+    return value
+
 
 def slugify(value: str) -> str:
     slug = _SLUG_NON_ALNUM.sub("-", value.lower()).strip("-")
@@ -59,7 +86,9 @@ def build_export_csv(
     extraction_fields = review_project.active_extraction_fields
     writer = csv.writer(buffer)
     header = [*CSV_HEADER, *(DUAL_REVIEWER_HEADER if is_dual else [])]
-    writer.writerow([*header, *(field.name for field in extraction_fields)])
+    writer.writerow(
+        [neutralize_cell(cell) for cell in [*header, *(field.name for field in extraction_fields)]]
+    )
     for citation in citations:
         blind = screening.is_blind(
             review_project, citation.screening_decision_for(requester.id)
@@ -86,7 +115,7 @@ def build_export_csv(
                 else [citation.owner_decision_label, citation.co_reviewer_decision_label]
             )
         row += [citation.extraction_value_for(field.id) for field in extraction_fields]
-        writer.writerow(row)
+        writer.writerow([neutralize_cell(cell) for cell in row])
     return buffer.getvalue()
 
 
@@ -96,7 +125,9 @@ def _write_criteria_header(buffer: io.StringIO, criteria: models.Criteria | None
     # header row instead. This isn't valid CSV on its own — a consumer parsing
     # the Citation rows must skip these leading lines first — but it keeps the
     # export a single downloadable file. Nothing is written when a Review
-    # Project has no Criteria saved yet.
+    # Project has no Criteria saved yet. A value can hold line breaks, and this
+    # block is not CSV-quoted, so each one starts a new line that keeps the "# "
+    # prefix: every line of the block stays inert in a spreadsheet (#57).
     if criteria is None:
         return
     lines = [
@@ -109,4 +140,8 @@ def _write_criteria_header(buffer: io.StringIO, criteria: models.Criteria | None
         f"# Notes: {criteria.notes or ''}",
         "",
     ]
-    buffer.write("\r\n".join(lines) + "\r\n")
+    buffer.write("\r\n".join(_keep_comment_prefix(line) for line in lines) + "\r\n")
+
+
+def _keep_comment_prefix(line: str) -> str:
+    return "\r\n# ".join(_LINE_BREAK.split(line))
