@@ -78,6 +78,9 @@ const FULL_TEXT_SUGGESTION_UNAVAILABLE_MESSAGES: Record<string, string> = {
     "This Full Text could not be parsed, so no Full-Text Suggestion could be generated.",
   generation_failed:
     "Generating a Full-Text Suggestion failed. You can still record a decision manually.",
+  // Only ever set by the page itself, when it cannot read the state after an upload.
+  state_unreadable:
+    "Could not check for a Full-Text Suggestion. Reload the page to try again.",
 };
 
 function blankOrValue(value: string): string | null {
@@ -396,8 +399,9 @@ function CitationScreening({
           ? {
               ...current,
               full_text_suggestion: refreshed?.full_text_suggestion ?? null,
-              full_text_suggestion_unavailable_reason:
-                refreshed?.full_text_suggestion_unavailable_reason ?? null,
+              full_text_suggestion_unavailable_reason: refreshed
+                ? refreshed.full_text_suggestion_unavailable_reason
+                : "state_unreadable",
               full_text_suggestion_needs_generation:
                 refreshed?.full_text_suggestion_needs_generation ?? false,
             }
