@@ -391,3 +391,83 @@ def test_the_ai_consent_downgrade_drops_the_column_and_keeps_the_reviewers(migra
     assert connection.execute(text("SELECT email FROM reviewers")).scalar_one() == (
         "member@example.com"
     )
+
+
+# --- Model recorded on each AI suggestion (#68) ---------------------------------------------
+
+SUGGESTION_MODEL = "f3c6a9e17d48"
+SUGGESTION_TABLES = ("ai_suggestions", "full_text_suggestions")
+
+
+def _model_column(connection, table: str):
+    return connection.execute(
+        text(
+            "SELECT is_nullable, column_default FROM information_schema.columns "
+            "WHERE table_schema = :schema AND table_name = :table AND column_name = 'model'"
+        ),
+        {"schema": SCHEMA, "table": table},
+    ).one_or_none()
+
+
+def _seed_both_suggestions(connection, email: str, model: str | None = None) -> str:
+    project = _seed_project(connection, email)
+    citation_id = connection.execute(
+        text(
+            "INSERT INTO citations (id, review_project_id, title, authors, source, "
+            "original_source, archived, created_at) VALUES (gen_random_uuid(), :project, "
+            "'Study', '{}', '{}', '{}', false, now()) RETURNING id"
+        ),
+        {"project": project},
+    ).scalar_one()
+    # Before the migration there is no model column to fill; after it there must be.
+    model_column, model_value = (", model", ", :model") if model else ("", "")
+    for table in SUGGESTION_TABLES:
+        connection.execute(
+            text(
+                f"INSERT INTO {table} (id, citation_id, decision, reason, created_at"
+                f"{model_column}) VALUES (gen_random_uuid(), :citation, 'include', 'Fits.', "
+                f"now(){model_value})"
+            ),
+            {"citation": citation_id, "model": model},
+        )
+    return str(citation_id)
+
+
+def test_model_is_added_not_null_and_unknown_for_existing_suggestions(migrations):
+    config, connection = migrations
+    _upgrade(config, connection, AI_CONSENT)
+    for table in SUGGESTION_TABLES:
+        assert _model_column(connection, table) is None
+    _seed_both_suggestions(connection, "a@example.com")
+    connection.commit()
+
+    _upgrade(config, connection, SUGGESTION_MODEL)
+
+    for table in SUGGESTION_TABLES:
+        is_nullable, column_default = _model_column(connection, table)
+        assert is_nullable == "NO"
+        # No default: a new row has to name its model, not inherit "unknown".
+        assert column_default is None
+        # Nothing records which model wrote a suggestion saved before this column existed.
+        assert connection.execute(text(f"SELECT model FROM {table}")).scalar_one() == "unknown"
+
+
+def test_a_suggestion_without_a_model_is_refused_after_the_migration(migrations):
+    config, connection = migrations
+    _upgrade(config, connection, SUGGESTION_MODEL)
+    with pytest.raises(IntegrityError):
+        _seed_both_suggestions(connection, "a@example.com")
+    connection.rollback()
+
+
+def test_the_model_downgrade_drops_the_columns_and_keeps_the_suggestions(migrations):
+    config, connection = migrations
+    _upgrade(config, connection, SUGGESTION_MODEL)
+    _seed_both_suggestions(connection, "a@example.com", model="claude-test-model")
+    connection.commit()
+
+    _downgrade(config, connection, AI_CONSENT)
+
+    for table in SUGGESTION_TABLES:
+        assert _model_column(connection, table) is None
+        assert connection.execute(text(f"SELECT count(*) FROM {table}")).scalar_one() == 1

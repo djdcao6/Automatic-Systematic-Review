@@ -374,7 +374,7 @@ def get_ai_suggestion(db: Session, citation_id: uuid.UUID) -> models.AISuggestio
 
 
 def create_ai_suggestion(
-    db: Session, citation_id: uuid.UUID, decision: str, reason: str
+    db: Session, citation_id: uuid.UUID, decision: str, reason: str, model: str
 ) -> models.AISuggestion:
     """Persists a Citation's AI Suggestion, or returns the one a concurrent request saved first.
 
@@ -385,7 +385,7 @@ def create_ai_suggestion(
     """
     stmt = (
         pg_insert(models.AISuggestion)
-        .values(citation_id=citation_id, decision=decision, reason=reason)
+        .values(citation_id=citation_id, decision=decision, reason=reason, model=model)
         .on_conflict_do_nothing(index_elements=[models.AISuggestion.citation_id])
         .returning(models.AISuggestion.id)
     )
@@ -555,6 +555,7 @@ def create_full_text_suggestion(
     extraction_values: dict[str, str],
     active_fields: list[models.ExtractionField],
     full_text_stamp: datetime,
+    model: str,
     truncated: bool = False,
 ) -> models.FullTextSuggestion | None:
     """Persists a Citation's Full-Text Suggestion, or returns the one a concurrent request saved first.
@@ -582,7 +583,13 @@ def create_full_text_suggestion(
 
     stmt = (
         pg_insert(models.FullTextSuggestion)
-        .values(citation_id=citation_id, decision=decision, reason=reason, truncated=truncated)
+        .values(
+            citation_id=citation_id,
+            decision=decision,
+            reason=reason,
+            truncated=truncated,
+            model=model,
+        )
         .on_conflict_do_nothing(index_elements=[models.FullTextSuggestion.citation_id])
         .returning(models.FullTextSuggestion.id)
     )

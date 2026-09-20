@@ -2,6 +2,7 @@ from sqlalchemy.orm import Session
 
 from asr_backend import crud, models
 from asr_backend.ai_suggestion import AISuggester, SuggestionGenerationError
+from asr_backend.settings import settings
 
 MISSING_ABSTRACT = "missing_abstract"
 GENERATION_FAILED = "generation_failed"
@@ -51,7 +52,9 @@ async def get_or_generate_suggestion(
     except SuggestionGenerationError:
         return None, GENERATION_FAILED
 
-    suggestion = crud.create_ai_suggestion(db, citation.id, result.decision, result.reason)
+    suggestion = crud.create_ai_suggestion(
+        db, citation.id, result.decision, result.reason, settings.anthropic_model
+    )
     return suggestion, None
 
 

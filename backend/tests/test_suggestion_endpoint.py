@@ -7,6 +7,7 @@ import pytest
 from asr_backend import models
 from asr_backend.ai_suggestion import SuggestionGenerationError, SuggestionResult, get_ai_suggester
 from asr_backend.main import app
+from asr_backend.settings import settings
 
 
 def create_project(authed_client, name: str = "My Review") -> str:
@@ -126,7 +127,10 @@ def test_post_that_loses_the_race_to_persist_returns_the_winners_suggestion(auth
         async def suggest_screening_decision(self, **kwargs) -> SuggestionResult:
             db_session.add(
                 models.AISuggestion(
-                    citation_id=uuid.UUID(citation_id), decision="exclude", reason="Winner's reason."
+                    citation_id=uuid.UUID(citation_id),
+                    decision="exclude",
+                    reason="Winner's reason.",
+                    model="claude-winner",
                 )
             )
             db_session.commit()
@@ -143,6 +147,10 @@ def test_post_that_loses_the_race_to_persist_returns_the_winners_suggestion(auth
     assert response.status_code == 200
     assert response.json()["suggestion"] == winners
     assert detail["suggestion"] == winners
+    # The kept row is the winner's whole, model included.
+    db_session.expire_all()
+    stored = db_session.query(models.AISuggestion).filter_by(citation_id=uuid.UUID(citation_id)).one()
+    assert stored.model == "claude-winner"
 
 
 def test_post_suggestion_for_a_missing_citation_is_not_found(authed_client, override_suggester):
@@ -154,3 +162,22 @@ def test_post_suggestion_for_a_missing_citation_is_not_found(authed_client, over
 
     assert response.status_code == 404
     assert override_suggester.calls == 0
+
+
+def test_a_new_suggestion_stores_the_configured_model_and_keeps_it(
+    authed_client, override_suggester, db_session, monkeypatch
+):
+    project_id = create_project(authed_client)
+    citation_id = upload_one_citation(authed_client, project_id)
+    url = f"/review-projects/{project_id}/citations/{citation_id}/suggestion"
+    monkeypatch.setattr(settings, "anthropic_model", "claude-first-model")
+
+    authed_client.post(url)
+    # The setting changes and the suggestion is opened again: it is not regenerated, so it
+    # still says the model that wrote it.
+    monkeypatch.setattr(settings, "anthropic_model", "claude-second-model")
+    authed_client.post(url)
+
+    stored = db_session.query(models.AISuggestion).filter_by(citation_id=uuid.UUID(citation_id)).one()
+    assert stored.model == "claude-first-model"
+    assert override_suggester.calls == 1
