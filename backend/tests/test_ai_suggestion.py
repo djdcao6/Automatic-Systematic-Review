@@ -4,6 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from asr_backend.ai_suggestion import (
+    MAX_FULL_TEXT_CHARS,
     AISuggester,
     ExtractionFieldSpec,
     SuggestionGenerationError,
@@ -197,6 +198,56 @@ def test_suggest_full_text_decision_returns_parsed_result_with_extraction_values
     assert result.decision == "include"
     assert result.reason == "Meets all criteria."
     assert result.extraction_values == {"field-1": "120 participants"}
+
+
+def _sent_message(client) -> str:
+    return client.messages.last_kwargs["messages"][0]["content"]
+
+
+def test_full_text_over_the_cap_is_cut_and_the_prompt_says_so():
+    client = _FakeClient(response=_full_text_tool_response("maybe", "Unclear.", {}))
+    suggester = AISuggester(client=client, model="claude-haiku-4-5")
+
+    result = asyncio.run(
+        suggester.suggest_full_text_decision(full_text="a" * MAX_FULL_TEXT_CHARS + "TAIL")
+    )
+
+    message = _sent_message(client)
+    # Exactly the first MAX_FULL_TEXT_CHARS characters, then the marker, and no tail.
+    assert message.startswith(
+        "Full text:\n"
+        + "a" * MAX_FULL_TEXT_CHARS
+        + "\n\n[The full text was truncated here. Only the first 150,000 characters are shown.]"
+    )
+    assert "TAIL" not in message
+    assert result.truncated is True
+
+
+def test_full_text_at_the_cap_is_sent_whole_without_a_marker():
+    client = _FakeClient(response=_full_text_tool_response("include", "Fits.", {}))
+    suggester = AISuggester(client=client, model="claude-haiku-4-5")
+
+    result = asyncio.run(
+        suggester.suggest_full_text_decision(full_text="a" * MAX_FULL_TEXT_CHARS)
+    )
+
+    assert "truncated" not in _sent_message(client)
+    assert result.truncated is False
+
+
+def test_the_truncation_marker_comes_before_the_criteria():
+    client = _FakeClient(response=_full_text_tool_response("maybe", "Unclear.", {}))
+    suggester = AISuggester(client=client, model="claude-haiku-4-5")
+
+    asyncio.run(
+        suggester.suggest_full_text_decision(
+            full_text="a" * (MAX_FULL_TEXT_CHARS + 10), population="Adults"
+        )
+    )
+
+    message = _sent_message(client)
+    assert message.index("truncated here") < message.index("Criteria:")
+    assert "Population: Adults" in message
 
 
 def test_suggest_full_text_decision_raises_on_api_error():

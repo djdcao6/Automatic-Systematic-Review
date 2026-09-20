@@ -152,6 +152,8 @@ export type FullTextSuggestion = {
   decision: Decision;
   reason: string;
   extraction_values: ExtractionValueSuggestion[];
+  // The model was shown only the start of a long PDF.
+  truncated: boolean;
 };
 
 // What generating a Full-Text Suggestion on demand produced. Both fields are null

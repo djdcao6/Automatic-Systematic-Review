@@ -1071,6 +1071,9 @@
   .ai-note p {
     margin: 0;
   }
+  .ai-note p + p {
+    margin-top: 0.5rem;
+  }
   .ai-note h2,
   .ai-note h3 {
     color: var(--ai-suggestion);

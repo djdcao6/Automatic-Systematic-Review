@@ -292,6 +292,7 @@ describe("CitationScreeningPage screening frame", () => {
                 decision: "exclude",
                 reason: "Wrong population.",
                 extraction_values: [],
+                truncated: false,
               },
             })
       );
@@ -306,6 +307,7 @@ describe("CitationScreeningPage screening frame", () => {
             decision: "include",
             reason: "Late answer for the first citation.",
             extraction_values: [],
+            truncated: false,
           },
           suggestion_unavailable_reason: null,
         });

@@ -77,11 +77,13 @@ class _FakeSuggester:
         reason="Meets all criteria.",
         extraction_values=None,
         error=None,
+        truncated=False,
     ):
         self.decision = decision
         self.reason = reason
         self.extraction_values = extraction_values or {}
         self.error = error
+        self.truncated = truncated
         self.screening_calls = 0
         self.full_text_calls = 0
 
@@ -99,6 +101,7 @@ class _FakeSuggester:
             decision=self.decision,
             reason=self.reason,
             extraction_values=self.extraction_values,
+            truncated=self.truncated,
         )
 
 
@@ -172,7 +175,12 @@ def test_generating_a_full_text_suggestion_keeps_it_for_later_views(authed_clien
 
     assert response.status_code == 200
     assert response.json() == {
-        "suggestion": {"decision": "include", "reason": "Meets all criteria.", "extraction_values": []},
+        "suggestion": {
+            "decision": "include",
+            "reason": "Meets all criteria.",
+            "extraction_values": [],
+            "truncated": False,
+        },
         "suggestion_unavailable_reason": None,
     }
     detail = get_detail(authed_client, project_id, citation_id)
@@ -180,6 +188,21 @@ def test_generating_a_full_text_suggestion_keeps_it_for_later_views(authed_clien
     assert detail["full_text_suggestion"]["reason"] == "Meets all criteria."
     assert detail["full_text_suggestion_needs_generation"] is False
     assert override_suggester.full_text_calls == 1
+
+
+def test_a_suggestion_from_truncated_text_is_marked_truncated_for_later_views(
+    authed_client, override_suggester
+):
+    project_id = create_project(authed_client)
+    citation_id = create_citation(authed_client, project_id)
+    upload_full_text(authed_client, project_id, citation_id, make_pdf())
+    override_suggester.truncated = True
+
+    outcome = generate_suggestion(authed_client, project_id, citation_id).json()
+
+    assert outcome["suggestion"]["truncated"] is True
+    detail = get_detail(authed_client, project_id, citation_id)
+    assert detail["full_text_suggestion"]["truncated"] is True
 
 
 def test_full_text_suggestion_includes_active_extraction_field_values(authed_client, override_suggester):

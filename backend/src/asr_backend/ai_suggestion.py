@@ -44,7 +44,15 @@ _FULL_TEXT_SYSTEM_PROMPT = (
     "with a reason grounded in the given criteria. Apply only the criteria "
     "provided; do not assume criteria that were not stated. Also propose a "
     "value for each requested extraction field, drawn only from what the "
-    "full text actually states."
+    "full text actually states. If the full text is marked as truncated, the "
+    "rest of the paper was not shown: do not assume what it says."
+)
+
+# A long PDF must not decide the size of one model call, and so of its cost.
+# About 150,000 characters is roughly 40,000 tokens.
+MAX_FULL_TEXT_CHARS = 150_000
+_TRUNCATION_MARKER = (
+    "[The full text was truncated here. Only the first {limit:,} characters are shown.]"
 )
 
 
@@ -63,6 +71,8 @@ class FullTextSuggestionResult(BaseModel):
     decision: Decision
     reason: str
     extraction_values: dict[str, str] = {}
+    # True when the model was shown only the start of the full text.
+    truncated: bool = False
 
 
 class SuggestionGenerationError(Exception):
@@ -127,8 +137,10 @@ class AISuggester:
         notes: str | None = None,
     ) -> FullTextSuggestionResult:
         extraction_fields = extraction_fields or []
+        full_text, truncated = truncate_full_text(full_text)
         user_message = _build_full_text_user_message(
             full_text=full_text,
+            truncated=truncated,
             extraction_fields=extraction_fields,
             population=population,
             intervention=intervention,
@@ -152,9 +164,17 @@ class AISuggester:
 
         for block in response.content:
             if getattr(block, "type", None) == "tool_use" and block.name == _FULL_TEXT_TOOL_NAME:
-                return FullTextSuggestionResult.model_validate(block.input)
+                result = FullTextSuggestionResult.model_validate(block.input)
+                return result.model_copy(update={"truncated": truncated})
 
         raise SuggestionGenerationError("Anthropic response did not include the expected tool call")
+
+
+def truncate_full_text(full_text: str) -> tuple[str, bool]:
+    """Returns the text the model will be shown and whether it was cut short."""
+    if len(full_text) <= MAX_FULL_TEXT_CHARS:
+        return full_text, False
+    return full_text[:MAX_FULL_TEXT_CHARS], True
 
 
 def _format_criteria_lines(
@@ -255,8 +275,12 @@ def _build_full_text_user_message(
     outcome: str | None,
     exclusion_rules: list[str],
     notes: str | None,
+    truncated: bool = False,
 ) -> str:
-    lines = ["Full text:", full_text, "", "Criteria:"]
+    lines = ["Full text:", full_text]
+    if truncated:
+        lines.extend(["", _TRUNCATION_MARKER.format(limit=MAX_FULL_TEXT_CHARS)])
+    lines.extend(["", "Criteria:"])
     lines.extend(
         _format_criteria_lines(
             population=population,

@@ -277,6 +277,7 @@ class FullTextSuggestionRead(BaseModel):
     decision: Literal["include", "exclude", "maybe"]
     reason: str
     extraction_values: list[ExtractionValueSuggestionRead]
+    truncated: bool
 
 
 class FullTextSuggestionOutcomeRead(BaseModel):
