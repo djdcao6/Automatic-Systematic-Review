@@ -1,5 +1,7 @@
 import uuid
 
+from conftest import auth_headers_for
+
 from asr_backend import crud, duplicates, schemas
 from asr_backend.citation_import import ParsedCitation
 
@@ -268,3 +270,122 @@ def test_third_upload_matching_a_held_citation_is_left_unmerged_against_it(authe
     third_citation = crud.get_citation(db_session, project.id, uuid.UUID(third["id"]))
     assert third_citation.archived is False
     assert third_citation.merged_into_citation_id is None
+
+
+# --- Dual mode: per-citation blinding (#54, ADR 0006) ----------------------------------
+
+
+def _dual_pending_pair(client, db_session):
+    """A dual project whose Possible Duplicate pair the Owner has already screened
+    (survivor include, loser exclude), and a Co-Reviewer who has decided nothing."""
+    owner_headers = auth_headers_for(client, "owner@example.com")
+    project_id = client.post(
+        "/review-projects",
+        json={"name": "Dual", "merge_mode": "combine", "review_mode": "dual"},
+        headers=owner_headers,
+    ).json()["id"]
+    token = client.post(
+        f"/review-projects/{project_id}/invitations", headers=owner_headers
+    ).json()["token"]
+    co_reviewer_headers = {
+        "Authorization": "Bearer "
+        + client.post(
+            f"/invitations/{token}/accept-register",
+            json={"email": "co-reviewer@example.com", "password": "correcthorse"},
+        ).json()["access_token"]
+    }
+    client.post(
+        f"/review-projects/{project_id}/citations",
+        files={"file": ("c.csv", CSV_HEADER + row("Study", doi="10.1/x"), "text/csv")},
+        headers=owner_headers,
+    )
+    survivor_id = client.get(
+        f"/review-projects/{project_id}/citations", headers=owner_headers
+    ).json()[0]["id"]
+    client.post(
+        f"/review-projects/{project_id}/citations/{survivor_id}/decision",
+        json={"decision": "include", "reason": "Survivor reason"},
+        headers=owner_headers,
+    )
+    loser = _seed_unmatched_citation(db_session, project_id, "Study", doi="10.1/x")
+    project = _get_project(db_session, project_id)
+    crud.upsert_screening_decision(
+        db_session,
+        project,
+        loser.id,
+        project.owner_reviewer_id,
+        schemas.ScreeningDecisionCreate(decision="exclude", reason="Loser reason"),
+    )
+    duplicates.process_upload_matches(db_session, project, [loser])
+    return project_id, survivor_id, str(loser.id), owner_headers, co_reviewer_headers
+
+
+def _screening_decisions(client, project_id, headers) -> tuple[dict | None, dict | None]:
+    [possible_duplicate] = client.get(
+        f"/review-projects/{project_id}/possible-duplicates", headers=headers
+    ).json()
+    return (
+        possible_duplicate["survivor"]["screening_decision"],
+        possible_duplicate["loser"]["screening_decision"],
+    )
+
+
+def test_a_reviewer_with_no_decision_on_either_citation_sees_no_screening_decision(
+    client, db_session
+):
+    project_id, _, _, _, co_reviewer_headers = _dual_pending_pair(client, db_session)
+
+    survivor, loser = _screening_decisions(client, project_id, co_reviewer_headers)
+
+    assert survivor is None
+    assert loser is None
+
+
+def test_the_owner_who_has_decided_both_citations_sees_both_decisions(client, db_session):
+    project_id, _, _, owner_headers, _ = _dual_pending_pair(client, db_session)
+
+    survivor, loser = _screening_decisions(client, project_id, owner_headers)
+
+    assert (survivor["decision"], loser["decision"]) == ("include", "exclude")
+
+
+def test_blinding_in_possible_duplicates_is_per_citation(client, db_session):
+    project_id, survivor_id, _, _, co_reviewer_headers = _dual_pending_pair(client, db_session)
+    client.post(
+        f"/review-projects/{project_id}/citations/{survivor_id}/decision",
+        json={"decision": "include"},
+        headers=co_reviewer_headers,
+    )
+
+    survivor, loser = _screening_decisions(client, project_id, co_reviewer_headers)
+
+    assert survivor["decision"] == "include"
+    assert loser is None
+
+
+def test_a_reviewer_who_has_decided_a_citation_sees_the_owners_decision_on_it(
+    client, db_session
+):
+    project_id, survivor_id, loser_id, _, co_reviewer_headers = _dual_pending_pair(
+        client, db_session
+    )
+    for citation_id in (survivor_id, loser_id):
+        client.post(
+            f"/review-projects/{project_id}/citations/{citation_id}/decision",
+            json={"decision": "maybe"},
+            headers=co_reviewer_headers,
+        )
+
+    survivor, loser = _screening_decisions(client, project_id, co_reviewer_headers)
+
+    assert (survivor["decision"], loser["decision"]) == ("include", "exclude")
+
+
+def test_solo_possible_duplicates_still_show_the_screening_decisions(authed_client, db_session):
+    project_id = create_project(authed_client)
+    _make_conflicting_pair(authed_client, db_session, project_id)
+
+    [possible_duplicate] = list_possible_duplicates(authed_client, project_id)
+
+    assert possible_duplicate["survivor"]["screening_decision"]["decision"] == "include"
+    assert possible_duplicate["loser"]["screening_decision"]["decision"] == "exclude"

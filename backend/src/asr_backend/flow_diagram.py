@@ -40,7 +40,15 @@ def _settled_decision(citation: models.Citation) -> str | None:
     funnel must reflect the Conflict's resolution once the two Reviewers'
     decisions disagree, not either one's individual call while it's still
     unresolved.
+
+    Nothing is settled until every Reviewer required to screen the Citation has
+    decided (#54, ADR 0006). The diagram is one set of numbers for the whole
+    project, so if it moved when only one Reviewer had decided, the other, who
+    has not decided yet, could read that decision off the counts. Solo has one
+    Reviewer, so this changes nothing there.
     """
+    if citation.needs_screening_decision:
+        return None
     if citation.conflict is not None and citation.conflict.status == "pending":
         return None
     final = citation.final_screening_decision

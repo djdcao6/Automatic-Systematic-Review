@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
-from asr_backend import crud, models, schemas
+from asr_backend import crud, models, schemas, screening
 from asr_backend.citation_import import ParsedCitation
 
 _NON_ALNUM = re.compile(r"[^a-z0-9]+")
@@ -373,8 +373,21 @@ def _conflict_field_read(
     )
 
 
+def _citation_read_for(
+    citation: models.Citation, viewer: models.Reviewer
+) -> schemas.PossibleDuplicateCitationRead:
+    """The Citation as `viewer` may see it: in a Dual project, with the screening
+    decision withheld unless the viewer has decided this Citation themselves
+    (ADR 0006, #54). That field carries the Owner's decision, so it is the peer's
+    for a Co-Reviewer."""
+    read = schemas.PossibleDuplicateCitationRead.model_validate(citation)
+    if screening.is_blind(citation.review_project, citation.screening_decision_for(viewer.id)):
+        read.screening_decision = None
+    return read
+
+
 def to_possible_duplicate_read(
-    possible_duplicate: models.PossibleDuplicate,
+    possible_duplicate: models.PossibleDuplicate, viewer: models.Reviewer
 ) -> schemas.PossibleDuplicateRead:
     survivor = possible_duplicate.survivor_citation
     loser = possible_duplicate.loser_citation
@@ -384,8 +397,8 @@ def to_possible_duplicate_read(
     }
     return schemas.PossibleDuplicateRead(
         id=possible_duplicate.id,
-        survivor=schemas.PossibleDuplicateCitationRead.model_validate(survivor),
-        loser=schemas.PossibleDuplicateCitationRead.model_validate(loser),
+        survivor=_citation_read_for(survivor, viewer),
+        loser=_citation_read_for(loser, viewer),
         conflicting_fields=[_conflict_field_read(c, extraction_fields_by_id) for c in conflicts],
         created_at=possible_duplicate.created_at,
     )
