@@ -632,6 +632,11 @@ class FullTextSuggestion(Base):
     )
     decision: Mapped[str] = mapped_column(String, nullable=False)
     reason: Mapped[str] = mapped_column(String, nullable=False)
+    # Whether the model was shown only the start of a long PDF (#56). Stored, not
+    # derived from the text length, so it stays true to what was sent if the cap changes.
+    truncated: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC)
     )

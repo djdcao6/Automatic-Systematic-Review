@@ -81,6 +81,7 @@ const suggestionWithSampleSize = {
   extraction_values: [
     { extraction_field_id: "f1", name: "Sample size", value: "120 participants" },
   ],
+  truncated: false,
 };
 
 // A promise the test settles by hand, to check the page while a request is in flight.
@@ -751,7 +752,7 @@ describe("CitationScreeningPage", () => {
         suggestion_unavailable_reason: null,
         screening_decision: null,
         full_text: parsedFullText,
-        full_text_suggestion: { decision: "exclude", reason: "Old reasoning.", extraction_values: [] },
+        full_text_suggestion: { decision: "exclude", reason: "Old reasoning.", extraction_values: [], truncated: false },
       })
       .mockResolvedValue({
         ...baseCitation,
@@ -790,7 +791,12 @@ describe("CitationScreeningPage", () => {
     mockedApi.generateFullTextSuggestion
       .mockReturnValueOnce(first.promise)
       .mockResolvedValueOnce({
-        suggestion: { decision: "include", reason: "New reasoning.", extraction_values: [] },
+        suggestion: {
+          decision: "include",
+          reason: "New reasoning.",
+          extraction_values: [],
+          truncated: false,
+        },
         suggestion_unavailable_reason: null,
       });
 
@@ -801,7 +807,7 @@ describe("CitationScreeningPage", () => {
 
     await act(async () => {
       first.resolve({
-        suggestion: { decision: "exclude", reason: "Old reasoning.", extraction_values: [] },
+        suggestion: { decision: "exclude", reason: "Old reasoning.", extraction_values: [], truncated: false },
         suggestion_unavailable_reason: null,
       });
       await first.promise;
@@ -844,7 +850,7 @@ describe("CitationScreeningPage", () => {
         suggestion_unavailable_reason: null,
         screening_decision: null,
         full_text: parsedFullText,
-        full_text_suggestion: { decision: "exclude", reason: "Old reasoning.", extraction_values: [] },
+        full_text_suggestion: { decision: "exclude", reason: "Old reasoning.", extraction_values: [], truncated: false },
       })
       .mockRejectedValue(new Error("offline"));
     mockedApi.uploadFullText.mockResolvedValue(parsedFullText);
@@ -1361,6 +1367,7 @@ describe("CitationScreeningPage", () => {
         decision: "exclude",
         reason: "Wrong study design.",
         extraction_values: [],
+        truncated: false,
       },
     });
 
@@ -1371,6 +1378,48 @@ describe("CitationScreeningPage", () => {
     expect(group.getByLabelText("exclude")).not.toBeChecked();
     expect(group.getByLabelText("maybe")).not.toBeChecked();
     expect(group.queryByLabelText(/reason/i)).not.toBeInTheDocument();
+  });
+
+  it("tells the Reviewer when a Full-Text Suggestion was based on truncated text", async () => {
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+      screening_decision: null,
+      full_text: parsedFullText,
+      full_text_suggestion: {
+        decision: "maybe",
+        reason: "Methods are not visible.",
+        extraction_values: [],
+        truncated: true,
+      },
+    });
+
+    renderPage();
+
+    expect(await screen.findByText(/methods are not visible/i)).toBeInTheDocument();
+    expect(screen.getByText(/based on the start of this pdf only/i)).toBeInTheDocument();
+  });
+
+  it("says nothing about truncation when the whole text was sent", async () => {
+    mockedApi.getCitation.mockResolvedValue({
+      ...baseCitation,
+      suggestion: null,
+      suggestion_unavailable_reason: null,
+      screening_decision: null,
+      full_text: parsedFullText,
+      full_text_suggestion: {
+        decision: "include",
+        reason: "Fits every criterion.",
+        extraction_values: [],
+        truncated: false,
+      },
+    });
+
+    renderPage();
+
+    expect(await screen.findByText(/fits every criterion/i)).toBeInTheDocument();
+    expect(screen.queryByText(/based on the start of this pdf/i)).not.toBeInTheDocument();
   });
 
   it("asks for a choice instead of saving a Full-Text Decision nobody made", async () => {
@@ -1510,6 +1559,7 @@ describe("CitationScreeningPage", () => {
         extraction_values: [
           { extraction_field_id: "f1", name: "Sample size", value: "120 participants" },
         ],
+        truncated: false,
       },
       extraction_fields: [
         {

@@ -272,3 +272,66 @@ def test_the_unique_name_downgrade_drops_the_index_and_keeps_the_fields(migratio
     with pytest.raises(RuntimeError, match="Rename or archive"):
         _upgrade(config, connection, UNIQUE_FIELD_NAMES)
     connection.rollback()
+
+
+# --- Truncated Full-Text Suggestions (#56) --------------------------------------------------
+
+TRUNCATED_SUGGESTIONS = "b2d8f5a63c91"
+
+
+def _truncated_column(connection):
+    return connection.execute(
+        text(
+            "SELECT is_nullable, column_default FROM information_schema.columns "
+            "WHERE table_schema = :schema AND table_name = 'full_text_suggestions' "
+            "AND column_name = 'truncated'"
+        ),
+        {"schema": SCHEMA},
+    ).one_or_none()
+
+
+def _seed_suggestion(connection, email: str) -> None:
+    project = _seed_project(connection, email)
+    citation_id = connection.execute(
+        text(
+            "INSERT INTO citations (id, review_project_id, title, authors, source, "
+            "original_source, archived, created_at) VALUES (gen_random_uuid(), :project, "
+            "'Study', '{}', '{}', '{}', false, now()) RETURNING id"
+        ),
+        {"project": project},
+    ).scalar_one()
+    connection.execute(
+        text(
+            "INSERT INTO full_text_suggestions (id, citation_id, decision, reason, created_at) "
+            "VALUES (gen_random_uuid(), :citation, 'include', 'Fits.', now())"
+        ),
+        {"citation": citation_id},
+    )
+
+
+def test_truncated_is_added_not_null_and_false_for_existing_suggestions(migrations):
+    config, connection = migrations
+    _upgrade(config, connection, UNIQUE_FIELD_NAMES)
+    assert _truncated_column(connection) is None
+    _seed_suggestion(connection, "a@example.com")
+    connection.commit()
+
+    _upgrade(config, connection, TRUNCATED_SUGGESTIONS)
+
+    is_nullable, column_default = _truncated_column(connection)
+    assert is_nullable == "NO"
+    assert column_default == "false"
+    existing = connection.execute(text("SELECT truncated FROM full_text_suggestions")).scalar_one()
+    assert existing is False
+
+
+def test_the_truncated_downgrade_drops_the_column_and_keeps_the_suggestions(migrations):
+    config, connection = migrations
+    _upgrade(config, connection, TRUNCATED_SUGGESTIONS)
+    _seed_suggestion(connection, "a@example.com")
+    connection.commit()
+
+    _downgrade(config, connection, UNIQUE_FIELD_NAMES)
+
+    assert _truncated_column(connection) is None
+    assert connection.execute(text("SELECT count(*) FROM full_text_suggestions")).scalar_one() == 1

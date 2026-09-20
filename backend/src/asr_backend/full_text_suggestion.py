@@ -123,6 +123,7 @@ async def get_or_generate_full_text_suggestion(
         extraction_values=result.extraction_values,
         active_fields=active_fields,
         full_text_stamp=full_text_stamp,
+        truncated=result.truncated,
     )
     # None means the PDF was replaced while the model was reading the old one:
     # nothing was saved, and the caller is told neither a suggestion nor a

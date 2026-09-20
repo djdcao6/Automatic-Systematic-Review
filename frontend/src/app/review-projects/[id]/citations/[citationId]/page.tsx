@@ -582,6 +582,11 @@ function CitationScreening({
                   <p>
                     {fullTextSuggestion.decision}: {fullTextSuggestion.reason}
                   </p>
+                  {fullTextSuggestion.truncated && (
+                    <p>
+                      Based on the start of this PDF only. It was too long to send in full.
+                    </p>
+                  )}
                 </div>
               ) : fullTextSuggestionPending ? (
                 <div className="ai-note">
