@@ -9,7 +9,7 @@ import pymupdf
 import pytest
 from sqlalchemy.orm import Session
 
-from asr_backend import crud, full_text_suggestion
+from asr_backend import crud, full_text_suggestion, models
 from asr_backend.ai_suggestion import (
     FullTextSuggestionResult,
     SuggestionGenerationError,
@@ -17,6 +17,7 @@ from asr_backend.ai_suggestion import (
     get_ai_suggester,
 )
 from asr_backend.main import app
+from asr_backend.settings import settings
 
 
 def create_project(authed_client, name: str = "My Review") -> str:
@@ -372,6 +373,7 @@ def test_replacing_the_pdf_waits_for_a_suggestion_that_is_being_saved(authed_cli
             extraction_values={},
             active_fields=[],
             full_text_stamp=stamp,
+            model="claude-test-model",
         )
         events.append("suggestion saved")
 
@@ -560,3 +562,24 @@ def test_requesting_a_suggestion_for_a_missing_citation_returns_404(authed_clien
 
     assert response.status_code == 404
     assert override_suggester.full_text_calls == 0
+
+
+def test_a_new_full_text_suggestion_stores_the_configured_model_and_keeps_it(
+    authed_client, override_suggester, db_session, monkeypatch
+):
+    project_id = create_project(authed_client)
+    citation_id = create_citation(authed_client, project_id)
+    upload_full_text(authed_client, project_id, citation_id, make_pdf())
+    monkeypatch.setattr(settings, "anthropic_model", "claude-first-model")
+
+    generate_suggestion(authed_client, project_id, citation_id)
+    monkeypatch.setattr(settings, "anthropic_model", "claude-second-model")
+    generate_suggestion(authed_client, project_id, citation_id)
+
+    stored = (
+        db_session.query(models.FullTextSuggestion)
+        .filter_by(citation_id=uuid.UUID(citation_id))
+        .one()
+    )
+    assert stored.model == "claude-first-model"
+    assert override_suggester.full_text_calls == 1

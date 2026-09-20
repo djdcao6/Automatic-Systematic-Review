@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from asr_backend import crud, models
 from asr_backend.ai_suggestion import AISuggester, ExtractionFieldSpec, SuggestionGenerationError
 from asr_backend.full_text import PARSED
+from asr_backend.settings import settings
 
 NO_FULL_TEXT = "no_full_text"
 PARSE_FAILED = "parse_failed"
@@ -123,6 +124,7 @@ async def get_or_generate_full_text_suggestion(
         extraction_values=result.extraction_values,
         active_fields=active_fields,
         full_text_stamp=full_text_stamp,
+        model=settings.anthropic_model,
         truncated=result.truncated,
     )
     # None means the PDF was replaced while the model was reading the old one:

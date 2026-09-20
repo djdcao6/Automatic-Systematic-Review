@@ -548,6 +548,9 @@ class AISuggestion(Base):
     )
     decision: Mapped[str] = mapped_column(String, nullable=False)
     reason: Mapped[str] = mapped_column(String, nullable=False)
+    # The model that wrote it, so suggestions can be compared across models later (#68).
+    # "unknown" for rows saved before this was recorded.
+    model: Mapped[str] = mapped_column(String, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC)
     )
@@ -641,6 +644,8 @@ class FullTextSuggestion(Base):
     truncated: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=false()
     )
+    # The model that wrote it (#68); "unknown" for rows saved before this was recorded.
+    model: Mapped[str] = mapped_column(String, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC)
     )
