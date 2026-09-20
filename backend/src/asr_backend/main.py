@@ -1,4 +1,5 @@
 import uuid
+from datetime import UTC, datetime
 
 from fastapi import Depends, FastAPI, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -66,7 +67,9 @@ def register(
             ),
         )
     hashed_password = auth.hash_password(payload.password)
-    reviewer = crud.create_reviewer(db, payload.email, hashed_password)
+    reviewer = crud.create_reviewer(
+        db, payload.email, hashed_password, ai_consent_at=datetime.now(UTC)
+    )
     if reviewer is None:
         raise HTTPException(status_code=409, detail="Email is already registered")
     return reviewer
@@ -94,6 +97,18 @@ def get_me(
     reviewer: models.Reviewer = Depends(auth.get_current_reviewer),
 ) -> models.Reviewer:
     return reviewer
+
+
+@app.post("/me/ai-consent", response_model=schemas.ReviewerRead)
+def accept_ai_consent(
+    reviewer: models.Reviewer = Depends(auth.get_current_reviewer),
+    db: Session = Depends(get_db),
+) -> models.Reviewer:
+    """Records that an existing account accepted the AI disclosure (#61).
+
+    For accounts that pre-date the notice. New accounts accept it at sign-up.
+    """
+    return crud.record_ai_consent(db, reviewer)
 
 
 def require_billing_enabled() -> None:
@@ -231,7 +246,9 @@ def accept_invitation_by_registering(
     # Not subject to the sign-up allowlist: the Invitation is the admission. The
     # account is marked invited_only, so it can work in this project but not
     # create Review Projects of its own (#60).
-    reviewer = crud.create_reviewer(db, payload.email, hashed_password, invited_only=True)
+    reviewer = crud.create_reviewer(
+        db, payload.email, hashed_password, invited_only=True, ai_consent_at=datetime.now(UTC)
+    )
     if reviewer is None:
         raise HTTPException(status_code=409, detail="Email is already registered")
     try:

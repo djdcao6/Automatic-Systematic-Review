@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 
+import { AiConsentDialog } from "@/components/AiConsentDialog";
 import { PageStatus } from "@/components/PageStatus";
 import { ProjectRail } from "@/components/ProjectRail";
 import { exportReviewProject, getMe, getReviewProject, type ReviewProjectDetail } from "@/lib/api";
@@ -16,6 +17,9 @@ export function ProjectShell({
 }) {
   const [loaded, setLoaded] = useState<ReviewProjectDetail | null>(null);
   const [isOwner, setIsOwner] = useState(false);
+  // An account that pre-dates the AI disclosure has no consent time (#61). It is
+  // asked once, before any page here can send a request to the model.
+  const [needsAiConsent, setNeedsAiConsent] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   // Whatever was loaded for a project the Reviewer has since left is not shown.
@@ -30,6 +34,7 @@ export function ProjectShell({
         if (ignore) return;
         setLoaded(data);
         setIsOwner(reviewer?.id === data.owner_reviewer_id);
+        setNeedsAiConsent(reviewer?.ai_consent_at === null);
       })
       .catch(() => {
         if (!ignore) setError("Failed to load review project.");
@@ -68,6 +73,10 @@ export function ProjectShell({
 
   if (!project) {
     return <PageStatus error={error} />;
+  }
+
+  if (needsAiConsent) {
+    return <AiConsentDialog onAccepted={() => setNeedsAiConsent(false)} />;
   }
 
   return (

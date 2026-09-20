@@ -112,6 +112,7 @@ describe("CitationScreeningPage screening frame", () => {
       id: "owner-1",
       email: "owner@example.com",
       created_at: "2026-01-01T00:00:00Z",
+      ai_consent_at: "2026-01-01T00:00:00Z",
     });
     mockedApi.getReviewProject.mockResolvedValue(project);
     mockedApi.getCitation.mockResolvedValue(detail());

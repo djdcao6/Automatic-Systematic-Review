@@ -22,11 +22,25 @@ def _normalize_email(value: EmailStr) -> str:
 class ReviewerCreate(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8)
+    # The Reviewer's agreement that abstracts, PDFs and criteria are sent to
+    # Anthropic's API (#61). Required, and only `true` is accepted: an account is
+    # never created without it.
+    ai_consent: bool
 
     @field_validator("email")
     @classmethod
     def normalize_email(cls, value: EmailStr) -> str:
         return _normalize_email(value)
+
+    @field_validator("ai_consent")
+    @classmethod
+    def ai_consent_must_be_given(cls, value: bool) -> bool:
+        if not value:
+            raise PydanticCustomError(
+                "ai_consent_required",
+                "Accept the AI disclosure to create an account",
+            )
+        return value
 
     @field_validator("password")
     @classmethod
@@ -51,6 +65,8 @@ class ReviewerRead(BaseModel):
     id: uuid.UUID
     email: EmailStr
     created_at: datetime
+    # Null until the Reviewer has accepted the AI disclosure (see models.Reviewer).
+    ai_consent_at: datetime | None
 
 
 class ReviewerLogin(BaseModel):

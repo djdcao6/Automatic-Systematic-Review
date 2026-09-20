@@ -291,7 +291,7 @@ def _dual_pending_pair(client, db_session):
         "Authorization": "Bearer "
         + client.post(
             f"/invitations/{token}/accept-register",
-            json={"email": "co-reviewer@example.com", "password": "correcthorse"},
+            json={"email": "co-reviewer@example.com", "password": "correcthorse", "ai_consent": True},
         ).json()["access_token"]
     }
     client.post(

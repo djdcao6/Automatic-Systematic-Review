@@ -385,7 +385,7 @@ def _add_co_reviewer(client, owner_headers, project_id: str, email: str = "co-re
     ).json()["token"]
     access_token = client.post(
         f"/invitations/{token}/accept-register",
-        json={"email": email, "password": "correcthorse"},
+        json={"email": email, "password": "correcthorse", "ai_consent": True},
     ).json()["access_token"]
     return {"Authorization": f"Bearer {access_token}"}
 

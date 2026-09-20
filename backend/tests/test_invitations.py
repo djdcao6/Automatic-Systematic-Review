@@ -69,7 +69,7 @@ def test_cannot_generate_invitation_when_project_already_has_co_reviewer(client)
     ).json()["token"]
     client.post(
         f"/invitations/{token}/accept-register",
-        json={"email": "co-reviewer@example.com", "password": "correcthorse"},
+        json={"email": "co-reviewer@example.com", "password": "correcthorse", "ai_consent": True},
     )
 
     response = client.post(
@@ -164,7 +164,7 @@ def test_revoked_invitation_link_cannot_be_used(client):
 
     response = client.post(
         f"/invitations/{invitation['token']}/accept-register",
-        json={"email": "co-reviewer@example.com", "password": "correcthorse"},
+        json={"email": "co-reviewer@example.com", "password": "correcthorse", "ai_consent": True},
     )
 
     assert response.status_code == 409
@@ -205,7 +205,7 @@ def test_accept_invitation_by_registering_attaches_co_reviewer(client, db_sessio
 
     response = client.post(
         f"/invitations/{token}/accept-register",
-        json={"email": "co-reviewer@example.com", "password": "correcthorse"},
+        json={"email": "co-reviewer@example.com", "password": "correcthorse", "ai_consent": True},
     )
 
     assert response.status_code == 200
@@ -234,18 +234,18 @@ def test_accepting_a_second_invitation_after_co_reviewer_joined_creates_no_orpha
     ).json()["token"]
     client.post(
         f"/invitations/{token_a}/accept-register",
-        json={"email": "first-co-reviewer@example.com", "password": "correcthorse"},
+        json={"email": "first-co-reviewer@example.com", "password": "correcthorse", "ai_consent": True},
     )
 
     response = client.post(
         f"/invitations/{token_b}/accept-register",
-        json={"email": "second-co-reviewer@example.com", "password": "correcthorse"},
+        json={"email": "second-co-reviewer@example.com", "password": "correcthorse", "ai_consent": True},
     )
 
     assert response.status_code == 409
     register_response = client.post(
         "/register",
-        json={"email": "second-co-reviewer@example.com", "password": "correcthorse"},
+        json={"email": "second-co-reviewer@example.com", "password": "correcthorse", "ai_consent": True},
     )
     assert register_response.status_code == 201
 
@@ -260,7 +260,7 @@ def test_accept_invitation_by_registering_rejects_taken_email(client):
 
     response = client.post(
         f"/invitations/{token}/accept-register",
-        json={"email": "taken@example.com", "password": "correcthorse"},
+        json={"email": "taken@example.com", "password": "correcthorse", "ai_consent": True},
     )
 
     assert response.status_code == 409
@@ -269,7 +269,7 @@ def test_accept_invitation_by_registering_rejects_taken_email(client):
 def test_accept_invitation_by_registering_for_unknown_token_returns_404(client):
     response = client.post(
         "/invitations/not-a-real-token/accept-register",
-        json={"email": "co-reviewer@example.com", "password": "correcthorse"},
+        json={"email": "co-reviewer@example.com", "password": "correcthorse", "ai_consent": True},
     )
 
     assert response.status_code == 404
@@ -344,12 +344,12 @@ def test_accepted_invitation_cannot_be_used_again(client):
     ).json()["token"]
     client.post(
         f"/invitations/{token}/accept-register",
-        json={"email": "co-reviewer@example.com", "password": "correcthorse"},
+        json={"email": "co-reviewer@example.com", "password": "correcthorse", "ai_consent": True},
     )
 
     response = client.post(
         f"/invitations/{token}/accept-register",
-        json={"email": "someone-else@example.com", "password": "correcthorse"},
+        json={"email": "someone-else@example.com", "password": "correcthorse", "ai_consent": True},
     )
 
     assert response.status_code == 409
@@ -363,7 +363,7 @@ def test_accepted_invitation_shows_accepted_status(client):
     ).json()["token"]
     client.post(
         f"/invitations/{token}/accept-register",
-        json={"email": "co-reviewer@example.com", "password": "correcthorse"},
+        json={"email": "co-reviewer@example.com", "password": "correcthorse", "ai_consent": True},
     )
 
     response = client.get(f"/invitations/{token}")
@@ -386,7 +386,7 @@ def test_co_reviewer_has_owner_level_access_to_project_resources(client):
     ).json()["token"]
     co_reviewer_token = client.post(
         f"/invitations/{token}/accept-register",
-        json={"email": "co-reviewer@example.com", "password": "correcthorse"},
+        json={"email": "co-reviewer@example.com", "password": "correcthorse", "ai_consent": True},
     ).json()["access_token"]
     co_reviewer_headers = {"Authorization": f"Bearer {co_reviewer_token}"}
 
@@ -431,7 +431,7 @@ def test_co_reviewer_cannot_edit_criteria_but_can_read_them(client):
     ).json()["token"]
     co_reviewer_token = client.post(
         f"/invitations/{token}/accept-register",
-        json={"email": "co-reviewer@example.com", "password": "correcthorse"},
+        json={"email": "co-reviewer@example.com", "password": "correcthorse", "ai_consent": True},
     ).json()["access_token"]
     co_reviewer_headers = {"Authorization": f"Bearer {co_reviewer_token}"}
 
@@ -455,7 +455,7 @@ def test_owner_can_still_edit_criteria_after_a_co_reviewer_joins(client):
     ).json()["token"]
     client.post(
         f"/invitations/{token}/accept-register",
-        json={"email": "co-reviewer@example.com", "password": "correcthorse"},
+        json={"email": "co-reviewer@example.com", "password": "correcthorse", "ai_consent": True},
     )
 
     response = client.put(
@@ -475,7 +475,7 @@ def test_co_reviewer_cannot_generate_or_revoke_invitations(client):
     ).json()
     co_reviewer_token = client.post(
         f"/invitations/{invitation['token']}/accept-register",
-        json={"email": "co-reviewer@example.com", "password": "correcthorse"},
+        json={"email": "co-reviewer@example.com", "password": "correcthorse", "ai_consent": True},
     ).json()["access_token"]
     co_reviewer_headers = {"Authorization": f"Bearer {co_reviewer_token}"}
 
@@ -498,7 +498,7 @@ def test_co_reviewer_appears_in_project_listing(client):
     ).json()["token"]
     co_reviewer_token = client.post(
         f"/invitations/{token}/accept-register",
-        json={"email": "co-reviewer@example.com", "password": "correcthorse"},
+        json={"email": "co-reviewer@example.com", "password": "correcthorse", "ai_consent": True},
     ).json()["access_token"]
     co_reviewer_headers = {"Authorization": f"Bearer {co_reviewer_token}"}
 

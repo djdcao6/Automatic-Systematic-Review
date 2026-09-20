@@ -7,6 +7,8 @@ vi.mock("@/lib/auth");
 const mockedAuth = vi.mocked(auth);
 
 import {
+  acceptAiConsent,
+  acceptInvitationByRegistering,
   createExtractionField,
   createReviewProject,
   dismissPossibleDuplicate,
@@ -72,11 +74,56 @@ describe("api authorization handling", () => {
     global.fetch = fetchMock;
 
     await loginReviewer({ email: "a@example.com", password: "correcthorse" });
-    await registerReviewer({ email: "a@example.com", password: "correcthorse" });
+    await registerReviewer({
+      email: "a@example.com",
+      password: "correcthorse",
+      ai_consent: true,
+    });
 
     for (const [, init] of fetchMock.mock.calls) {
       expect((init.headers as Record<string, string>)["Authorization"]).toBeUndefined();
     }
+  });
+
+  it("sends the AI consent with a sign-up and with an invitation sign-up", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(async () => new Response(JSON.stringify({}), { status: 200 }));
+    global.fetch = fetchMock;
+
+    await registerReviewer({ email: "a@example.com", password: "correcthorse", ai_consent: true });
+    await acceptInvitationByRegistering("tok", {
+      email: "b@example.com",
+      password: "correcthorse",
+      ai_consent: true,
+    });
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      email: "a@example.com",
+      password: "correcthorse",
+      ai_consent: true,
+    });
+    expect(fetchMock.mock.calls[1][0]).toMatch(/\/invitations\/tok\/accept-register$/);
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({
+      email: "b@example.com",
+      password: "correcthorse",
+      ai_consent: true,
+    });
+  });
+
+  it("records the AI consent of the signed-in account with a POST", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(JSON.stringify({ ai_consent_at: "2026-09-20T12:00:00Z" })));
+    global.fetch = fetchMock;
+
+    const reviewer = await acceptAiConsent();
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toMatch(/\/me\/ai-consent$/);
+    expect(init.method).toBe("POST");
+    expect((init.headers as Headers).get("Authorization")).toBe("Bearer test-token");
+    expect(reviewer.ai_consent_at).toBe("2026-09-20T12:00:00Z");
   });
 
   it("clears the token and routes to /login on a 401 response", async () => {
@@ -213,9 +260,9 @@ describe("api authorization handling", () => {
     );
     global.fetch = fetchMock;
 
-    await expect(registerReviewer({ email: "a@b.co", password: "short" })).rejects.toThrow(
-      "password: String should have at least 8 characters"
-    );
+    await expect(
+      registerReviewer({ email: "a@b.co", password: "short", ai_consent: true })
+    ).rejects.toThrow("password: String should have at least 8 characters");
   });
 
   it("joins every field's message when a 422 reports several problems", async () => {
@@ -232,7 +279,9 @@ describe("api authorization handling", () => {
     );
     global.fetch = fetchMock;
 
-    await expect(registerReviewer({ email: "nope", password: "x" })).rejects.toThrow(
+    await expect(
+      registerReviewer({ email: "nope", password: "x", ai_consent: true })
+    ).rejects.toThrow(
       "email: value is not a valid email address; password: String should have at least 8 characters"
     );
   });
@@ -243,9 +292,9 @@ describe("api authorization handling", () => {
       .mockResolvedValue(new Response(JSON.stringify({ detail: [{}] }), { status: 422 }));
     global.fetch = fetchMock;
 
-    await expect(registerReviewer({ email: "a@b.co", password: "x" })).rejects.toThrow(
-      "Failed to register"
-    );
+    await expect(
+      registerReviewer({ email: "a@b.co", password: "x", ai_consent: true })
+    ).rejects.toThrow("Failed to register");
   });
 
   it("falls back to a generic message when the backend response has no detail", async () => {

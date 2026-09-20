@@ -4,12 +4,18 @@ export type Reviewer = {
   id: string;
   email: string;
   created_at: string;
+  // When the Reviewer accepted the AI disclosure. Null on an account that pre-dates
+  // the notice: it is asked once, before its first AI request.
+  ai_consent_at: string | null;
 };
 
 export type ReviewerInput = {
   email: string;
   password: string;
 };
+
+// Signing up also needs the Reviewer's agreement to the AI disclosure (#61).
+export type RegisterInput = ReviewerInput & { ai_consent: boolean };
 
 export type AuthToken = {
   access_token: string;
@@ -381,7 +387,7 @@ async function publicRequest<T>(input: string, init: RequestInit, fallback: stri
   return response.json();
 }
 
-export async function registerReviewer(payload: ReviewerInput): Promise<Reviewer> {
+export async function registerReviewer(payload: RegisterInput): Promise<Reviewer> {
   return publicRequest(
     `${API_URL}/register`,
     {
@@ -407,6 +413,15 @@ export async function loginReviewer(payload: ReviewerInput): Promise<AuthToken> 
 
 export async function getMe(): Promise<Reviewer> {
   return request(`${API_URL}/me`, {}, "Failed to load current reviewer");
+}
+
+// Records that an account that pre-dates the AI disclosure has accepted it (#61).
+export async function acceptAiConsent(): Promise<Reviewer> {
+  return request(
+    `${API_URL}/me/ai-consent`,
+    { method: "POST" },
+    "Failed to record your agreement"
+  );
 }
 
 export async function listReviewProjects(): Promise<ReviewProject[]> {
@@ -815,7 +830,7 @@ export async function getInvitationPublic(token: string): Promise<InvitationPubl
 
 export async function acceptInvitationByRegistering(
   token: string,
-  payload: ReviewerInput
+  payload: RegisterInput
 ): Promise<InvitationAcceptResult> {
   return publicRequest(
     `${API_URL}/invitations/${token}/accept-register`,

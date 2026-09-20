@@ -17,7 +17,7 @@ ACCENTED_80_BYTES = "é" * 40
 
 
 def _register(client, password, email=EMAIL):
-    return client.post("/register", json={"email": email, "password": password})
+    return client.post("/register", json={"email": email, "password": password, "ai_consent": True})
 
 
 def _login(client, password, email=EMAIL):
@@ -101,7 +101,7 @@ def test_accept_register_rejects_a_password_over_72_bytes(client):
 
     response = client.post(
         f"/invitations/{token}/accept-register",
-        json={"email": EMAIL, "password": ACCENTED_80_BYTES},
+        json={"email": EMAIL, "password": ACCENTED_80_BYTES, "ai_consent": True},
     )
 
     assert response.status_code == 422
