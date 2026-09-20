@@ -3,6 +3,10 @@ import { useRef, useState } from "react";
 import type { Criteria, FlowDiagram } from "@/lib/api";
 import { downloadElementAsPng } from "@/lib/png-export";
 
+// Full-text Excludes recorded before a reason was required have none; the API
+// tallies them under an empty key (#66).
+const NO_REASON_RECORDED = "No reason recorded";
+
 function CriteriaHeader({ criteria }: { criteria: Criteria | null }) {
   if (!criteria) {
     return (
@@ -94,7 +98,7 @@ function ScreeningFunnelDiagram({ diagram }: { diagram: FlowDiagram }) {
           <ul>
             {Object.entries(diagram.full_text_excluded_by_reason).map(([reason, count]) => (
               <li key={reason}>
-                {reason || "No reason given"}: {count}
+                {reason || NO_REASON_RECORDED}: {count}
               </li>
             ))}
           </ul>
@@ -145,7 +149,7 @@ function SummaryTable({ diagram }: { diagram: FlowDiagram }) {
         </tr>
         {Object.entries(diagram.full_text_excluded_by_reason).map(([reason, count]) => (
           <tr key={reason}>
-            <th scope="row">Full-Text Excluded ({reason || "No reason given"})</th>
+            <th scope="row">Full-Text Excluded ({reason || NO_REASON_RECORDED})</th>
             <td>{count}</td>
           </tr>
         ))}

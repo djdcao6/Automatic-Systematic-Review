@@ -196,7 +196,10 @@ def _copy_field(
         crud.upsert_full_text_decision(
             db,
             survivor.id,
-            schemas.FullTextDecisionCreate(
+            # model_construct: this copies a decision already on record, which may
+            # be an Exclude without a reason from before that was required (#66),
+            # and must not be refused now.
+            schemas.FullTextDecisionCreate.model_construct(
                 decision=loser.full_text_decision.decision,
                 reason=loser.full_text_decision.reason,
             ),
