@@ -1,13 +1,25 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint, false
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+    false,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from asr_backend.db import Base
 
 _AI_SUGGESTION_UNAVAILABLE = "not_available"
+EXTRACTION_FIELD_NAME_INDEX = "uq_extraction_fields_active_name"
 
 
 class Reviewer(Base):
@@ -164,6 +176,19 @@ class SearchTerms(Base):
 
 class ExtractionField(Base):
     __tablename__ = "extraction_fields"
+    # At most one active field per name in a Review Project (#67), where names
+    # match ignoring case and surrounding whitespace. An archived field keeps its
+    # name without blocking a new one, hence the partial index. The migration
+    # builds the same index; crud.py turns its refusals into a 409.
+    __table_args__ = (
+        Index(
+            EXTRACTION_FIELD_NAME_INDEX,
+            "review_project_id",
+            func.lower(func.btrim(text("name"))),
+            unique=True,
+            postgresql_where=text("NOT archived"),
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     review_project_id: Mapped[uuid.UUID] = mapped_column(

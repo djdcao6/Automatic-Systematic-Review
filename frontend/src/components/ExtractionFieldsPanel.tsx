@@ -5,6 +5,7 @@ import { useState, type FormEvent } from "react";
 import {
   archiveExtractionField,
   createExtractionField,
+  ExtractionFieldNameTakenError,
   listExtractionFields,
   updateExtractionField,
   type ExtractionField,
@@ -87,8 +88,12 @@ export function ExtractionFieldsPanel({ reviewProjectId }: { reviewProjectId: st
       setDescription("");
       setActionError(null);
       await refresh();
-    } catch {
-      setActionError("Failed to add extraction field.");
+    } catch (err) {
+      setActionError(
+        err instanceof ExtractionFieldNameTakenError
+          ? err.message
+          : "Failed to add extraction field."
+      );
     }
   }
 
@@ -98,8 +103,12 @@ export function ExtractionFieldsPanel({ reviewProjectId }: { reviewProjectId: st
       setEditingId(null);
       setActionError(null);
       await refresh();
-    } catch {
-      setActionError("Failed to update extraction field.");
+    } catch (err) {
+      setActionError(
+        err instanceof ExtractionFieldNameTakenError
+          ? err.message
+          : "Failed to update extraction field."
+      );
     }
   }
 

@@ -7,14 +7,17 @@ vi.mock("@/lib/auth");
 const mockedAuth = vi.mocked(auth);
 
 import {
+  createExtractionField,
   createReviewProject,
   dismissPossibleDuplicate,
+  ExtractionFieldNameTakenError,
   getMySubscription,
   getReviewProject,
   listReviewProjects,
   loginReviewer,
   registerReviewer,
   ReviewProjectCapError,
+  updateExtractionField,
 } from "@/lib/api";
 
 function stubLocation() {
@@ -134,6 +137,44 @@ describe("api authorization handling", () => {
     expect((error as Error).message).toBe(
       "Free Plan is limited to 1 Review Project. Upgrade to create more."
     );
+  });
+
+  it("throws an ExtractionFieldNameTakenError carrying the backend's message on a 409 (#67)", async () => {
+    const detail =
+      'An active Extraction Field named "Sample size" already exists in this Review Project';
+    const fetchMock = vi
+      .fn()
+      .mockImplementation(async () => new Response(JSON.stringify({ detail }), { status: 409 }));
+    global.fetch = fetchMock;
+
+    const created: unknown = await createExtractionField("proj-1", {
+      name: "Sample size",
+      description: null,
+    }).catch((caught) => caught);
+    const renamed: unknown = await updateExtractionField("proj-1", "f1", {
+      name: "Sample size",
+      description: null,
+    }).catch((caught) => caught);
+
+    for (const error of [created, renamed]) {
+      expect(error).toBeInstanceOf(ExtractionFieldNameTakenError);
+      expect((error as Error).message).toBe(detail);
+    }
+  });
+
+  it("keeps a plain Error for other extraction-field failures", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(JSON.stringify({ detail: "boom" }), { status: 500 }));
+    global.fetch = fetchMock;
+
+    const error: unknown = await createExtractionField("proj-1", {
+      name: "Sample size",
+      description: null,
+    }).catch((caught) => caught);
+
+    expect(error).not.toBeInstanceOf(ExtractionFieldNameTakenError);
+    expect((error as Error).message).toBe("boom");
   });
 
   it("surfaces the backend's real detail even for endpoints that used to throw a generic string", async () => {

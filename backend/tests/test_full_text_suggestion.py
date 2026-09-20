@@ -201,12 +201,12 @@ def test_full_text_suggestion_includes_active_extraction_field_values(authed_cli
     ]
 
 
-def test_full_text_suggestion_keeps_values_distinct_for_same_named_fields(
+def test_full_text_suggestion_keeps_each_value_with_its_own_field(
     authed_client, override_suggester
 ):
     project_id = create_project(authed_client)
     field_a = create_extraction_field(authed_client, project_id, name="Duration")
-    field_b = create_extraction_field(authed_client, project_id, name="Duration")
+    field_b = create_extraction_field(authed_client, project_id, name="Follow-up")
     citation_id = create_citation(authed_client, project_id)
     upload_full_text(authed_client, project_id, citation_id, make_pdf())
     override_suggester.extraction_values = {
