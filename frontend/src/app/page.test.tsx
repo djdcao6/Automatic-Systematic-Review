@@ -161,6 +161,35 @@ describe("Home", () => {
     );
   });
 
+  it("shows the 403 message with no Account/Billing link while billing is off", async () => {
+    // The invite-only restriction (#60) also arrives as a 403 while billing is
+    // off, and the billing page is hidden then.
+    mockedApi.createReviewProject.mockRejectedValue(
+      new ReviewProjectCapError(
+        "Your account can work in the Review Project that invited you, but creating Review Projects is invite only during the pilot."
+      )
+    );
+
+    render(<Home />);
+
+    await waitFor(() => expect(mockedApi.getMySubscription).toHaveBeenCalled());
+    await waitFor(() => expect(mockedApi.listReviewProjects).toHaveBeenCalled());
+    fireEvent.change(screen.getByLabelText(/project name/i), {
+      target: { value: "New Review" },
+    });
+    fireEvent.change(screen.getByLabelText(/merge mode/i), {
+      target: { value: "combine" },
+    });
+    fireEvent.change(screen.getByLabelText(/review mode/i), {
+      target: { value: "solo" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /create review project/i }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/invite only during the pilot/i);
+    expect(within(alert).queryByRole("link")).not.toBeInTheDocument();
+  });
+
   it("shows a generic error, with no Account/Billing link, for a non-cap failure", async () => {
     mockedApi.createReviewProject.mockRejectedValue(new Error("boom"));
 
