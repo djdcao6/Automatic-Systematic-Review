@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: asr
+          POSTGRES_PASSWORD: asr
+          POSTGRES_DB: asr_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U asr -d asr_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    # Dummy values: the tests never call Anthropic or Stripe, but Settings requires them.
+    env:
+      DATABASE_URL: postgresql+psycopg://asr:asr@localhost:5432/asr_test
+      TEST_DATABASE_URL: postgresql+psycopg://asr:asr@localhost:5432/asr_test
+      ANTHROPIC_API_KEY: ci-dummy
+      JWT_SECRET_KEY: ci-dummy-jwt-secret-key-not-used-outside-tests
+      BILLING_ENABLED: "false"
+      STRIPE_SECRET_KEY: ci-dummy
+      STRIPE_PUBLISHABLE_KEY: ci-dummy
+      STRIPE_WEBHOOK_SECRET: ci-dummy
+      STRIPE_PRICE_ID: ci-dummy
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run pytest
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npx tsc --noEmit
+      - run: npm run test
