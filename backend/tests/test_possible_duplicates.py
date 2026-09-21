@@ -447,3 +447,75 @@ def test_resolving_can_pick_a_legacy_full_text_exclude_that_has_no_reason(
     )
     assert survivor.full_text_decision.decision == "exclude"
     assert survivor.full_text_decision.reason is None
+
+
+def test_resolving_with_the_losers_full_text_invalidates_only_the_survivors_suggestion(
+    authed_client, db_session
+):
+    project_id = create_project(authed_client)
+    field = authed_client.post(
+        f"/review-projects/{project_id}/extraction-fields",
+        json={"name": "Sample size", "description": None},
+    ).json()
+    field_id = uuid.UUID(field["id"])
+    upload_csv(authed_client, project_id, CSV_HEADER + row("Study", doi="10.1/x"))
+    survivor_id = uuid.UUID(list_citations(authed_client, project_id)[0]["id"])
+    loser = _seed_unmatched_citation(db_session, project_id, "Study", doi="10.1/x")
+    project = _get_project(db_session, project_id)
+
+    def give_full_text_and_suggestion(citation_id, filename):
+        full_text = crud.replace_full_text(
+            db_session,
+            citation_id,
+            original_filename=filename,
+            file_path=f"/tmp/{filename}",
+            parsed_text=f"{filename} text",
+            parse_status="parsed",
+        )
+        crud.create_full_text_suggestion(
+            db_session,
+            citation_id,
+            decision="include",
+            reason=f"About {filename}",
+            extraction_values={str(field_id): f"AI value for {filename}"},
+            active_fields=project.active_extraction_fields,
+            full_text_stamp=full_text.updated_at,
+            model="claude-test-model",
+        )
+
+    give_full_text_and_suggestion(survivor_id, "survivor.pdf")
+    give_full_text_and_suggestion(loser.id, "loser.pdf")
+    crud.upsert_extraction_value(
+        db_session, survivor_id, field_id, schemas.ExtractionValueCreate(value="100 patients")
+    )
+    crud.upsert_full_text_decision(
+        db_session,
+        survivor_id,
+        schemas.FullTextDecisionCreate(decision="include", reason=None),
+    )
+    duplicates.process_upload_matches(db_session, project, [loser])
+
+    pd_id = list_possible_duplicates(authed_client, project_id)[0]["id"]
+    resolved = authed_client.post(
+        f"/review-projects/{project_id}/possible-duplicates/{pd_id}/resolve",
+        json={"choices": [{"field": "full_text", "extraction_field_id": None, "winner": "loser"}]},
+    )
+    assert resolved.status_code == 200
+    db_session.expire_all()
+
+    # The survivor now has the loser's PDF, so the Suggestion written for its old
+    # PDF (and that Suggestion's values) is gone, and the next request regenerates it.
+    assert crud.get_full_text(db_session, survivor_id).original_filename == "loser.pdf"
+    assert crud.get_full_text_suggestion(db_session, survivor_id) is None
+    # The archived Citation keeps its own Full Text and Suggestion untouched, and its
+    # link back to the survivor.
+    archived_loser = db_session.get(models.Citation, loser.id)
+    assert archived_loser.archived
+    assert archived_loser.merged_into_citation_id == survivor_id
+    assert crud.get_full_text(db_session, loser.id).original_filename == "loser.pdf"
+    loser_suggestion = crud.get_full_text_suggestion(db_session, loser.id)
+    assert loser_suggestion.reason == "About loser.pdf"
+    assert [v.value for v in loser_suggestion.extraction_values] == ["AI value for loser.pdf"]
+    # Reviewer-entered data on the survivor is not part of the invalidation.
+    assert [v.value for v in crud.get_extraction_values(db_session, survivor_id)] == ["100 patients"]
+    assert crud.get_full_text_decision(db_session, survivor_id).decision == "include"

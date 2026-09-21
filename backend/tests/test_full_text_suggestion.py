@@ -2,12 +2,15 @@ import asyncio
 import io
 import itertools
 import threading
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 
 import pymupdf
 import pytest
+from sqlalchemy import event, text
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.dml import Delete
 
 from asr_backend import crud, full_text_suggestion, models
 from asr_backend.ai_suggestion import (
@@ -337,6 +340,28 @@ def test_a_suggestion_generated_from_a_replaced_pdf_is_not_kept(authed_client):
     assert fresh.json()["suggestion"]["reason"] == "Answer 2"
 
 
+def _wait_until_a_query_is_blocked_on_a_lock(engine, timeout: float = 10) -> None:
+    """Returns once some database session is waiting for a lock another holds.
+
+    Polls the database's own report of that state (a fresh connection each time,
+    since pg_stat_activity is cached within a transaction) rather than guessing
+    how long a thread needs to get there.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        with engine.connect() as connection:
+            blocked = connection.scalar(
+                text(
+                    "SELECT count(*) FROM pg_stat_activity "
+                    "WHERE datname = current_database() AND wait_event_type = 'Lock'"
+                )
+            )
+        if blocked:
+            return
+        time.sleep(0.01)
+    pytest.fail("No query became blocked on a lock")
+
+
 class _PausedCommitSession(Session):
     """A session that stops just before committing, until the test lets it go."""
 
@@ -379,7 +404,7 @@ def test_replacing_the_pdf_waits_for_a_suggestion_that_is_being_saved(authed_cli
 
     def replace_pdf():
         replacement_started.set()
-        crud.upsert_full_text(
+        crud.replace_full_text(
             replacing,
             citation_uuid,
             original_filename="paper.pdf",
@@ -396,6 +421,10 @@ def test_replacing_the_pdf_waits_for_a_suggestion_that_is_being_saved(authed_cli
             assert saving.about_to_commit.wait(timeout=10)
             replaced = pool.submit(replace_pdf)
             assert replacement_started.wait(timeout=10)
+            # Not just started: parked on the lock the save holds. Without this the
+            # save can commit before the replacement has issued anything, and the
+            # test would pass whatever order the replacement works in.
+            _wait_until_a_query_is_blocked_on_a_lock(engine)
             assert not replacement_finished.is_set()
             saving.proceed.set()
             saved.result()
@@ -405,6 +434,8 @@ def test_replacing_the_pdf_waits_for_a_suggestion_that_is_being_saved(authed_cli
         replacing.close()
 
     assert events == ["suggestion saved", "pdf replaced"]
+    # The replacement waited for the save, so it sees and removes what was saved.
+    assert crud.get_full_text_suggestion(db_session, citation_uuid) is None
 
 
 def test_requesting_a_suggestion_without_a_full_text_does_not_ask_the_model(
@@ -583,3 +614,250 @@ def test_a_new_full_text_suggestion_stores_the_configured_model_and_keeps_it(
     )
     assert stored.model == "claude-first-model"
     assert override_suggester.full_text_calls == 1
+
+
+def _replace_full_text(session, citation_id: str, filename: str = "second.pdf"):
+    return crud.replace_full_text(
+        session,
+        uuid.UUID(citation_id),
+        original_filename=filename,
+        file_path="unused.pdf",
+        parsed_text="Second version",
+        parse_status="parsed",
+    )
+
+
+def _committed_pair(engine, citation_id: str) -> tuple[str | None, str | None]:
+    """(Full Text filename, Suggestion reason) as a brand-new reader would see them."""
+    reader = Session(bind=engine)
+    try:
+        full_text, suggestion = crud.get_full_text_with_suggestion(reader, uuid.UUID(citation_id))
+        return (
+            full_text.original_filename if full_text else None,
+            suggestion.reason if suggestion else None,
+        )
+    finally:
+        reader.close()
+
+
+class _ObservedCommitSession(Session):
+    """A session that reports what other readers can see right after each of its commits."""
+
+    def __init__(self, *args, observe, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._observe = observe
+        self.observations: list = []
+
+    def commit(self):
+        super().commit()
+        self.observations.append(self._observe())
+
+
+class _FailingSuggestionDeleteSession(Session):
+    """A session that fails deleting the Suggestion itself, after everything before it has run.
+
+    By then the Full Text upsert and the delete of the Suggestion's values have both
+    been executed in the open transaction, so what survives shows what was rolled back.
+    """
+
+    def execute(self, statement, *args, **kwargs):
+        if isinstance(statement, Delete) and statement.table.name == "full_text_suggestions":
+            raise RuntimeError("induced failure")
+        return super().execute(statement, *args, **kwargs)
+
+
+class _RecordingSuggester(_FakeSuggester):
+    def __init__(self):
+        super().__init__()
+        self.seen_texts: list[str] = []
+
+    async def suggest_full_text_decision(self, **kwargs):
+        self.seen_texts.append(kwargs["full_text"])
+        return await super().suggest_full_text_decision(**kwargs)
+
+
+def test_a_suggestion_save_that_arrives_during_a_replacement_is_refused(
+    authed_client, override_suggester, db_session
+):
+    project_id = create_project(authed_client)
+    citation_id = create_citation(authed_client, project_id)
+    upload_full_text(authed_client, project_id, citation_id, make_pdf("First"), filename="first.pdf")
+    citation_uuid = uuid.UUID(citation_id)
+    old_stamp = crud.get_full_text(db_session, citation_uuid).updated_at
+    engine = db_session.get_bind()
+    replacing = _PausedCommitSession(bind=engine)
+    saving = Session(bind=engine)
+
+    def replace_pdf():
+        _replace_full_text(replacing, citation_id)
+
+    def save_suggestion():
+        return crud.create_full_text_suggestion(
+            saving,
+            citation_uuid,
+            decision="include",
+            reason="From the first version.",
+            extraction_values={},
+            active_fields=[],
+            full_text_stamp=old_stamp,
+            model="claude-test-model",
+        )
+
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            replaced = pool.submit(replace_pdf)
+            assert replacing.about_to_commit.wait(timeout=10)
+            saved = pool.submit(save_suggestion)
+            # The save is parked on the Full Text row the open replacement has locked.
+            _wait_until_a_query_is_blocked_on_a_lock(engine)
+            replacing.proceed.set()
+            replaced.result()
+            outcome = saved.result()
+    finally:
+        replacing.close()
+        saving.close()
+
+    assert outcome is None
+    assert _committed_pair(engine, citation_id) == ("second.pdf", None)
+
+
+def test_replacing_the_pdf_never_commits_new_metadata_beside_the_old_suggestion(
+    authed_client, override_suggester, db_session
+):
+    project_id = create_project(authed_client)
+    citation_id = create_citation(authed_client, project_id)
+    upload_full_text(authed_client, project_id, citation_id, make_pdf("First"), filename="first.pdf")
+    generate_suggestion(authed_client, project_id, citation_id)
+    engine = db_session.get_bind()
+    replacing = _ObservedCommitSession(
+        bind=engine, observe=lambda: _committed_pair(engine, citation_id)
+    )
+
+    try:
+        _replace_full_text(replacing, citation_id)
+    finally:
+        replacing.close()
+
+    coherent = {("first.pdf", "Meets all criteria."), ("second.pdf", None)}
+    assert replacing.observations
+    assert set(replacing.observations) <= coherent
+    assert _committed_pair(engine, citation_id) == ("second.pdf", None)
+
+
+def test_an_error_before_the_shared_commit_rolls_back_the_new_full_text_and_the_invalidation(
+    authed_client, override_suggester, db_session
+):
+    project_id = create_project(authed_client)
+    citation_id = create_citation(authed_client, project_id)
+    field = create_extraction_field(authed_client, project_id)
+    override_suggester.extraction_values = {field["id"]: "120 patients"}
+    upload_full_text(authed_client, project_id, citation_id, make_pdf("First"), filename="first.pdf")
+    generate_suggestion(authed_client, project_id, citation_id)
+    engine = db_session.get_bind()
+    failing = _FailingSuggestionDeleteSession(bind=engine)
+
+    try:
+        with pytest.raises(RuntimeError, match="induced failure"):
+            _replace_full_text(failing, citation_id)
+    finally:
+        failing.close()
+
+    # Neither the new Full Text nor the already-executed delete of the values stuck.
+    assert _committed_pair(engine, citation_id) == ("first.pdf", "Meets all criteria.")
+    assert db_session.query(models.FullTextSuggestionValue).count() == 1
+
+
+def test_a_detail_read_spanning_a_pdf_replacement_returns_one_coherent_snapshot(
+    authed_client, override_suggester, db_session
+):
+    project_id = create_project(authed_client)
+    citation_id = create_citation(authed_client, project_id)
+    upload_full_text(authed_client, project_id, citation_id, make_pdf("First"), filename="first.pdf")
+    generate_suggestion(authed_client, project_id, citation_id)
+    engine = db_session.get_bind()
+    state = {"fired": False}
+
+    def replace_after_the_first_read_of_either_table(conn, cursor, statement, *args):
+        # Commits the replacement on its own connection right after the request
+        # first reads Full Text or Suggestion data, i.e. between two separate
+        # reads if the endpoint makes more than one.
+        reads_the_pair = "full_texts" in statement or "full_text_suggestions" in statement
+        if state["fired"] or not reads_the_pair or not statement.lstrip().upper().startswith("SELECT"):
+            return
+        state["fired"] = True
+        replacing = Session(bind=engine)
+        try:
+            _replace_full_text(replacing, citation_id)
+        finally:
+            replacing.close()
+
+    event.listen(engine, "after_cursor_execute", replace_after_the_first_read_of_either_table)
+    try:
+        detail = get_detail(authed_client, project_id, citation_id)
+    finally:
+        event.remove(engine, "after_cursor_execute", replace_after_the_first_read_of_either_table)
+
+    assert state["fired"]
+    suggestion = detail["full_text_suggestion"]
+    pair = (
+        detail["full_text"]["original_filename"],
+        suggestion["reason"] if suggestion else None,
+    )
+    assert pair in {("first.pdf", "Meets all criteria."), ("second.pdf", None)}
+    if suggestion is None:
+        assert detail["full_text_suggestion_needs_generation"] is True
+    # The replacement did commit, so the next read is the current snapshot.
+    current = get_detail(authed_client, project_id, citation_id)
+    assert current["full_text"]["original_filename"] == "second.pdf"
+    assert current["full_text_suggestion"] is None
+
+
+def test_replacing_the_pdf_removes_the_suggestion_and_its_suggested_values(
+    authed_client, override_suggester, db_session
+):
+    project_id = create_project(authed_client)
+    citation_id = create_citation(authed_client, project_id)
+    field = create_extraction_field(authed_client, project_id)
+    override_suggester.extraction_values = {field["id"]: "120 patients"}
+    upload_full_text(authed_client, project_id, citation_id, make_pdf("First"))
+    generate_suggestion(authed_client, project_id, citation_id)
+    assert db_session.query(models.FullTextSuggestionValue).count() == 1
+
+    response = upload_full_text(authed_client, project_id, citation_id, make_pdf("Second"))
+
+    assert response.status_code == 201
+    assert db_session.query(models.FullTextSuggestion).count() == 0
+    assert db_session.query(models.FullTextSuggestionValue).count() == 0
+
+
+def test_replacing_the_pdf_works_when_there_is_no_suggestion_to_clear(authed_client, db_session):
+    project_id = create_project(authed_client)
+    citation_id = create_citation(authed_client, project_id)
+    upload_full_text(authed_client, project_id, citation_id, make_pdf("First"), filename="first.pdf")
+
+    response = upload_full_text(
+        authed_client, project_id, citation_id, make_pdf("Second"), filename="second.pdf"
+    )
+
+    assert response.status_code == 201
+    assert response.json()["original_filename"] == "second.pdf"
+    assert db_session.query(models.FullTextSuggestion).count() == 0
+
+
+def test_the_next_suggestion_reads_the_replacement_pdfs_text(authed_client):
+    project_id = create_project(authed_client)
+    citation_id = create_citation(authed_client, project_id)
+    suggester = _RecordingSuggester()
+    app.dependency_overrides[get_ai_suggester] = lambda: suggester
+    try:
+        upload_full_text(authed_client, project_id, citation_id, make_pdf("First version"))
+        generate_suggestion(authed_client, project_id, citation_id)
+        upload_full_text(authed_client, project_id, citation_id, make_pdf("Second version"))
+        generate_suggestion(authed_client, project_id, citation_id)
+    finally:
+        app.dependency_overrides.pop(get_ai_suggester, None)
+
+    assert len(suggester.seen_texts) == 2
+    assert "First version" in suggester.seen_texts[0]
+    assert "Second version" in suggester.seen_texts[1]
+    assert "First version" not in suggester.seen_texts[1]

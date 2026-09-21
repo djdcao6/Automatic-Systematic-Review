@@ -30,7 +30,19 @@ def read_full_text_suggestion(
     needs generating). Cheap enough for the Citation detail view, which must
     not wait on the model.
     """
-    existing = crud.get_full_text_suggestion(db, citation.id)
+    return describe_full_text_suggestion(
+        crud.get_full_text_suggestion(db, citation.id), full_text
+    )
+
+
+def describe_full_text_suggestion(
+    existing: models.FullTextSuggestion | None, full_text: models.FullText | None
+) -> tuple[models.FullTextSuggestion | None, str | None, bool]:
+    """read_full_text_suggestion's answer for a Suggestion and Full Text already read.
+
+    Lets a caller that read the pair together (crud.get_full_text_with_suggestion)
+    keep the answer consistent with that one snapshot.
+    """
     if existing is not None:
         return existing, None, False
     if full_text is None:
@@ -51,8 +63,8 @@ async def get_or_generate_full_text_suggestion(
     Mirrors the AI Suggestion domain rule (asr_backend.screening), but keyed
     to the Full Text: generated once per Full Text version, then persisted
     and reused until the PDF is replaced. Replacing the PDF invalidates the
-    prior Suggestion (asr_backend.crud.delete_full_text_suggestion, called
-    from the full-text upload route), so the next access here regenerates it.
+    prior Suggestion in the same commit (asr_backend.crud.replace_full_text),
+    so the next access here regenerates it.
     """
     waiting_since = time.monotonic()
     while True:

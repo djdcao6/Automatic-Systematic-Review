@@ -620,10 +620,16 @@ def get_citation_detail(
     own_decision, peer_decision, is_blind = screening.resolve_screening_view(
         db, project, citation, reviewer
     )
-    existing_full_text = crud.get_full_text(db, citation.id)
+    # Full Text and its Suggestion are read together so a PDF replacement can't land
+    # between them and pair new metadata with the old Suggestion.
+    existing_full_text, existing_ft_suggestion = crud.get_full_text_with_suggestion(
+        db, citation.id
+    )
     full_text_decision = crud.get_full_text_decision(db, citation.id)
     ft_suggestion, ft_unavailable_reason, ft_needs_generation = (
-        full_text_suggestion.read_full_text_suggestion(db, citation, existing_full_text)
+        full_text_suggestion.describe_full_text_suggestion(
+            existing_ft_suggestion, existing_full_text
+        )
     )
     extraction_values = crud.get_extraction_values(db, citation.id)
     place = crud.get_citation_place(db, project.id, citation)
@@ -748,7 +754,9 @@ def upload_full_text(
     except full_text.PdfTooManyPages as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     file_path = full_text.save_pdf(citation.id, raw)
-    result = crud.upsert_full_text(
+    # A new PDF is new source content, so this also clears any prior Full-Text
+    # Suggestion in the same commit; the next request for one regenerates it.
+    return crud.replace_full_text(
         db,
         citation.id,
         original_filename=file.filename or "full-text.pdf",
@@ -756,10 +764,6 @@ def upload_full_text(
         parsed_text=parsed_text,
         parse_status=parse_status,
     )
-    # A new PDF is new source content, so any prior Full-Text Suggestion is
-    # stale; clearing it here lets the next request for one regenerate it.
-    crud.delete_full_text_suggestion(db, citation.id)
-    return result
 
 
 @app.post(

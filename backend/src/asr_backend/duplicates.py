@@ -184,7 +184,9 @@ def _copy_field(
             ),
         )
     elif field == "full_text":
-        crud.upsert_full_text(
+        # Also clears the survivor's Full-Text Suggestion (the one written for the
+        # PDF this replaces); the loser's own Full Text and Suggestion stay as they are.
+        crud.replace_full_text(
             db,
             survivor.id,
             original_filename=loser.full_text.original_filename,
