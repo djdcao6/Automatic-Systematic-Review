@@ -147,6 +147,7 @@ export function ConflictsPanel({
   const {
     data: conflicts,
     error,
+    loaded,
     refresh,
   } = useListResource(
     () => listConflicts(reviewProjectId),
@@ -162,10 +163,19 @@ export function ConflictsPanel({
   return (
     <section>
       <h2>Conflicts</h2>
-      {error && <p role="alert">{error}</p>}
-      {conflicts.length === 0 ? (
-        <p>No outstanding Conflicts.</p>
-      ) : (
+      {error && (
+        <>
+          <p role="alert">{error}</p>
+          <button type="button" onClick={refresh}>
+            Try again
+          </button>
+        </>
+      )}
+      {/* An empty list means "no Conflicts" only after a load has succeeded and
+          nothing has gone wrong since; until then it just means nothing has arrived. */}
+      {!loaded && !error && <p className="meta">Loading conflicts...</p>}
+      {loaded && !error && conflicts.length === 0 && <p>No outstanding Conflicts.</p>}
+      {conflicts.length > 0 && (
         <ul className="items">
           {conflicts.map((conflict) => (
             <ConflictItem
