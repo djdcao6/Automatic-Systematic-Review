@@ -29,6 +29,10 @@ const sampleConflict = {
 
 describe("ConflictsPanel", () => {
   beforeEach(() => {
+    // Reset, not just re-default: one-shot values queued by a test that stopped
+    // early would otherwise leak into the next.
+    mockedApi.listConflicts.mockReset();
+    mockedApi.resolveConflict.mockReset();
     mockedApi.listConflicts.mockResolvedValue([]);
   });
 
@@ -141,6 +145,83 @@ describe("ConflictsPanel", () => {
     expect(await screen.findByText("Effects of Aspirin on Recovery")).toBeInTheDocument();
     expect(screen.getByText(/waiting for the owner/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /resolve/i })).not.toBeInTheDocument();
+  });
+
+  it("shows a loading state, not the empty confirmation, until the first load succeeds", async () => {
+    let finishLoading!: (conflicts: (typeof sampleConflict)[]) => void;
+    mockedApi.listConflicts.mockReturnValue(
+      new Promise((resolve) => {
+        finishLoading = resolve;
+      })
+    );
+
+    render(<ConflictsPanel reviewProjectId="1" isOwner={true} />);
+
+    expect(screen.getByText(/loading conflicts/i)).toBeInTheDocument();
+    expect(screen.queryByText(/no outstanding conflicts/i)).not.toBeInTheDocument();
+
+    finishLoading([]);
+
+    expect(await screen.findByText(/no outstanding conflicts/i)).toBeInTheDocument();
+    expect(screen.queryByText(/loading conflicts/i)).not.toBeInTheDocument();
+  });
+
+  it("shows the error and a retry, but not the empty confirmation, when the first load fails", async () => {
+    mockedApi.listConflicts.mockRejectedValue(new Error("boom"));
+
+    render(<ConflictsPanel reviewProjectId="1" isOwner={true} />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/failed to load conflicts/i);
+    expect(screen.getByRole("button", { name: /try again/i })).toBeInTheDocument();
+    expect(screen.queryByText(/no outstanding conflicts/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/loading conflicts/i)).not.toBeInTheDocument();
+  });
+
+  it("clears the error and shows the empty confirmation when a retry finds no Conflicts", async () => {
+    mockedApi.listConflicts.mockRejectedValueOnce(new Error("boom")).mockResolvedValueOnce([]);
+
+    render(<ConflictsPanel reviewProjectId="1" isOwner={true} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /try again/i }));
+
+    expect(await screen.findByText(/no outstanding conflicts/i)).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /try again/i })).not.toBeInTheDocument();
+  });
+
+  it("shows the Conflicts when a retry succeeds", async () => {
+    mockedApi.listConflicts
+      .mockRejectedValueOnce(new Error("boom"))
+      .mockResolvedValueOnce([sampleConflict]);
+
+    render(<ConflictsPanel reviewProjectId="1" isOwner={true} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /try again/i }));
+
+    expect(await screen.findByText("Effects of Aspirin on Recovery")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("keeps the rows already shown, with the error, when a later refresh fails", async () => {
+    mockedApi.listConflicts
+      .mockResolvedValueOnce([sampleConflict])
+      .mockRejectedValueOnce(new Error("boom"));
+    mockedApi.resolveConflict.mockResolvedValue({
+      id: "conflict-1",
+      status: "resolved",
+      resolved_decision: "include",
+      resolved_reason: "Meets criteria",
+      resolved_at: "2026-01-03T00:00:00Z",
+    });
+
+    render(<ConflictsPanel reviewProjectId="1" isOwner={true} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /resolve/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(/failed to load conflicts/i);
+    expect(screen.getByText("Effects of Aspirin on Recovery")).toBeInTheDocument();
+    expect(screen.queryByText(/no outstanding conflicts/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /try again/i })).toBeInTheDocument();
   });
 
   it("shows an error when resolving fails", async () => {
