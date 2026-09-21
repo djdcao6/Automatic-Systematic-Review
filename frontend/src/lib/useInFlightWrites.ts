@@ -9,7 +9,7 @@ export function useInFlightWrites() {
   const running = useRef(new Set<string>());
   const [pending, setPending] = useState<ReadonlySet<string>>(new Set());
 
-  function show() {
+  function syncPending() {
     setPending(new Set(running.current));
   }
 
@@ -18,12 +18,12 @@ export function useInFlightWrites() {
   async function run(key: string, write: () => Promise<void>): Promise<void> {
     if (running.current.has(key)) return;
     running.current.add(key);
-    show();
+    syncPending();
     try {
       await write();
     } finally {
       running.current.delete(key);
-      show();
+      syncPending();
     }
   }
 

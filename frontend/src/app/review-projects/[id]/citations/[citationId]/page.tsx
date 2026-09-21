@@ -101,10 +101,11 @@ const SCREENING_WRITE = "screening";
 const FULL_TEXT_DECISION_WRITE = "full-text-decision";
 const UPLOAD = "upload";
 const REFRESH = "refresh";
-const extractionWrite = (fieldId: string) => `extraction:${fieldId}`;
+const EXTRACTION_PREFIX = "extraction:";
+const extractionWrite = (fieldId: string) => `${EXTRACTION_PREFIX}${fieldId}`;
 const isScreeningWrite = (key: string) => key === SCREENING_WRITE;
 const isFullTextDecisionWrite = (key: string) => key === FULL_TEXT_DECISION_WRITE;
-const isExtractionWrite = (key: string) => key.startsWith("extraction:");
+const isExtractionWrite = (key: string) => key.startsWith(EXTRACTION_PREFIX);
 const isUpload = (key: string) => key === UPLOAD;
 // Replacing the PDF invalidates the AI output the Reviewer is reading beside these
 // values, so neither runs while the other does.
@@ -336,6 +337,8 @@ function CitationScreening({
     }
 
     await writes.run(SCREENING_WRITE, async () => {
+      // That message is about the last write; this is a new one.
+      setRefreshFailed(false);
       const answer: Answer = { decision, reason: blankOrValue(reason) };
       try {
         await recordScreeningDecision(reviewProjectId, citationId, answer);
@@ -583,7 +586,10 @@ function CitationScreening({
               id="decision-reason"
               value={reason}
               onChange={(event) => setReason(event.target.value)}
-              disabled={screeningLocked}
+              // Read-only rather than disabled: Ctrl+Enter saves from here, and a
+              // disabled field would drop focus, so the next letters typed would
+              // fire the decision shortcuts instead of going into the reason.
+              readOnly={screeningLocked}
             />
 
             <div className="form-actions">
@@ -602,8 +608,10 @@ function CitationScreening({
             </p>
           )}
           {refreshFailed && (
-            <p role="alert">
-              Your decision was saved, but this page could not be refreshed.{" "}
+            <>
+              <p role="alert">
+                Your decision was saved, but this page could not be refreshed.
+              </p>
               <button
                 type="button"
                 disabled={writes.isPending((key) => key === REFRESH)}
@@ -611,7 +619,7 @@ function CitationScreening({
               >
                 Refresh
               </button>
-            </p>
+            </>
           )}
           {conflictHeld && (
             <p role="status">

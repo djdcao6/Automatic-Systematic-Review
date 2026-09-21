@@ -1953,7 +1953,9 @@ describe("CitationScreeningPage", () => {
         expect(mockedApi.recordScreeningDecision).toHaveBeenCalledTimes(1);
         expect(saveScreening()).toBeDisabled();
         expect(screeningGroup().getByLabelText("maybe")).toBeDisabled();
-        expect(screen.getByLabelText(/reason/i)).toBeDisabled();
+        // Read-only, not disabled, so Ctrl+Enter from the reason keeps keyboard focus.
+        expect(screen.getByLabelText(/reason/i)).toHaveAttribute("readonly");
+        expect(screen.getByLabelText(/reason/i)).toBeEnabled();
 
         // A shortcut is an edit too.
         pressKey("m");
@@ -1963,7 +1965,7 @@ describe("CitationScreeningPage", () => {
 
         expect(await screen.findByText("Decision saved.")).toBeInTheDocument();
         expect(saveScreening()).toBeEnabled();
-        expect(screen.getByLabelText(/reason/i)).toBeEnabled();
+        expect(screen.getByLabelText(/reason/i)).not.toHaveAttribute("readonly");
       });
 
       it("keeps a failed Screening Decision as typed, unlocks the form and lets it be retried", async () => {
@@ -2079,6 +2081,30 @@ describe("CitationScreeningPage", () => {
         expect(fieldBlock("Sample size").getByText("Extraction value saved.")).toBeInTheDocument();
       });
 
+      // The tests above click a button that is already disabled, which React ignores. These
+      // act on the same tick, before a re-render could disable anything, so only the
+      // handler-level guard can stop the second write.
+      it("turns away a second Extraction Value write made in the same tick", async () => {
+        mockedApi.getCitation.mockResolvedValue(
+          citationWith({ extraction_fields: [sampleSizeField] })
+        );
+        const write = deferred<ExtractionRecord>();
+        mockedApi.recordExtractionValue.mockReturnValue(write.promise);
+        renderPage();
+        fireEvent.change(await screen.findByLabelText("Sample size"), {
+          target: { value: "120" },
+        });
+        const save = screen.getByRole("button", { name: "Save" });
+
+        await act(async () => {
+          fireEvent.click(save);
+          fireEvent.click(save);
+        });
+
+        expect(mockedApi.recordExtractionValue).toHaveBeenCalledTimes(1);
+        await act(async () => write.resolve(extractionRecord("f1", "120")));
+      });
+
       it("keeps a failed Extraction Value as typed and lets it be retried", async () => {
         mockedApi.getCitation.mockResolvedValue(
           citationWith({ extraction_fields: [sampleSizeField] })
@@ -2132,6 +2158,30 @@ describe("CitationScreeningPage", () => {
       });
     });
 
+    describe("a later save after a failed refresh", () => {
+      it("stops claiming the earlier decision was saved when the new save fails", async () => {
+        mockedApi.getCitation
+          .mockResolvedValueOnce(citationWith())
+          .mockRejectedValueOnce(new Error("refresh failed"));
+        mockedApi.recordScreeningDecision
+          .mockResolvedValueOnce(screeningRecord("include"))
+          .mockRejectedValueOnce(new Error("boom"));
+        renderPage();
+        await screen.findByRole("group", { name: /screening decision/i });
+
+        fireEvent.click(screeningGroup().getByLabelText("include"));
+        fireEvent.click(saveScreening());
+        expect(await screen.findByRole("alert")).toHaveTextContent(/could not be refreshed/i);
+
+        fireEvent.click(screeningGroup().getByLabelText("exclude"));
+        fireEvent.click(saveScreening());
+
+        expect(await screen.findByRole("alert")).toHaveTextContent(/failed to save screening/i);
+        expect(screen.queryByText(/could not be refreshed/i)).not.toBeInTheDocument();
+        expect(screen.queryByRole("button", { name: /refresh/i })).not.toBeInTheDocument();
+      });
+    });
+
     describe("leaving a Citation while a write is pending", () => {
       function renderAt(citationId: string) {
         return (
@@ -2142,8 +2192,14 @@ describe("CitationScreeningPage", () => {
       }
 
       it("does not show the old Citation's answer on the next one, and reloads the first when returned to", async () => {
+        // What the server holds for c1: nothing until the write lands.
+        let persisted: ScreeningRecord | null = null;
         mockedApi.getCitation.mockImplementation(async (_project, id) =>
-          citationWith({ id, title: id === "c1" ? "Metformin RCT" : "Aspirin trial" })
+          citationWith({
+            id,
+            title: id === "c1" ? "Metformin RCT" : "Aspirin trial",
+            screening_decision: id === "c1" ? persisted : null,
+          })
         );
         const write = deferred<ScreeningRecord>();
         mockedApi.recordScreeningDecision.mockReturnValue(write.promise);
@@ -2155,7 +2211,8 @@ describe("CitationScreeningPage", () => {
         rerender(renderAt("c2"));
         await screen.findByText("Aspirin trial");
 
-        await act(async () => write.resolve(screeningRecord("include")));
+        persisted = screeningRecord("include");
+        await act(async () => write.resolve(persisted as ScreeningRecord));
 
         expect(screen.queryByText("Decision saved.")).not.toBeInTheDocument();
         expect(screen.queryByRole("alert")).not.toBeInTheDocument();
@@ -2165,6 +2222,9 @@ describe("CitationScreeningPage", () => {
         rerender(renderAt("c1"));
         await screen.findByText("Metformin RCT");
 
+        // Back on c1 it is read afresh: the decision that landed is there, and the old
+        // instance's "saved" stamp is not.
+        await waitFor(() => expect(screeningGroup().getByLabelText("include")).toBeChecked());
         expect(screen.queryByText("Decision saved.")).not.toBeInTheDocument();
         expect(
           mockedApi.getCitation.mock.calls.filter(([, id]) => id === "c1").length
@@ -2221,6 +2281,29 @@ describe("CitationScreeningPage", () => {
         await act(async () => write.resolve(extractionRecord("f1", "120")));
 
         await waitFor(() => expect(screen.getByLabelText(/replace full text/i)).toBeEnabled());
+      });
+
+      it("turns away a PDF replacement started in the same tick as an Extraction Value save", async () => {
+        mockedApi.getCitation.mockResolvedValue(
+          citationWith({ full_text: parsedFullText, extraction_fields: [sampleSizeField] })
+        );
+        const write = deferred<ExtractionRecord>();
+        mockedApi.recordExtractionValue.mockReturnValue(write.promise);
+        renderPage();
+        fireEvent.change(await screen.findByLabelText("Sample size"), {
+          target: { value: "120" },
+        });
+
+        // Both on one tick, before React re-renders anything disabled: only the
+        // handler's own check can stop the upload.
+        await act(async () => {
+          fireEvent.click(screen.getByRole("button", { name: "Save" }));
+          chooseFile(/replace full text/i);
+        });
+
+        expect(mockedApi.recordExtractionValue).toHaveBeenCalledTimes(1);
+        expect(mockedApi.uploadFullText).not.toHaveBeenCalled();
+        await act(async () => write.resolve(extractionRecord("f1", "120")));
       });
 
       it("will not save a Full-Text Decision or an Extraction Value while the PDF is being replaced", async () => {
