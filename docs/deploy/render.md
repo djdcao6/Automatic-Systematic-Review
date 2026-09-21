@@ -62,6 +62,9 @@ Why it looks like this:
    - Attach a Full Text (upload a PDF) and open it again. This also proves `/data` is writable: the
      container runs as root because the disk's ownership is not documented for other users.
    - Export.
+
+   The full two-reviewer run, with fixed data and expected values, is `docs/testing/pilot-smoke.md`
+   (#93).
 6. Do the two restore tests below **before inviting anyone**. The PDF one is destructive and only
    safe while the disk holds nothing real.
 
@@ -170,8 +173,9 @@ an address the client wrote. Measure it during the #93 smoke run:
 ## Finishing #65
 
 The Blueprint and this page are only part of #65. Before closing it, link on the issue: the
-deployed two-reviewer smoke result from #93, the two restore-test records above, and the release
-instructions in #64. Host availability is what #93 waits on; closing #65 is not.
+deployed two-reviewer smoke result from #93 (protocol: `docs/testing/pilot-smoke.md`), the two
+restore-test records above, and the release instructions in #64. Host availability is what #93
+waits on; closing #65 is not.
 
 ## Known gaps
 
