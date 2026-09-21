@@ -224,7 +224,7 @@ def test_one_sided_transfer_of_full_text_decision(authed_client, db_session):
 
     loser = _seed_unmatched_citation(db_session, project_id, "Study", doi="10.1/x")
     project = _get_project(db_session, project_id)
-    crud.upsert_full_text(
+    crud.replace_full_text(
         db_session,
         loser.id,
         original_filename="paper.pdf",

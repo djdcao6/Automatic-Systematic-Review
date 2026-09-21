@@ -3,10 +3,10 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from asr_backend import models, schemas
 from asr_backend.citation_import import ParsedCitation
@@ -459,7 +459,37 @@ def get_full_text(db: Session, citation_id: uuid.UUID) -> models.FullText | None
     )
 
 
-def upsert_full_text(
+def get_full_text_with_suggestion(
+    db: Session, citation_id: uuid.UUID
+) -> tuple[models.FullText | None, models.FullTextSuggestion | None]:
+    """Reads a Citation's Full Text and its Full-Text Suggestion from one snapshot.
+
+    A single statement, so a replacement committing between two separate reads
+    can't leave the caller holding new Full Text metadata beside the Suggestion
+    written for the old PDF (or the reverse). The Suggestion's values and their
+    field names come in the same statement for the same reason.
+    """
+    row = db.execute(
+        select(models.FullText, models.FullTextSuggestion)
+        .select_from(models.Citation)
+        .outerjoin(models.FullText, models.FullText.citation_id == models.Citation.id)
+        .outerjoin(
+            models.FullTextSuggestion, models.FullTextSuggestion.citation_id == models.Citation.id
+        )
+        .options(
+            joinedload(models.FullTextSuggestion.extraction_values).joinedload(
+                models.FullTextSuggestionValue.extraction_field
+            )
+        )
+        .where(models.Citation.id == citation_id)
+        # Rows already in the session are refreshed, not reused, so an earlier read
+        # in the same request can't stand in for this snapshot.
+        .execution_options(populate_existing=True)
+    ).unique().one_or_none()
+    return (None, None) if row is None else (row[0], row[1])
+
+
+def replace_full_text(
     db: Session,
     citation_id: uuid.UUID,
     *,
@@ -468,6 +498,20 @@ def upsert_full_text(
     parsed_text: str | None,
     parse_status: str,
 ) -> models.FullText:
+    """Sets a Citation's Full Text and invalidates its Full-Text Suggestion in one commit.
+
+    A new PDF is new source content, so the Suggestion written for the old one
+    (and its values) is stale. Both changes commit together, so no reader is
+    ever handed the new Full Text beside the old Suggestion. The next request
+    for a Suggestion generates a new one from the current parsed text.
+
+    The order matters. The upsert takes the Full Text row's lock first, so it
+    waits for a Suggestion save that holds a FOR SHARE lock on that row
+    (create_full_text_suggestion); the delete is a separate statement issued
+    after that wait, so it sees, and removes, a Suggestion committed meanwhile.
+    Only the database is atomic here: the PDF bytes are written to disk before
+    this is called (full_text.save_pdf) and are not rolled back with it.
+    """
     values = {
         "citation_id": citation_id,
         "original_filename": original_filename,
@@ -489,6 +533,7 @@ def upsert_full_text(
     # Same atomic INSERT ... ON CONFLICT DO UPDATE pattern as upsert_criteria,
     # since replacing a Full Text races the same way as a fresh upload.
     db.execute(stmt)
+    _delete_full_text_suggestion(db, citation_id)
     db.commit()
     return (
         db.query(models.FullText).filter(models.FullText.citation_id == citation_id).one()
@@ -569,8 +614,8 @@ def create_full_text_suggestion(
     suggestion was written from the Full Text as of `full_text_stamp`, so it is
     kept only if that is still the current version, and returns None if not.
     The read takes a FOR SHARE lock held until the commit below, so a
-    replacement that starts after the check waits, and the upload route's
-    delete_full_text_suggestion then removes what was just saved.
+    replacement that starts after the check waits, and replace_full_text
+    then removes what was just saved.
     """
     current_stamp = db.execute(
         select(models.FullText.updated_at)
@@ -617,12 +662,26 @@ def create_full_text_suggestion(
     return db.get(models.FullTextSuggestion, inserted_id)
 
 
-def delete_full_text_suggestion(db: Session, citation_id: uuid.UUID) -> None:
-    """Invalidates a Citation's Full-Text Suggestion, e.g. when its PDF is replaced."""
-    suggestion = get_full_text_suggestion(db, citation_id)
-    if suggestion is not None:
-        db.delete(suggestion)
-        db.commit()
+def _delete_full_text_suggestion(db: Session, citation_id: uuid.UUID) -> None:
+    """Removes a Citation's Full-Text Suggestion and its values, without committing.
+
+    Private on purpose: it must only run inside replace_full_text's transaction,
+    so invalidating the Suggestion can never commit apart from the Full Text change.
+    """
+    db.execute(
+        delete(models.FullTextSuggestionValue).where(
+            models.FullTextSuggestionValue.full_text_suggestion_id.in_(
+                select(models.FullTextSuggestion.id).where(
+                    models.FullTextSuggestion.citation_id == citation_id
+                )
+            )
+        )
+    )
+    db.execute(
+        delete(models.FullTextSuggestion).where(
+            models.FullTextSuggestion.citation_id == citation_id
+        )
+    )
 
 
 def get_extraction_values(db: Session, citation_id: uuid.UUID) -> list[models.ExtractionValue]:
@@ -911,7 +970,7 @@ def upsert_subscription(
             "updated_at": func.now(),
         },
     )
-    # Same atomic INSERT ... ON CONFLICT DO UPDATE pattern as upsert_full_text,
+    # Same atomic INSERT ... ON CONFLICT DO UPDATE pattern as upsert_criteria,
     # since a webhook retried or delivered out of order races a concurrent
     # delivery of the same or a later event for the same Reviewer.
     db.execute(stmt)

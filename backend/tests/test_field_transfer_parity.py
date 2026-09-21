@@ -154,7 +154,7 @@ def test_full_text_transfers_identically_via_merge_and_resolution(authed_client,
     merge_survivor_id = list_citations(authed_client, merge_project_id)[0]["id"]
     merge_loser = _seed_unmatched_citation(db_session, merge_project_id, "Study", doi="10.1/x")
     merge_project = _get_project(db_session, merge_project_id)
-    crud.upsert_full_text(
+    crud.replace_full_text(
         db_session,
         merge_loser.id,
         original_filename="loser.pdf",
@@ -172,7 +172,7 @@ def test_full_text_transfers_identically_via_merge_and_resolution(authed_client,
     resolve_project_id = create_project(authed_client)
     upload_csv(authed_client, resolve_project_id, CSV_HEADER + row("Study", doi="10.1/x"))
     resolve_survivor_id = list_citations(authed_client, resolve_project_id)[0]["id"]
-    crud.upsert_full_text(
+    crud.replace_full_text(
         db_session,
         uuid.UUID(resolve_survivor_id),
         original_filename="survivor.pdf",
@@ -181,7 +181,7 @@ def test_full_text_transfers_identically_via_merge_and_resolution(authed_client,
         parse_status="parsed",
     )
     resolve_loser = _seed_unmatched_citation(db_session, resolve_project_id, "Study", doi="10.1/x")
-    crud.upsert_full_text(
+    crud.replace_full_text(
         db_session,
         resolve_loser.id,
         original_filename="loser.pdf",
