@@ -9,17 +9,24 @@ sign up.
 
 | Piece | Render service | Plan | About per month |
 |---|---|---|---|
-| Backend (FastAPI) | Web service `asr-api`, Docker, 10 GB persistent disk at `/data` | 1 CPU, 2 GB | $25 + $2.50 disk |
-| Database | Postgres `asr-db` (17), private network only | Basic, 1 GB | $19 |
+| Backend (FastAPI) | Web service `asr-api`, Docker, 5 GB persistent disk at `/data` | 1 CPU, 2 GB | $25 + $1.25 disk |
+| Database | Postgres `asr-db` (17), private network only, 5 GB storage | Basic, 256 MB | about $6 + $1.50 storage |
 | Frontend (Next.js) | Web service `asr-web`, Node | 0.5 CPU, 512 MB | $7 |
 | Workspace | Hobby | | $0 |
 
-About $53.50 a month, all in `ohio`. Add the Anthropic spend cap (start near $45) and a domain to
-reach the roughly $100 ceiling the owner chose for decision D2 in roadmap #88 (host, region and
-budget).
+About $41 a month, all in `ohio`. Storage is billed at $0.30 per GB for the database and $0.25 per
+GB for the disk. The Blueprint screen shows the exact prices; the $6 for the 256 MB database is
+worked out from Render's own examples, so check it there. Add the Anthropic spend cap (start near
+$45) and a domain to reach the roughly $100 ceiling the owner chose for decision D2 in roadmap #88
+(host, region and budget).
 
 Why it looks like this:
 
+- **Small database and disk.** D2 first chose Postgres Basic 1 GB with a 10 GB disk. On 2026-09-21
+  the owner cut it to 256 MB and 5 GB each, to save about $17 a month. Render's default storage for a
+  Basic database is 15 GB, and storage on both the database and the disk can grow but never shrink,
+  so they start small. If imports get slow, move the database to `0.5c-1g`; if PDFs fill the disk,
+  raise `sizeGB` in `render.yaml` (Render may restart the service to resize).
 - **One backend instance.** Full Text files are PDFs on local disk and rows store their paths, and
   the sign-in and sign-up rate limits live in the process. A Render disk allows exactly one
   instance, and turns off zero-downtime deploys, so every backend deploy has a short gap.
@@ -191,6 +198,7 @@ waits on; closing #65 is not.
 - Regions: https://render.com/docs/regions
 - Disks and snapshots: https://render.com/docs/disks
 - Postgres recovery and backups: https://render.com/docs/postgresql-backups
-- Blueprint fields and plan names: https://render.com/docs/blueprint-spec
+- Blueprint fields and plan names (storage sizes and the no-shrink rule re-read 2026-09-21):
+  https://render.com/docs/blueprint-spec
 - Shell and SSH access: https://render.com/docs/ssh
 - Terms of Service (sensitive data): https://render.com/terms
