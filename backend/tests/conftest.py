@@ -10,6 +10,12 @@ from asr_backend.db import Base, get_db
 from asr_backend.main import app
 from asr_backend.settings import settings
 
+if not settings.test_database_url:
+    pytest.exit(
+        "TEST_DATABASE_URL is not set. The tests reset the database it points at, so it "
+        "must be a database used for nothing else.",
+        returncode=3,
+    )
 test_engine = create_engine(settings.test_database_url)
 TestSessionLocal = sessionmaker(bind=test_engine, autoflush=False, autocommit=False)
 TEST_DATABASE_LOCK_ID = 0x415352  # "ASR"
