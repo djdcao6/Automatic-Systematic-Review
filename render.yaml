@@ -9,7 +9,10 @@ databases:
     databaseName: asr
     user: asr
     region: ohio
-    plan: 0.5c-1g # Postgres Basic, 1 GB RAM
+    plan: 0.1c-256mb # Postgres Basic, 256 MB RAM; move to 0.5c-1g if imports get slow
+    # Storage grows but never shrinks, and Render's default for Basic is 15 GB. It only holds text
+    # and metadata (PDFs live on asr-api's disk), so it starts small. Allowed: 1 or a multiple of 5.
+    diskSizeGB: 5
     postgresMajorVersion: "17" # what CI tests against
     ipAllowList: [] # private network only; reach it from a shell on asr-api
 
@@ -30,7 +33,7 @@ services:
     disk:
       name: pdfs
       mountPath: /data
-      sizeGB: 10
+      sizeGB: 5 # can grow, never shrink; one PDF may be up to 50 MB (upload_limits.py)
     envVars:
       - key: DATABASE_URL
         fromDatabase:
