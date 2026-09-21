@@ -302,6 +302,9 @@ describe("ProjectShell", () => {
       </ProjectShell>
     );
     expect(screen.queryByText("My Review")).not.toBeInTheDocument();
+    // The children unmount too, not just the header. A list panel keeps its rows
+    // in its own state, so this is what stops it showing the previous project's.
+    expect(screen.queryByText("probe: 1 owner")).not.toBeInTheDocument();
 
     await act(async () => {
       resolveOther({ ...baseProject, id: "2", name: "Other Review" });

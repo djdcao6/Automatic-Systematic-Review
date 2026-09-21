@@ -174,7 +174,9 @@ export function ConflictsPanel({
       {/* An empty list means "no Conflicts" only after a load has succeeded and
           nothing has gone wrong since; until then it just means nothing has arrived. */}
       {!loaded && !error && <p className="meta">Loading conflicts...</p>}
-      {loaded && !error && conflicts.length === 0 && <p>No outstanding Conflicts.</p>}
+      {loaded && !error && conflicts.length === 0 && (
+        <p className="meta">No outstanding Conflicts.</p>
+      )}
       {conflicts.length > 0 && (
         <ul className="items">
           {conflicts.map((conflict) => (
