@@ -70,3 +70,10 @@ jobs:
       - run: npx next typegen
       - run: npx tsc --noEmit
       - run: npm run test
+      # The production build runs last so the faster checks fail first. It catches what
+      # lint, tsc and Vitest cannot, such as a server component using a client-only hook.
+      # It needs no backend or credentials: NEXT_PUBLIC_API_URL is only inlined into the
+      # bundle, so a placeholder origin is enough. next/font fetches Google Fonts here.
+      - run: npm run build
+        env:
+          NEXT_PUBLIC_API_URL: https://api.ci.invalid
