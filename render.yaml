@@ -1,0 +1,75 @@
+# Render Blueprint for the closed pilot (#65). Decisions and the reasons for them are in
+# docs/deploy/render.md, which is also the runbook for creating, backing up and restoring it.
+#
+# Everything is in one region so the services reach the database over Render's private
+# network. Values marked `sync: false` are asked for in the dashboard when the Blueprint
+# is created and are never stored in this file.
+databases:
+  - name: asr-db
+    databaseName: asr
+    user: asr
+    region: ohio
+    plan: 0.5c-1g # Postgres Basic, 1 GB RAM
+    postgresMajorVersion: "17" # what CI tests against
+    ipAllowList: [] # private network only; reach it from a shell on asr-api
+
+services:
+  - type: web
+    name: asr-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    region: ohio
+    plan: 1c-2g # PDF parsing and 20,000-Citation imports are held in memory
+    healthCheckPath: /health
+    # Migrations run before the new version takes traffic; a failed one stops the deploy.
+    preDeployCommand: alembic upgrade head
+    # Deploys are deliberate (Manual Deploy of a chosen commit), so the running revision is
+    # always a known one.
+    autoDeployTrigger: "off"
+    disk:
+      name: pdfs
+      mountPath: /data
+      sizeGB: 10
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: asr-db
+          property: connectionString
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      # Set a monthly spend cap on this key in the Anthropic Console before inviting anyone.
+      - key: ANTHROPIC_MODEL
+        value: claude-haiku-4-5
+      - key: FULL_TEXT_STORAGE_PATH
+        value: /data/full_texts
+      - key: FRONTEND_ORIGIN
+        sync: false # the asr-web URL, e.g. https://asr-web.onrender.com
+      - key: SIGNUP_ALLOWLIST
+        sync: false # pilot emails, comma-separated
+      - key: BILLING_ENABLED
+        value: "false"
+      # 0 until the number of proxies in front of the app is measured (docs/deploy/render.md).
+      # Too high is worse than 0: it trusts a client-supplied address.
+      - key: TRUSTED_PROXY_COUNT
+        value: "0"
+
+  - type: web
+    name: asr-web
+    runtime: node
+    region: ohio
+    plan: 0.5c-512mb
+    rootDir: frontend
+    # --include=dev: the build needs TypeScript and Tailwind, which are devDependencies, and
+    # a production NODE_ENV would otherwise leave them out.
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm run start
+    autoDeployTrigger: "off"
+    envVars:
+      - key: NODE_VERSION
+        value: "24" # what CI builds with
+      # Inlined into the browser bundle at build time, so changing it needs a redeploy.
+      - key: NEXT_PUBLIC_API_URL
+        sync: false # the asr-api URL, e.g. https://asr-api.onrender.com

@@ -1,0 +1,10 @@
+# Keep secrets, local state and dev-only files out of the build context.
+.env
+.env.*
+.venv
+.git
+.pytest_cache
+.ruff_cache
+**/__pycache__
+storage
+tests

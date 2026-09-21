@@ -1,4 +1,4 @@
-from pydantic import model_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _STRIPE_SETTING_NAMES = (
@@ -8,13 +8,19 @@ _STRIPE_SETTING_NAMES = (
     "stripe_price_id",
 )
 _WEBHOOK_SECRET_PREFIX = "whsec_"
+_PSYCOPG_URL_PREFIX = "postgresql+psycopg://"
+# What hosts hand out. SQLAlchemy reads postgresql:// as the psycopg2 driver, which is not
+# installed, and does not recognise postgres:// at all.
+_PLAIN_POSTGRES_URL_PREFIXES = ("postgres://", "postgresql://")
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     database_url: str
-    test_database_url: str
+    # Only the test suite needs this (it resets the database it points at), so a
+    # deployed app neither has to set it nor can be pointed at it by accident.
+    test_database_url: str | None = None
     frontend_origin: str = "http://localhost:3000"
     anthropic_api_key: str
     anthropic_model: str = "claude-haiku-4-5"
@@ -31,6 +37,17 @@ class Settings(BaseSettings):
     stripe_publishable_key: str | None = None
     stripe_webhook_secret: str | None = None
     stripe_price_id: str | None = None
+
+    @field_validator("database_url", "test_database_url")
+    @classmethod
+    def use_the_psycopg_driver(cls, url: str | None) -> str | None:
+        """Accepts the plain postgresql:// URL a host provides, e.g. Render's connectionString."""
+        if url is None:
+            return url
+        for prefix in _PLAIN_POSTGRES_URL_PREFIXES:
+            if url.startswith(prefix):
+                return _PSYCOPG_URL_PREFIX + url[len(prefix):]
+        return url
 
     @model_validator(mode="after")
     def require_stripe_when_billing_is_on(self) -> "Settings":

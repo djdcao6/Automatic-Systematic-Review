@@ -77,3 +77,49 @@ jobs:
       - run: npm run build
         env:
           NEXT_PUBLIC_API_URL: https://api.ci.invalid
+
+  backend-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: asr
+          POSTGRES_PASSWORD: asr
+          POSTGRES_DB: asr_image
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U asr -d asr_image"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      # The image Render builds from render.yaml. The tests never run inside it, so this is
+      # what catches a Dockerfile that has drifted from the code, e.g. a missing directory.
+      - run: docker build -t asr-backend backend
+      - name: The image migrates a database, serves the app, and ships the operator scripts
+        run: |
+          # Host networking, so the container reaches the Postgres service on localhost. The
+          # URL is the plain postgresql:// form a host hands out, which the app must accept;
+          # the user and password come from libpq's PGUSER and PGPASSWORD instead.
+          docker run -d --name asr --network host \
+            -e DATABASE_URL=postgresql://localhost:5432/asr_image \
+            -e PGUSER=asr -e PGPASSWORD=asr \
+            -e ANTHROPIC_API_KEY=ci-dummy \
+            -e JWT_SECRET_KEY=ci-dummy-jwt-secret-key-not-used-outside-tests \
+            -e PORT=10000 \
+            asr-backend
+          # What render.yaml runs as preDeployCommand: loads migrations/env.py and applies
+          # every migration to an empty database.
+          docker exec asr alembic upgrade head
+          for _ in $(seq 1 30); do
+            curl -fsS http://localhost:10000/health && break
+            sleep 1
+          done
+          curl -fsS http://localhost:10000/health || { docker logs asr; exit 1; }
+          for script in delete_account delete_project reset_password; do
+            docker exec asr python "scripts/$script.py" --help > /dev/null
+          done
