@@ -20,6 +20,7 @@ import {
   type SuggestionOutcome,
 } from "@/lib/api";
 import { useReviewProject } from "@/lib/ReviewProjectContext";
+import { useInFlightWrites } from "@/lib/useInFlightWrites";
 import { useScreeningShortcuts } from "@/lib/useScreeningShortcuts";
 
 const DECISIONS: Decision[] = ["include", "exclude", "maybe"];
@@ -88,6 +89,27 @@ function blankOrValue(value: string): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+// A decision and its reason, as sent to the server.
+type Answer = { decision: Decision; reason: string | null };
+
+function sameAnswer(a: Answer | null, b: Answer | null): boolean {
+  return a !== null && b !== null && a.decision === b.decision && a.reason === b.reason;
+}
+
+// The keys of the writes on this page, for the one-at-a-time guard.
+const SCREENING_WRITE = "screening";
+const FULL_TEXT_DECISION_WRITE = "full-text-decision";
+const UPLOAD = "upload";
+const REFRESH = "refresh";
+const extractionWrite = (fieldId: string) => `extraction:${fieldId}`;
+const isScreeningWrite = (key: string) => key === SCREENING_WRITE;
+const isFullTextDecisionWrite = (key: string) => key === FULL_TEXT_DECISION_WRITE;
+const isExtractionWrite = (key: string) => key.startsWith("extraction:");
+const isUpload = (key: string) => key === UPLOAD;
+// Replacing the PDF invalidates the AI output the Reviewer is reading beside these
+// values, so neither runs while the other does.
+const isValueWrite = (key: string) => isFullTextDecisionWrite(key) || isExtractionWrite(key);
+
 // Moving between citations changes the route params but keeps this component
 // mounted. The project comes from the shell around it, loaded once for every
 // section, and each citation gets a fresh body with `key` so no form state
@@ -146,9 +168,16 @@ function CitationScreening({
   const [needsChoice, setNeedsChoice] = useState(false);
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
+  // What the server last confirmed for each thing the Reviewer writes, kept apart from
+  // the draft in the form. "Saved" is only ever said while the two are the same, so it
+  // goes the moment the Reviewer edits, by click, shortcut or "Use".
+  const [confirmedScreening, setConfirmedScreening] = useState<Answer | null>(null);
+  // The decision was recorded but reading the Citation again failed, which is not the
+  // same as the save failing.
+  const [refreshFailed, setRefreshFailed] = useState(false);
   const [fullTextError, setFullTextError] = useState<string | null>(null);
-  const [uploadingFullText, setUploadingFullText] = useState(false);
+  // One write at a time per form or value, and no PDF replacement alongside one.
+  const writes = useInFlightWrites();
   const [viewFullTextError, setViewFullTextError] = useState<string | null>(null);
   // Nothing is chosen until the Reviewer chooses, and the AI never fills it: a
   // Save with a pre-selected answer would record a decision nobody made.
@@ -158,10 +187,10 @@ function CitationScreening({
   // A Full-Text Exclude needs a reason, so PRISMA can itemize the exclusions (#66).
   const [needsFtReason, setNeedsFtReason] = useState(false);
   const [ftError, setFtError] = useState<string | null>(null);
-  const [ftSaved, setFtSaved] = useState(false);
+  const [confirmedFullText, setConfirmedFullText] = useState<Answer | null>(null);
   const [extractionInputs, setExtractionInputs] = useState<Record<string, string>>({});
   const [extractionErrors, setExtractionErrors] = useState<Record<string, string>>({});
-  const [extractionSavedFieldId, setExtractionSavedFieldId] = useState<string | null>(null);
+  const [confirmedExtraction, setConfirmedExtraction] = useState<Record<string, string>>({});
   const formRef = useRef<HTMLFormElement>(null);
 
   const criteria = project.criteria;
@@ -169,6 +198,9 @@ function CitationScreening({
   const reviewMode = project.review_mode;
 
   function chooseDecision(option: Decision) {
+    // The keys are live while the form is locked for a write, and a choice made then
+    // would be one nobody saved.
+    if (writes.isRunning(isScreeningWrite)) return;
     setDecision(option);
     setNeedsChoice(false);
   }
@@ -303,27 +335,38 @@ function CitationScreening({
       return;
     }
 
-    try {
-      await recordScreeningDecision(reviewProjectId, citationId, {
-        decision,
-        reason: blankOrValue(reason),
-      });
-      // Recording a decision can flip this Reviewer from blind to revealed
-      // (#27), which changes more than just screening_decision — the AI
-      // Suggestion and the peer's decision may now be visible too — so the
-      // whole Citation is re-fetched rather than merging the one field.
-      const refreshed = await getCitation(reviewProjectId, citationId);
-      setCitation(refreshed);
-      setSaved(true);
+    await writes.run(SCREENING_WRITE, async () => {
+      const answer: Answer = { decision, reason: blankOrValue(reason) };
+      try {
+        await recordScreeningDecision(reviewProjectId, citationId, answer);
+      } catch {
+        setError("Failed to save screening decision.");
+        return;
+      }
+      setConfirmedScreening(answer);
       setError(null);
       onDecisionRecorded();
+      await refreshCitation();
+    });
+  }
+
+  // Recording a decision can flip this Reviewer from blind to revealed (#27),
+  // which changes more than just screening_decision — the AI Suggestion and the
+  // peer's decision may now be visible too — so the whole Citation is re-fetched
+  // rather than merging the one field. If that read fails the decision is still
+  // saved, so it is reported as its own problem, with a way to try the read again.
+  async function refreshCitation() {
+    try {
+      setCitation(await getCitation(reviewProjectId, citationId));
+      setRefreshFailed(false);
     } catch {
-      setError("Failed to save screening decision.");
+      setRefreshFailed(true);
     }
   }
 
   async function handleFullTextDecisionSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (writes.isRunning(isUpload)) return;
     if (!ftDecision) {
       setNeedsFtChoice(true);
       return;
@@ -334,42 +377,46 @@ function CitationScreening({
       return;
     }
 
-    try {
-      const updated = await recordFullTextDecision(reviewProjectId, citationId, {
-        decision: ftDecision,
-        reason: ftReasonToSave,
-      });
-      setCitation((current) => (current ? { ...current, full_text_decision: updated } : current));
-      setFtSaved(true);
-      setFtError(null);
-    } catch {
-      setFtError("Failed to save full-text decision.");
-    }
+    await writes.run(FULL_TEXT_DECISION_WRITE, async () => {
+      const answer: Answer = { decision: ftDecision, reason: ftReasonToSave };
+      try {
+        const updated = await recordFullTextDecision(reviewProjectId, citationId, answer);
+        setCitation((current) =>
+          current ? { ...current, full_text_decision: updated } : current
+        );
+        setConfirmedFullText(answer);
+        setFtError(null);
+      } catch {
+        setFtError("Failed to save full-text decision.");
+      }
+    });
   }
 
   async function handleSaveExtractionValue(fieldId: string) {
+    if (writes.isRunning(isUpload)) return;
     const value = extractionInputs[fieldId] ?? "";
 
-    try {
-      const updated = await recordExtractionValue(reviewProjectId, citationId, fieldId, {
-        value,
-      });
-      setCitation((current) => {
-        if (!current) return current;
-        const others = current.extraction_values.filter(
-          (existing) => existing.extraction_field_id !== fieldId
-        );
-        return { ...current, extraction_values: [...others, updated] };
-      });
-      setExtractionErrors((current) => ({ ...current, [fieldId]: "" }));
-      setExtractionSavedFieldId(fieldId);
-    } catch {
-      setExtractionErrors((current) => ({
-        ...current,
-        [fieldId]: "Failed to save extraction value.",
-      }));
-      setExtractionSavedFieldId(null);
-    }
+    await writes.run(extractionWrite(fieldId), async () => {
+      try {
+        const updated = await recordExtractionValue(reviewProjectId, citationId, fieldId, {
+          value,
+        });
+        setCitation((current) => {
+          if (!current) return current;
+          const others = current.extraction_values.filter(
+            (existing) => existing.extraction_field_id !== fieldId
+          );
+          return { ...current, extraction_values: [...others, updated] };
+        });
+        setExtractionErrors((current) => ({ ...current, [fieldId]: "" }));
+        setConfirmedExtraction((current) => ({ ...current, [fieldId]: value }));
+      } catch {
+        setExtractionErrors((current) => ({
+          ...current,
+          [fieldId]: "Failed to save extraction value.",
+        }));
+      }
+    });
   }
 
   async function handleViewFullText() {
@@ -387,42 +434,43 @@ function CitationScreening({
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
+    if (writes.isRunning(isValueWrite)) return;
 
-    setUploadingFullText(true);
-    setFullTextError(null);
-    // Anything asked for from here on is about the new PDF; an answer already
-    // on its way is about the old one.
-    fullTextEpoch.current += 1;
-    try {
-      const updated = await uploadFullText(reviewProjectId, citationId, file);
-      setCitation((current) => (current ? { ...current, full_text: updated } : current));
-      // A new PDF clears the old Full-Text Suggestion, and only the backend
-      // knows whether a new one is needed, so read that state again instead of
-      // leaving a stale suggestion on the page.
-      const refreshed = await getCitation(reviewProjectId, citationId).catch(() => null);
-      setFullTextOutcome(null);
-      setCitation((current) =>
-        current
-          ? {
-              ...current,
-              full_text_suggestion: refreshed?.full_text_suggestion ?? null,
-              full_text_suggestion_unavailable_reason: refreshed
-                ? refreshed.full_text_suggestion_unavailable_reason
-                : "state_unreadable",
-              full_text_suggestion_needs_generation:
-                refreshed?.full_text_suggestion_needs_generation ?? false,
-            }
-          : current
-      );
-    } catch {
-      setFullTextError("Failed to upload Full Text.");
-    } finally {
-      setUploadingFullText(false);
-      // The request that was in flight, if any, now belongs to the old PDF.
-      // Letting go of it and starting a new round asks again if one is needed.
-      fullTextGeneration.current = null;
-      setFullTextRound((round) => round + 1);
-    }
+    await writes.run(UPLOAD, async () => {
+      setFullTextError(null);
+      // Anything asked for from here on is about the new PDF; an answer already
+      // on its way is about the old one.
+      fullTextEpoch.current += 1;
+      try {
+        const updated = await uploadFullText(reviewProjectId, citationId, file);
+        setCitation((current) => (current ? { ...current, full_text: updated } : current));
+        // A new PDF clears the old Full-Text Suggestion, and only the backend
+        // knows whether a new one is needed, so read that state again instead of
+        // leaving a stale suggestion on the page.
+        const refreshed = await getCitation(reviewProjectId, citationId).catch(() => null);
+        setFullTextOutcome(null);
+        setCitation((current) =>
+          current
+            ? {
+                ...current,
+                full_text_suggestion: refreshed?.full_text_suggestion ?? null,
+                full_text_suggestion_unavailable_reason: refreshed
+                  ? refreshed.full_text_suggestion_unavailable_reason
+                  : "state_unreadable",
+                full_text_suggestion_needs_generation:
+                  refreshed?.full_text_suggestion_needs_generation ?? false,
+              }
+            : current
+        );
+      } catch {
+        setFullTextError("Failed to upload Full Text.");
+      } finally {
+        // The request that was in flight, if any, now belongs to the old PDF.
+        // Letting go of it and starting a new round asks again if one is needed.
+        fullTextGeneration.current = null;
+        setFullTextRound((round) => round + 1);
+      }
+    });
   }
 
   if (!citation) {
@@ -464,6 +512,22 @@ function CitationScreening({
     citation.screening_decision.decision !== citation.peer_screening_decision.decision &&
     !citation.screening_resolved;
 
+  // Saved only while the form still holds what the server confirmed.
+  const screeningSaved = sameAnswer(
+    confirmedScreening,
+    decision ? { decision, reason: blankOrValue(reason) } : null
+  );
+  const fullTextSaved = sameAnswer(
+    confirmedFullText,
+    ftDecision
+      ? { decision: ftDecision, reason: ftDecision === "exclude" ? blankOrValue(ftReason) : null }
+      : null
+  );
+  const screeningLocked = writes.isPending(isScreeningWrite);
+  const fullTextDecisionLocked = writes.isPending(isFullTextDecisionWrite);
+  const uploading = writes.isPending(isUpload);
+  const valueWriting = writes.isPending(isValueWrite);
+
   const pico = criteria
     ? [
         ["Population", criteria.population],
@@ -504,7 +568,7 @@ function CitationScreening({
           </p>
 
           <form className="decide" ref={formRef} onSubmit={handleSubmit}>
-            <fieldset>
+            <fieldset disabled={screeningLocked}>
               <legend>Screening Decision</legend>
               <DecisionChoices
                 name="decision"
@@ -519,19 +583,34 @@ function CitationScreening({
               id="decision-reason"
               value={reason}
               onChange={(event) => setReason(event.target.value)}
+              disabled={screeningLocked}
             />
 
             <div className="form-actions">
-              <button type="submit">Save Decision</button>
+              <button type="submit" disabled={screeningLocked}>
+                Save Decision
+              </button>
               <p className="hint">
                 <kbd>Ctrl</kbd> + <kbd>Enter</kbd> to save
               </p>
             </div>
             {needsChoice && <p role="alert">Choose Include, Exclude or Maybe first.</p>}
           </form>
-          {saved && (
-            <p className="stamp" data-decision={decision ?? undefined}>
+          {screeningSaved && confirmedScreening && (
+            <p className="stamp" data-decision={confirmedScreening.decision}>
               Decision saved.
+            </p>
+          )}
+          {refreshFailed && (
+            <p role="alert">
+              Your decision was saved, but this page could not be refreshed.{" "}
+              <button
+                type="button"
+                disabled={writes.isPending((key) => key === REFRESH)}
+                onClick={() => void writes.run(REFRESH, refreshCitation)}
+              >
+                Refresh
+              </button>
             </p>
           )}
           {conflictHeld && (
@@ -569,7 +648,7 @@ function CitationScreening({
               type="file"
               accept="application/pdf"
               onChange={handleFullTextChange}
-              disabled={uploadingFullText}
+              disabled={uploading || valueWriting}
             />
             {fullTextError && <p role="alert">{fullTextError}</p>}
           </section>
@@ -603,11 +682,16 @@ function CitationScreening({
               <h2>Extraction Values</h2>
               {citation.extraction_fields.map((field) => {
                 const suggested = suggestedValueByField.get(field.id);
+                const fieldWriting = writes.isPending((key) => key === extractionWrite(field.id));
+                const fieldSaved =
+                  confirmedExtraction[field.id] !== undefined &&
+                  confirmedExtraction[field.id] === (extractionInputs[field.id] ?? "");
                 return (
                   <div key={field.id} className="extraction-field">
                     <label htmlFor={`extraction-value-${field.id}`}>{field.name}</label>
                     <input
                       id={`extraction-value-${field.id}`}
+                      disabled={fieldWriting}
                       value={extractionInputs[field.id] ?? ""}
                       onChange={(event) =>
                         setExtractionInputs((current) => ({
@@ -616,7 +700,11 @@ function CitationScreening({
                         }))
                       }
                     />
-                    <button type="button" onClick={() => handleSaveExtractionValue(field.id)}>
+                    <button
+                      type="button"
+                      disabled={fieldWriting || uploading}
+                      onClick={() => handleSaveExtractionValue(field.id)}
+                    >
                       Save
                     </button>
                     {suggested !== undefined && (
@@ -625,7 +713,7 @@ function CitationScreening({
                         <button
                           type="button"
                           aria-label={`Use suggested ${field.name}`}
-                          disabled={extractionInputs[field.id] === suggested}
+                          disabled={fieldWriting || extractionInputs[field.id] === suggested}
                           onClick={() =>
                             setExtractionInputs((current) => ({
                               ...current,
@@ -640,7 +728,7 @@ function CitationScreening({
                     {extractionErrors[field.id] && (
                       <p role="alert">{extractionErrors[field.id]}</p>
                     )}
-                    {extractionSavedFieldId === field.id && <p>Extraction value saved.</p>}
+                    {fieldSaved && <p>Extraction value saved.</p>}
                   </div>
                 );
               })}
@@ -650,7 +738,7 @@ function CitationScreening({
           {citation.full_text && (
             <section>
               <form onSubmit={handleFullTextDecisionSubmit}>
-                <fieldset>
+                <fieldset disabled={fullTextDecisionLocked}>
                   <legend>Full-Text Decision</legend>
                   <DecisionChoices
                     name="full-text-decision"
@@ -702,12 +790,14 @@ function CitationScreening({
                 </fieldset>
 
                 <div className="form-actions">
-                  <button type="submit">Save Full-Text Decision</button>
+                  <button type="submit" disabled={fullTextDecisionLocked || uploading}>
+                    Save Full-Text Decision
+                  </button>
                 </div>
               </form>
               {ftError && <p role="alert">{ftError}</p>}
-              {ftSaved && (
-                <p className="stamp" data-decision={ftDecision ?? undefined}>
+              {fullTextSaved && confirmedFullText && (
+                <p className="stamp" data-decision={confirmedFullText.decision}>
                   Full-text decision saved.
                 </p>
               )}

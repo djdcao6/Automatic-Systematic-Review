@@ -112,6 +112,10 @@ function renderPage() {
 
 describe("CitationScreeningPage", () => {
   beforeEach(() => {
+    // Reset, not just re-default: one-shot values queued by a test that stopped
+    // early would otherwise leak into the next.
+    mockedApi.getCitation.mockReset();
+    mockedApi.uploadFullText.mockReset();
     mockedApi.generateSuggestion.mockReset();
     mockedApi.generateFullTextSuggestion.mockReset();
     mockedApi.recordFullTextDecision.mockReset();
@@ -1732,5 +1736,520 @@ describe("CitationScreeningPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     expect(await screen.findByText(/failed to save extraction value/i)).toBeInTheDocument();
+  });
+
+  describe("save state and in-flight writes (#89)", () => {
+    type ScreeningRecord = Awaited<ReturnType<typeof api.recordScreeningDecision>>;
+    type FullTextRecord = Awaited<ReturnType<typeof api.recordFullTextDecision>>;
+    type ExtractionRecord = Awaited<ReturnType<typeof api.recordExtractionValue>>;
+
+    const stamp = "2026-01-02T00:00:00Z";
+    const screeningRecord = (decision: api.Decision, reason: string | null = null) =>
+      ({ decision, reason, created_at: stamp, updated_at: stamp }) as ScreeningRecord;
+    const extractionRecord = (fieldId: string, value: string) =>
+      ({
+        extraction_field_id: fieldId,
+        name: "field",
+        value,
+        created_at: stamp,
+        updated_at: stamp,
+      }) as ExtractionRecord;
+
+    const meanAgeField = { ...sampleSizeField, id: "f2", name: "Mean age" };
+
+    function citationWith(overrides: Record<string, unknown> = {}) {
+      return {
+        ...baseCitation,
+        suggestion: null,
+        suggestion_unavailable_reason: null,
+        screening_decision: null,
+        full_text: null,
+        ...overrides,
+      } as api.CitationDetail;
+    }
+
+    const screeningGroup = () => within(screen.getByRole("group", { name: /screening decision/i }));
+    const fullTextGroup = () => within(screen.getByRole("group", { name: /full-text decision/i }));
+    const saveScreening = () => screen.getByRole("button", { name: /save decision/i });
+    const saveFullText = () => screen.getByRole("button", { name: /save full-text decision/i });
+    const fieldBlock = (name: string) =>
+      within(screen.getByLabelText(name).closest(".extraction-field") as HTMLElement);
+    const pressKey = (key: string, init: KeyboardEventInit = {}) =>
+      fireEvent.keyDown(document.body, { key, ...init });
+
+    describe("the saved stamp only describes what was saved", () => {
+      it("clears the Screening Decision stamp when another decision is chosen by click", async () => {
+        mockedApi.getCitation.mockResolvedValue(citationWith());
+        renderPage();
+        await screen.findByRole("group", { name: /screening decision/i });
+
+        fireEvent.click(screeningGroup().getByLabelText("include"));
+        fireEvent.click(saveScreening());
+        expect(await screen.findByText("Decision saved.")).toBeInTheDocument();
+
+        fireEvent.click(screeningGroup().getByLabelText("exclude"));
+
+        expect(screen.queryByText("Decision saved.")).not.toBeInTheDocument();
+      });
+
+      it("clears the Screening Decision stamp when another decision is chosen by shortcut", async () => {
+        mockedApi.getCitation.mockResolvedValue(citationWith());
+        renderPage();
+        await screen.findByRole("group", { name: /screening decision/i });
+
+        fireEvent.click(screeningGroup().getByLabelText("include"));
+        fireEvent.click(saveScreening());
+        expect(await screen.findByText("Decision saved.")).toBeInTheDocument();
+
+        pressKey("e");
+
+        expect(screeningGroup().getByLabelText("exclude")).toBeChecked();
+        expect(screen.queryByText("Decision saved.")).not.toBeInTheDocument();
+      });
+
+      it("clears the Screening Decision stamp when only the reason changes", async () => {
+        mockedApi.getCitation.mockResolvedValue(citationWith());
+        renderPage();
+        await screen.findByRole("group", { name: /screening decision/i });
+
+        fireEvent.click(screeningGroup().getByLabelText("include"));
+        fireEvent.change(screen.getByLabelText(/reason/i), { target: { value: "Fits" } });
+        fireEvent.click(saveScreening());
+        expect(await screen.findByText("Decision saved.")).toBeInTheDocument();
+
+        fireEvent.change(screen.getByLabelText(/reason/i), { target: { value: "Fits well" } });
+
+        expect(screen.queryByText("Decision saved.")).not.toBeInTheDocument();
+      });
+
+      it("clears the Full-Text Decision stamp when the decision changes", async () => {
+        mockedApi.getCitation.mockResolvedValue(citationWith({ full_text: parsedFullText }));
+        mockedApi.recordFullTextDecision.mockResolvedValue({
+          decision: "include",
+          reason: null,
+          created_at: stamp,
+          updated_at: stamp,
+        } as FullTextRecord);
+        renderPage();
+        await screen.findByRole("group", { name: /full-text decision/i });
+
+        fireEvent.click(fullTextGroup().getByLabelText("include"));
+        fireEvent.click(saveFullText());
+        expect(await screen.findByText("Full-text decision saved.")).toBeInTheDocument();
+
+        fireEvent.click(fullTextGroup().getByLabelText("maybe"));
+
+        expect(screen.queryByText("Full-text decision saved.")).not.toBeInTheDocument();
+      });
+
+      it("clears the Full-Text Decision stamp when only the reason changes", async () => {
+        mockedApi.getCitation.mockResolvedValue(citationWith({ full_text: parsedFullText }));
+        mockedApi.recordFullTextDecision.mockResolvedValue({
+          decision: "exclude",
+          reason: "Wrong population",
+          created_at: stamp,
+          updated_at: stamp,
+        } as FullTextRecord);
+        renderPage();
+        await screen.findByRole("group", { name: /full-text decision/i });
+
+        fireEvent.click(fullTextGroup().getByLabelText("exclude"));
+        fireEvent.change(screen.getByLabelText(/^reason$/i, { selector: "select" }), {
+          target: { value: "Wrong population" },
+        });
+        fireEvent.click(saveFullText());
+        expect(await screen.findByText("Full-text decision saved.")).toBeInTheDocument();
+
+        fireEvent.change(screen.getByLabelText(/^reason$/i, { selector: "select" }), {
+          target: { value: "Non-English language" },
+        });
+
+        expect(screen.queryByText("Full-text decision saved.")).not.toBeInTheDocument();
+      });
+
+      it("clears only the edited field's stamp, and keeps the other's", async () => {
+        mockedApi.getCitation.mockResolvedValue(
+          citationWith({ extraction_fields: [sampleSizeField, meanAgeField] })
+        );
+        mockedApi.recordExtractionValue.mockImplementation(async (_p, _c, fieldId, body) =>
+          extractionRecord(fieldId, body.value)
+        );
+        renderPage();
+        await screen.findByLabelText("Sample size");
+
+        fireEvent.change(screen.getByLabelText("Sample size"), { target: { value: "120" } });
+        fireEvent.click(fieldBlock("Sample size").getByRole("button", { name: "Save" }));
+        fireEvent.change(screen.getByLabelText("Mean age"), { target: { value: "54" } });
+        fireEvent.click(fieldBlock("Mean age").getByRole("button", { name: "Save" }));
+        await waitFor(() =>
+          expect(fieldBlock("Mean age").getByText("Extraction value saved.")).toBeInTheDocument()
+        );
+        expect(fieldBlock("Sample size").getByText("Extraction value saved.")).toBeInTheDocument();
+
+        fireEvent.change(screen.getByLabelText("Sample size"), { target: { value: "121" } });
+
+        expect(fieldBlock("Sample size").queryByText("Extraction value saved.")).toBeNull();
+        expect(fieldBlock("Mean age").getByText("Extraction value saved.")).toBeInTheDocument();
+      });
+
+      it("clears a field's stamp when the Reviewer uses the AI value", async () => {
+        mockedApi.getCitation.mockResolvedValue(
+          citationWith({
+            full_text: parsedFullText,
+            full_text_suggestion: suggestionWithSampleSize,
+            extraction_fields: [sampleSizeField],
+          })
+        );
+        mockedApi.recordExtractionValue.mockImplementation(async (_p, _c, fieldId, body) =>
+          extractionRecord(fieldId, body.value)
+        );
+        renderPage();
+        await screen.findByLabelText("Sample size");
+
+        fireEvent.change(screen.getByLabelText("Sample size"), { target: { value: "100" } });
+        fireEvent.click(screen.getByRole("button", { name: "Save" }));
+        expect(await screen.findByText("Extraction value saved.")).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole("button", { name: "Use suggested Sample size" }));
+
+        expect(screen.getByLabelText("Sample size")).toHaveValue("120 participants");
+        expect(screen.queryByText("Extraction value saved.")).not.toBeInTheDocument();
+      });
+
+      it("does not mark an unsaved field saved when another field is saved", async () => {
+        mockedApi.getCitation.mockResolvedValue(
+          citationWith({ extraction_fields: [sampleSizeField, meanAgeField] })
+        );
+        mockedApi.recordExtractionValue.mockImplementation(async (_p, _c, fieldId, body) =>
+          extractionRecord(fieldId, body.value)
+        );
+        renderPage();
+        await screen.findByLabelText("Sample size");
+
+        fireEvent.change(screen.getByLabelText("Sample size"), { target: { value: "120" } });
+        fireEvent.change(screen.getByLabelText("Mean age"), { target: { value: "54" } });
+        fireEvent.click(fieldBlock("Mean age").getByRole("button", { name: "Save" }));
+
+        await waitFor(() =>
+          expect(fieldBlock("Mean age").getByText("Extraction value saved.")).toBeInTheDocument()
+        );
+        expect(fieldBlock("Sample size").queryByText("Extraction value saved.")).toBeNull();
+      });
+    });
+
+    describe("one write at a time per form or value", () => {
+      it("sends one Screening Decision however often it is submitted, and locks that form meanwhile", async () => {
+        mockedApi.getCitation.mockResolvedValue(citationWith());
+        const write = deferred<ScreeningRecord>();
+        mockedApi.recordScreeningDecision.mockReturnValue(write.promise);
+        renderPage();
+        await screen.findByRole("group", { name: /screening decision/i });
+
+        fireEvent.click(screeningGroup().getByLabelText("include"));
+        fireEvent.click(saveScreening());
+        fireEvent.click(saveScreening());
+        pressKey("Enter", { ctrlKey: true });
+
+        expect(mockedApi.recordScreeningDecision).toHaveBeenCalledTimes(1);
+        expect(saveScreening()).toBeDisabled();
+        expect(screeningGroup().getByLabelText("maybe")).toBeDisabled();
+        expect(screen.getByLabelText(/reason/i)).toBeDisabled();
+
+        // A shortcut is an edit too.
+        pressKey("m");
+        expect(screeningGroup().getByLabelText("include")).toBeChecked();
+
+        await act(async () => write.resolve(screeningRecord("include")));
+
+        expect(await screen.findByText("Decision saved.")).toBeInTheDocument();
+        expect(saveScreening()).toBeEnabled();
+        expect(screen.getByLabelText(/reason/i)).toBeEnabled();
+      });
+
+      it("keeps a failed Screening Decision as typed, unlocks the form and lets it be retried", async () => {
+        mockedApi.getCitation.mockResolvedValue(citationWith());
+        mockedApi.recordScreeningDecision
+          .mockRejectedValueOnce(new Error("boom"))
+          .mockResolvedValueOnce(screeningRecord("exclude", "Wrong population"));
+        renderPage();
+        await screen.findByRole("group", { name: /screening decision/i });
+
+        fireEvent.click(screeningGroup().getByLabelText("exclude"));
+        fireEvent.change(screen.getByLabelText(/reason/i), {
+          target: { value: "Wrong population" },
+        });
+        fireEvent.click(saveScreening());
+
+        expect(await screen.findByRole("alert")).toHaveTextContent(/failed to save screening/i);
+        expect(screeningGroup().getByLabelText("exclude")).toBeChecked();
+        expect(screen.getByLabelText(/reason/i)).toHaveValue("Wrong population");
+        expect(saveScreening()).toBeEnabled();
+        expect(screen.queryByText("Decision saved.")).not.toBeInTheDocument();
+
+        fireEvent.click(saveScreening());
+
+        expect(await screen.findByText("Decision saved.")).toBeInTheDocument();
+        expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+        expect(mockedApi.recordScreeningDecision).toHaveBeenCalledTimes(2);
+      });
+
+      it("sends one Full-Text Decision however often it is submitted, and locks that form meanwhile", async () => {
+        mockedApi.getCitation.mockResolvedValue(citationWith({ full_text: parsedFullText }));
+        const write = deferred<FullTextRecord>();
+        mockedApi.recordFullTextDecision.mockReturnValue(write.promise);
+        renderPage();
+        await screen.findByRole("group", { name: /full-text decision/i });
+
+        fireEvent.click(fullTextGroup().getByLabelText("include"));
+        fireEvent.click(saveFullText());
+        fireEvent.click(saveFullText());
+        fireEvent.submit(saveFullText().closest("form") as HTMLFormElement);
+
+        expect(mockedApi.recordFullTextDecision).toHaveBeenCalledTimes(1);
+        expect(saveFullText()).toBeDisabled();
+        expect(fullTextGroup().getByLabelText("maybe")).toBeDisabled();
+
+        await act(async () =>
+          write.resolve({
+            decision: "include",
+            reason: null,
+            created_at: stamp,
+            updated_at: stamp,
+          } as FullTextRecord)
+        );
+
+        expect(await screen.findByText("Full-text decision saved.")).toBeInTheDocument();
+        expect(saveFullText()).toBeEnabled();
+      });
+
+      it("keeps a failed Full-Text Decision as typed and lets it be retried", async () => {
+        mockedApi.getCitation.mockResolvedValue(citationWith({ full_text: parsedFullText }));
+        mockedApi.recordFullTextDecision
+          .mockRejectedValueOnce(new Error("boom"))
+          .mockResolvedValueOnce({
+            decision: "maybe",
+            reason: null,
+            created_at: stamp,
+            updated_at: stamp,
+          } as FullTextRecord);
+        renderPage();
+        await screen.findByRole("group", { name: /full-text decision/i });
+
+        fireEvent.click(fullTextGroup().getByLabelText("maybe"));
+        fireEvent.click(saveFullText());
+
+        expect(await screen.findByText(/failed to save full-text decision/i)).toBeInTheDocument();
+        expect(fullTextGroup().getByLabelText("maybe")).toBeChecked();
+        expect(saveFullText()).toBeEnabled();
+
+        fireEvent.click(saveFullText());
+
+        expect(await screen.findByText("Full-text decision saved.")).toBeInTheDocument();
+        expect(screen.queryByText(/failed to save full-text decision/i)).not.toBeInTheDocument();
+      });
+
+      it("sends one write per Extraction Value, locks only that field, and leaves the others usable", async () => {
+        mockedApi.getCitation.mockResolvedValue(
+          citationWith({ extraction_fields: [sampleSizeField, meanAgeField] })
+        );
+        const write = deferred<ExtractionRecord>();
+        mockedApi.recordExtractionValue.mockImplementation(async (_p, _c, fieldId, body) =>
+          fieldId === "f1" ? write.promise : extractionRecord(fieldId, body.value)
+        );
+        renderPage();
+        await screen.findByLabelText("Sample size");
+
+        fireEvent.change(screen.getByLabelText("Sample size"), { target: { value: "120" } });
+        const saveSampleSize = fieldBlock("Sample size").getByRole("button", { name: "Save" });
+        fireEvent.click(saveSampleSize);
+        fireEvent.click(saveSampleSize);
+
+        expect(mockedApi.recordExtractionValue).toHaveBeenCalledTimes(1);
+        expect(screen.getByLabelText("Sample size")).toBeDisabled();
+        expect(saveSampleSize).toBeDisabled();
+        expect(screen.getByLabelText("Mean age")).toBeEnabled();
+
+        fireEvent.change(screen.getByLabelText("Mean age"), { target: { value: "54" } });
+        fireEvent.click(fieldBlock("Mean age").getByRole("button", { name: "Save" }));
+        await waitFor(() => expect(mockedApi.recordExtractionValue).toHaveBeenCalledTimes(2));
+
+        await act(async () => write.resolve(extractionRecord("f1", "120")));
+
+        await waitFor(() => expect(screen.getByLabelText("Sample size")).toBeEnabled());
+        expect(fieldBlock("Sample size").getByText("Extraction value saved.")).toBeInTheDocument();
+      });
+
+      it("keeps a failed Extraction Value as typed and lets it be retried", async () => {
+        mockedApi.getCitation.mockResolvedValue(
+          citationWith({ extraction_fields: [sampleSizeField] })
+        );
+        mockedApi.recordExtractionValue
+          .mockRejectedValueOnce(new Error("boom"))
+          .mockResolvedValueOnce(extractionRecord("f1", "80 participants"));
+        renderPage();
+
+        fireEvent.change(await screen.findByLabelText("Sample size"), {
+          target: { value: "80 participants" },
+        });
+        fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+        expect(await screen.findByText(/failed to save extraction value/i)).toBeInTheDocument();
+        expect(screen.getByLabelText("Sample size")).toHaveValue("80 participants");
+        expect(screen.getByLabelText("Sample size")).toBeEnabled();
+
+        fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+        expect(await screen.findByText("Extraction value saved.")).toBeInTheDocument();
+        expect(screen.queryByText(/failed to save extraction value/i)).not.toBeInTheDocument();
+      });
+    });
+
+    describe("a saved decision whose page refresh fails", () => {
+      it("keeps the save confirmed, says the refresh failed, and offers to try it again", async () => {
+        mockedApi.getCitation
+          .mockResolvedValueOnce(citationWith())
+          .mockRejectedValueOnce(new Error("refresh failed"))
+          .mockResolvedValueOnce(
+            citationWith({ screening_decision: screeningRecord("include") })
+          );
+        renderPage();
+        await screen.findByRole("group", { name: /screening decision/i });
+
+        fireEvent.click(screeningGroup().getByLabelText("include"));
+        fireEvent.click(saveScreening());
+
+        expect(await screen.findByText("Decision saved.")).toBeInTheDocument();
+        expect(await screen.findByRole("alert")).toHaveTextContent(/could not be refreshed/i);
+        expect(screen.queryByText(/failed to save screening/i)).not.toBeInTheDocument();
+        expect(saveScreening()).toBeEnabled();
+
+        fireEvent.click(screen.getByRole("button", { name: /refresh/i }));
+
+        await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+        expect(screen.getByText("Decision saved.")).toBeInTheDocument();
+        // One recorded decision, not two: the retry only reads.
+        expect(mockedApi.recordScreeningDecision).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    describe("leaving a Citation while a write is pending", () => {
+      function renderAt(citationId: string) {
+        return (
+          <ProjectShell reviewProjectId="1">
+            <CitationScreeningPage params={Promise.resolve({ id: "1", citationId })} />
+          </ProjectShell>
+        );
+      }
+
+      it("does not show the old Citation's answer on the next one, and reloads the first when returned to", async () => {
+        mockedApi.getCitation.mockImplementation(async (_project, id) =>
+          citationWith({ id, title: id === "c1" ? "Metformin RCT" : "Aspirin trial" })
+        );
+        const write = deferred<ScreeningRecord>();
+        mockedApi.recordScreeningDecision.mockReturnValue(write.promise);
+        const { rerender } = render(renderAt("c1"));
+        await screen.findByText("Metformin RCT");
+
+        fireEvent.click(screeningGroup().getByLabelText("include"));
+        fireEvent.click(saveScreening());
+        rerender(renderAt("c2"));
+        await screen.findByText("Aspirin trial");
+
+        await act(async () => write.resolve(screeningRecord("include")));
+
+        expect(screen.queryByText("Decision saved.")).not.toBeInTheDocument();
+        expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+        expect(screeningGroup().getByLabelText("include")).not.toBeChecked();
+        expect(saveScreening()).toBeEnabled();
+
+        rerender(renderAt("c1"));
+        await screen.findByText("Metformin RCT");
+
+        expect(screen.queryByText("Decision saved.")).not.toBeInTheDocument();
+        expect(
+          mockedApi.getCitation.mock.calls.filter(([, id]) => id === "c1").length
+        ).toBeGreaterThanOrEqual(2);
+        // The write is not cancelled: it was sent once and is not repeated.
+        expect(mockedApi.recordScreeningDecision).toHaveBeenCalledTimes(1);
+      });
+    });
+
+    describe("the Full Text and the values written about it", () => {
+      it("will not replace the PDF while a Full-Text Decision is being saved", async () => {
+        mockedApi.getCitation.mockResolvedValue(citationWith({ full_text: parsedFullText }));
+        const write = deferred<FullTextRecord>();
+        mockedApi.recordFullTextDecision.mockReturnValue(write.promise);
+        renderPage();
+        await screen.findByRole("group", { name: /full-text decision/i });
+
+        fireEvent.click(fullTextGroup().getByLabelText("include"));
+        fireEvent.click(saveFullText());
+
+        expect(screen.getByLabelText(/replace full text/i)).toBeDisabled();
+        chooseFile(/replace full text/i);
+        expect(mockedApi.uploadFullText).not.toHaveBeenCalled();
+
+        await act(async () =>
+          write.resolve({
+            decision: "include",
+            reason: null,
+            created_at: stamp,
+            updated_at: stamp,
+          } as FullTextRecord)
+        );
+
+        await waitFor(() => expect(screen.getByLabelText(/replace full text/i)).toBeEnabled());
+      });
+
+      it("will not replace the PDF while an Extraction Value is being saved", async () => {
+        mockedApi.getCitation.mockResolvedValue(
+          citationWith({ full_text: parsedFullText, extraction_fields: [sampleSizeField] })
+        );
+        const write = deferred<ExtractionRecord>();
+        mockedApi.recordExtractionValue.mockReturnValue(write.promise);
+        renderPage();
+
+        fireEvent.change(await screen.findByLabelText("Sample size"), {
+          target: { value: "120" },
+        });
+        fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+        expect(screen.getByLabelText(/replace full text/i)).toBeDisabled();
+        chooseFile(/replace full text/i);
+        expect(mockedApi.uploadFullText).not.toHaveBeenCalled();
+
+        await act(async () => write.resolve(extractionRecord("f1", "120")));
+
+        await waitFor(() => expect(screen.getByLabelText(/replace full text/i)).toBeEnabled());
+      });
+
+      it("will not save a Full-Text Decision or an Extraction Value while the PDF is being replaced", async () => {
+        mockedApi.getCitation.mockResolvedValue(
+          citationWith({ full_text: parsedFullText, extraction_fields: [sampleSizeField] })
+        );
+        const upload = deferred<api.FullText>();
+        mockedApi.uploadFullText.mockReturnValue(upload.promise);
+        renderPage();
+        await screen.findByRole("group", { name: /full-text decision/i });
+
+        fireEvent.click(fullTextGroup().getByLabelText("include"));
+        fireEvent.change(screen.getByLabelText("Sample size"), { target: { value: "120" } });
+        chooseFile(/replace full text/i);
+
+        const saveValue = screen.getByRole("button", { name: "Save" });
+        expect(saveFullText()).toBeDisabled();
+        expect(saveValue).toBeDisabled();
+        // Disabled buttons are not the only guard: a submit still cannot get through.
+        fireEvent.submit(saveFullText().closest("form") as HTMLFormElement);
+        fireEvent.click(saveValue);
+        expect(mockedApi.recordFullTextDecision).not.toHaveBeenCalled();
+        expect(mockedApi.recordExtractionValue).not.toHaveBeenCalled();
+
+        await act(async () => upload.resolve({ ...parsedFullText } as api.FullText));
+
+        await waitFor(() => expect(saveFullText()).toBeEnabled());
+        expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+      });
+    });
   });
 });
