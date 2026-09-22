@@ -252,7 +252,7 @@ Each step has a Result column. Copy this whole section into the result comment a
 
 | ID | Do | Expect | Result |
 |---|---|---|---|
-| F1 | Run last, and only while no other Reviewer is using the host: it changes a host setting (an environment variable, so the deployed commit stays the same) and sends failed sign-ins that can lock everyone out of one shared rate-limit bucket for a few minutes. Measure `TRUSTED_PROXY_COUNT` with the procedure in `docs/deploy/render.md`, "Measuring `TRUSTED_PROXY_COUNT`". | Record the value kept and the status codes seen. | |
+| F1 | Run last, and only while no other Reviewer is using the host: it changes a host setting (an environment variable, so the deployed commit stays the same) and sends failed sign-ins that can lock everyone out of one shared rate-limit bucket for a few minutes. Measure `TRUSTED_PROXY_COUNT` with the procedure in `docs/deploy/render.md`, "Measuring `TRUSTED_PROXY_COUNT`". | Record the value kept and the status codes seen. | **2** (not 1 — see "Measured result" in `docs/deploy/render.md`). 0 and 1 both stayed `401` across 31 attempts (address rotates per request at both). At 2: 30×`401` then `429` on the 31st; different network got `401`; forged `X-Forwarded-For` repeat still got `429`. PASS. |
 
 ### G. Close out
 

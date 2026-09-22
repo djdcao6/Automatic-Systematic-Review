@@ -95,7 +95,7 @@ custom domain the `onrender.com` address stops working for the app in a browser.
 | `FRONTEND_ORIGIN` | You | Exact frontend origin, no trailing slash |
 | `SIGNUP_ALLOWLIST` | You | Pilot emails |
 | `BILLING_ENABLED` | Blueprint | `false`; Stripe settings stay unset |
-| `TRUSTED_PROXY_COUNT` | Blueprint | `0` until measured, see below |
+| `TRUSTED_PROXY_COUNT` | Blueprint | `2`, measured during the #93 smoke run, see below |
 | `TEST_DATABASE_URL` | **never** | Only the test suite uses it, and it resets that database |
 | `NEXT_PUBLIC_API_URL` | You, on `asr-web` | Build-time; a change needs a redeploy |
 
@@ -164,10 +164,10 @@ opened": the database test proves the rows, and the PDF test proves a restored P
 
 ## Measuring `TRUSTED_PROXY_COUNT`
 
-Render's docs do not say how many proxies sit in front of the app, so the Blueprint uses 0: every
-visitor then shares one per-IP bucket (30 sign-ins per 5 minutes, 10 sign-ups per hour), which is
-safe but lets one visitor lock out the rest. A value that is too high is worse, because it trusts
-an address the client wrote. Measure it during the #93 smoke run:
+Render's docs do not say how many proxies sit in front of the app, so the Blueprint used to default
+to 0: every visitor then shares one per-IP bucket (30 sign-ins per 5 minutes, 10 sign-ups per hour),
+which is safe but lets one visitor lock out the rest. A value that is too high is worse, because it
+trusts an address the client wrote. Measured during the #93 smoke run:
 
 1. Set `TRUSTED_PROXY_COUNT=1` and redeploy the backend.
 2. From your own network, send 31 failed sign-ins for 31 different emails to `/login`
@@ -176,6 +176,17 @@ an address the client wrote. Measure it during the #93 smoke run:
    visitor has their own bucket, so 1 is right. `429` means both networks share a bucket, so try 2.
 4. With the value you kept, repeat step 2 with a forged `X-Forwarded-For: 203.0.113.9` header. Still
    `429` means the forged left-hand address is ignored, as intended.
+
+**Measured result: 2, not 1.** At both `0` and `1`, step 2 never tripped `429` across 31 attempts —
+`request.client.host` (used at `0`) and the rightmost `X-Forwarded-For` hop (used at `1`) both come
+from an internal Render layer with more than one node, so the address seen by the app rotates per
+request even for the same real visitor. A temporary debug log of the raw header (removed after, not
+on `main`) showed exactly two comma-separated hops on every request: a stable leftmost entry (the
+real client, written by Render's edge) and a rotating rightmost entry (the internal layer). Only
+`TRUSTED_PROXY_COUNT=2` reads the stable leftmost entry (`hops[-2]`). With `2`: 31-request test gave
+`401` × 30 then `429` on the 31st; a different network got `401` (own bucket, confirming 2 is not
+too high); the forged-header repeat still got `429`. If Render's edge topology changes, re-measure —
+don't assume 2 holds forever.
 
 ## Finishing #65
 
