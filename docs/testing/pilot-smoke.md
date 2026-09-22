@@ -139,7 +139,9 @@ spreadsheet shows it as odd first rows; read it in a text editor, or skip the fi
 Compare every cell exactly, except the two AI columns. **AI cells:** `ai_suggestion_decision` is one
 of `include`, `exclude`, `maybe` and `ai_suggestion_reason` is non-empty for S1, S2 and S3; both are
 `not_available` for S4. Write `<AI>` below for those cells. Rows are in import order. The download is
-named like `smoke-solo-2026-09-21-1a2b3c4d.csv`.
+named `citations.csv` for every Review Project; a second export in the same browser lands as
+`citations (1).csv`, `citations (2).csv` and so on, which is the browser de-duplicating, not the app.
+Track which file is which by export order, not by name.
 
 **EXP-CSV-SOLO** (11 columns)
 
@@ -178,6 +180,7 @@ Each step has a Result column. Copy this whole section into the result comment a
 
 | ID | Do | Expect | Result |
 |---|---|---|---|
+| A0 | **Before anything else**, open the Anthropic Console's usage page and write down the current figure. G2 subtracts this from the figure at the end, and it cannot be reconstructed afterwards. | A number recorded here, not a promise to check later. | |
 | A1 | Open `https://<api>/health`. | `{"status": "ok"}`. | |
 | A2 | Record the deployed commit of `asr-api` and of `asr-web` from the Render dashboard (each service's latest deploy). Record the date, the browser and version, and the intended release commit. Note whether the `asr-api` deploy log shows `alembic upgrade head` succeeding. | Both deployed commits equal the intended commit. The app has no version page, so the dashboard is the only evidence; if the two differ, the run tests a mixed deploy and is FAIL. | |
 | A3 | Register page, an **allowlisted** email (Reviewer A), consent box **unticked**, submit. | `Accept the AI disclosure to create an account.` No account created. The box's text reads "I understand: Abstracts, PDFs and criteria you add are sent to Anthropic's API to generate suggestions. Don't upload patient-identifiable data." | |
@@ -259,7 +262,7 @@ Each step has a Result column. Copy this whole section into the result comment a
 | ID | Do | Expect | Result |
 |---|---|---|---|
 | G1 | Link the #65 restore-test records (Postgres and PDFs, isolated). This protocol did not restore or reset anything. | Links present, or noted as missing. | |
-| G2 | Anthropic Console: usage after the run minus usage before it. | Recorded. Roughly 9 model calls; flag it if the difference looks larger. | |
+| G2 | Anthropic Console: usage after the run, minus the figure A0 recorded. | Recorded. Roughly 9 model calls; flag it if the difference looks larger. If A0 was missed, say so and fall back to the Console's per-day totals for the run's dates, labelled as a substitute. | |
 | G3 | Post the result (below) on the release issue and link it from #65. Blur identities and secrets first. | Posted. | |
 
 ## Result to post
