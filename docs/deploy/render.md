@@ -16,9 +16,9 @@ sign up.
 
 About $41 a month, all in `ohio`. Storage is billed at $0.30 per GB for the database and $0.25 per
 GB for the disk. The Blueprint screen shows the exact prices; the $6 for the 256 MB database is
-worked out from Render's own examples, so check it there. Add the Anthropic spend cap (start near
-$45) and a domain to reach the roughly $100 ceiling the owner chose for decision D2 in roadmap #88
-(host, region and budget).
+worked out from Render's own examples, so check it there. Add the Anthropic spend cap ($20 a month,
+set org-wide in the Console on 2026-09-25) and a domain: about $65 all in, well inside the $100
+ceiling the owner chose for decision D2 in roadmap #88 (host, region and budget).
 
 Why it looks like this:
 
@@ -54,13 +54,18 @@ Why it looks like this:
 1. In Render: **New > Blueprint**, pick this repo, branch `main`. Render reads `render.yaml` and asks
    for the values marked `sync: false`.
 2. Enter `ANTHROPIC_API_KEY` and `SIGNUP_ALLOWLIST`. For `FRONTEND_ORIGIN` and `NEXT_PUBLIC_API_URL`
-   enter `https://asr-web.onrender.com` and `https://asr-api.onrender.com` as a first guess.
+   enter `https://asr-web.onrender.com` and `https://asr-api.onrender.com` as a first guess. Guessed
+   `onrender.com` names can belong to strangers (the guessed `asr-web.onrender.com` did), so never
+   test or share a URL until you have read the real one from the dashboard.
 3. Render creates all three and deploys them. If a service name was taken, Render adds a suffix:
    read the real URLs from the dashboard. If the first `asr-api` deploy fails at the pre-deploy step
    because the database was still starting, **Manual Deploy** it again.
 4. If the real URLs differ from your guess, correct `FRONTEND_ORIGIN` on `asr-api` and
-   `NEXT_PUBLIC_API_URL` on `asr-web`, then **Manual Deploy** both. The frontend needs a rebuild
-   because that value is baked into the browser bundle; the backend needs it for CORS.
+   `NEXT_PUBLIC_API_URL` on `asr-web`, then **Manual Deploy** `asr-api` and use **Clear build cache
+   & deploy** on `asr-web`. The frontend needs a rebuild because that value is baked into the
+   browser bundle, and a plain redeploy can reuse the build cache and keep serving the old URL
+   (this happened on the first deploy). Confirm by checking that the served bundle holds the new
+   API URL. The backend needs the new value for CORS.
 5. Smoke test (the checklist in #65), in this order:
    - `https://<api>/health` returns `{"status": "ok"}`, and the `asr-api` deploy log shows the
      pre-deploy command `alembic upgrade head` succeeding.
@@ -79,8 +84,8 @@ Why it looks like this:
 
 Add each domain to its service in the dashboard and create the DNS records Render shows; Render
 issues the HTTPS certificate. Then set `FRONTEND_ORIGIN` on `asr-api` to the frontend's new origin
-and `NEXT_PUBLIC_API_URL` on `asr-web` to the API's new origin, and **Manual Deploy** both.
-`FRONTEND_ORIGIN` accepts **exactly one origin** (CORS allows only that one), so once it names the
+and `NEXT_PUBLIC_API_URL` on `asr-web` to the API's new origin, then **Manual Deploy** `asr-api` and
+use **Clear build cache & deploy** on `asr-web` (see First deploy, step 4). `FRONTEND_ORIGIN` accepts **exactly one origin** (CORS allows only that one), so once it names the
 custom domain the `onrender.com` address stops working for the app in a browser.
 
 ## Environment variables

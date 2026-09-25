@@ -21,8 +21,8 @@ an existing Reviewer on your Review Project. There is no cost during the pilot.
 
 **AI disclosure.** Abstracts, PDFs and criteria you add are sent to Anthropic's API to
 generate suggestions. AI suggestions are always shown separately from your own decision and
-never fill in a decision for you — you decide, always. Don't upload patient-identifiable
-data.
+never fill in a decision for you — you decide, always. Anthropic handles that data under its
+own terms and privacy policy, not these terms. Don't upload patient-identifiable data.
 
 **Do not upload PHI or any patient-identifiable data.** This includes names, dates of birth,
 medical record numbers, or anything else that could identify a real patient — in an abstract,
@@ -42,7 +42,8 @@ run backups, restore tests, and the account/project tools described below — no
 screening decisions for any purpose other than operating the pilot.
 
 **Quebec residents cannot currently join this pilot.** Quebec's Law 25 sets requirements this
-hosting setup does not meet. Sign-up is gated by a location check for this reason.
+hosting setup does not meet. The operator asks each invitee where they are based before adding
+them, and does not add anyone in Quebec. The app itself does not check location.
 
 **Account and data removal.** There is no self-service delete yet. If you want your account
 or a project removed, ask the operator — removal deletes the account's or project's rows and
