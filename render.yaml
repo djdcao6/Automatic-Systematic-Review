@@ -52,6 +52,11 @@ services:
         sync: false # the asr-web URL, e.g. https://asr-web.onrender.com
       - key: SIGNUP_ALLOWLIST
         sync: false # pilot emails, comma-separated
+      # Not secret, just a bucket name — set once here so scripts/backup_*.py (README:
+      # "Off-platform backups") only need AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY exported
+      # per shell session, never a bucket name typed from memory.
+      - key: BACKUP_S3_BUCKET
+        sync: false
       - key: BILLING_ENABLED
         value: "false"
       # Measured during the #93 smoke run (docs/deploy/render.md): Render puts 2 hops in front

@@ -140,6 +140,30 @@ def test_backup_database_uploads_pg_dumps_stdout(monkeypatch, client):
     assert captured_args["args"][1] == "postgresql://db.invalid/db"
 
 
+def test_backup_database_passes_through_a_url_without_the_psycopg_suffix(monkeypatch, client):
+    """DATABASE_URL is already plain postgresql:// in some environments (not the +psycopg form
+    settings.py stores); pg_dump should get it unchanged, not mangled looking for a prefix
+    that isn't there."""
+    captured_args = {}
+
+    class _FakeResult:
+        returncode = 0
+        stdout = b"archive"
+        stderr = b""
+
+    def _fake_run(args, capture_output, check):
+        captured_args["args"] = args
+        return _FakeResult()
+
+    monkeypatch.setattr(backup_tasks.subprocess, "run", _fake_run)
+
+    backup_tasks.backup_database(
+        "postgresql://db.invalid/db", bucket=BUCKET, prefix=PREFIX, client=client
+    )
+
+    assert captured_args["args"][1] == "postgresql://db.invalid/db"
+
+
 def test_backup_database_raises_on_a_pg_dump_failure(monkeypatch, client):
     class _FakeResult:
         returncode = 1
