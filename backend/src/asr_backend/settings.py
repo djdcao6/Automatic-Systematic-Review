@@ -37,6 +37,13 @@ class Settings(BaseSettings):
     stripe_publishable_key: str | None = None
     stripe_webhook_secret: str | None = None
     stripe_price_id: str | None = None
+    # Off-platform backups (#65 leftovers), used only by scripts/backup_*.py. AWS
+    # credentials themselves come from boto3's normal env vars (AWS_ACCESS_KEY_ID,
+    # AWS_SECRET_ACCESS_KEY), not from here, so an app process that never runs a
+    # backup script never needs them.
+    backup_s3_bucket: str | None = None
+    backup_s3_prefix: str = "asr-backups"
+    backup_s3_region: str | None = None
 
     @field_validator("database_url", "test_database_url")
     @classmethod

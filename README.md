@@ -53,6 +53,9 @@ copy another environment's `.env`:
 | `SIGNUP_ALLOWLIST` | no | Comma-separated emails allowed to register; empty means nobody can self-register |
 | `TRUSTED_PROXY_COUNT` | no | Reverse proxy hops in front of the app, for rate-limit IP detection; defaults to `0` (no proxy). Get this wrong and the sign-in/sign-up rate limit either shares one bucket across every visitor or trusts a client-supplied address — see `docs/deploy/render.md` for how it was measured on Render |
 | `BILLING_ENABLED` | no | Defaults to `false`. If set to `true`, four `STRIPE_*` variables become required — the app fails fast at startup and names which ones are missing |
+| `BACKUP_S3_BUCKET` | for backup scripts only | The S3 bucket the off-platform backup scripts upload to; see "Off-platform backups" below |
+| `BACKUP_S3_PREFIX` | no | Defaults to `asr-backups`; a key prefix inside the bucket, in case it's shared with other things |
+| `BACKUP_S3_REGION` | no | Only needed if it isn't your AWS default region |
 
 Run the database migrations:
 
@@ -124,6 +127,35 @@ uv run python scripts/delete_account.py <email> --yes
   Co-Reviewer are handled.
 
 Run any script with `--help` for its exact arguments.
+
+## Off-platform backups
+
+Render's own database point-in-time recovery and disk snapshots (`docs/deploy/render.md`) are
+both **on Render**. These two operator scripts push a copy of the pilot's data somewhere else,
+run by hand — weekly is the suggested cadence, nothing runs them automatically. Run them from
+`backend/`, against the deployed environment's values:
+
+```
+uv run python scripts/backup_full_texts.py
+uv run python scripts/backup_database.py
+```
+
+- `backup_full_texts.py` uploads every PDF under `FULL_TEXT_STORAGE_PATH` to
+  `s3://$BACKUP_S3_BUCKET/$BACKUP_S3_PREFIX/full_texts/`. It compares each file's content
+  (not just its name) against what's already backed up, so it only re-uploads a PDF a
+  Reviewer has replaced in place, not every file on every run.
+- `backup_database.py` runs `pg_dump -Fc` against `DATABASE_URL` and uploads the archive to
+  `s3://$BACKUP_S3_BUCKET/$BACKUP_S3_PREFIX/database/`, one timestamped object per run.
+  Requires `pg_dump` on PATH (install PostgreSQL's client tools, matching the server's major
+  version — Render's Postgres version is on the database's Info page); pass
+  `--pg-dump-path` if it's installed under a different name (e.g. `pg_dump16`). Restore with
+  `pg_restore` against an empty database.
+- Both need `BACKUP_S3_BUCKET` set (see the environment variable table above) and AWS
+  credentials in the environment (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` — boto3's
+  normal variables, not app-specific ones) for an IAM identity that can `PutObject`,
+  `GetObject` and `HeadObject` on that bucket.
+- Neither script deletes anything, on S3 or locally — old backups accumulate; a bucket
+  lifecycle rule (or a manual prune) is a separate decision.
 
 ## Release flow
 
