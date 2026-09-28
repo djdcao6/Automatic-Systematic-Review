@@ -5,10 +5,20 @@ FROM python:3.11-slim-bookworm
 # Same uv the lockfile and build backend (uv_build) were made with.
 COPY --from=ghcr.io/astral-sh/uv:0.12.5 /uv /bin/uv
 
-# psql, for inspecting the database from a shell on the service (Render's SSH). Debian's
-# client is older than the server, so it is for looking, not for pg_dump.
+# postgresql-client-17, matching render.yaml's postgresMajorVersion (what CI tests against
+# too). Debian bookworm only packages v15, and pg_dump needs to be the server's version or
+# newer to be trusted (an older client against a newer server can miss catalog changes) —
+# scripts/backup_database.py shells out to it, from a shell on the service (Render's SSH).
+# Debian doesn't package v17, so this adds the official PGDG apt repo for it.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends postgresql-client \
+    && apt-get install -y --no-install-recommends ca-certificates curl gnupg lsb-release \
+    && install -d /usr/share/postgresql-common/pgdg \
+    && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+        -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+    && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+        > /etc/apt/sources.list.d/pgdg.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends postgresql-client-17 \
     && rm -rf /var/lib/apt/lists/*
 
 ENV UV_COMPILE_BYTECODE=1 \

@@ -125,6 +125,17 @@ python scripts/reset_password.py --help
 `psql` is installed for looking at the database; use the connection strings on the database's
 **Info** page.
 
+For the off-platform backup scripts (below), export AWS credentials **for that shell session
+only** before running them, rather than adding them to `asr-api`'s permanent environment — the
+long-running app process has no need of S3 access, only this occasional manual job does:
+
+```
+export AWS_ACCESS_KEY_ID=...
+export AWS_SECRET_ACCESS_KEY=...
+python scripts/backup_full_texts.py
+python scripts/backup_database.py
+```
+
 ## Backups: what protects against what
 
 | Layer | Covers | Window | Restores to |
@@ -135,11 +146,11 @@ python scripts/reset_password.py --help
 
 Gaps, stated plainly:
 
-- **Off-platform copy.** Everything above lives on Render. Weekly, download a logical backup from the
-  dashboard and keep it somewhere else. There is **no documented way to copy the PDF disk out**
-  (the SSH docs mention no `scp`, `rsync` or `sftp`), so Full Text files have no off-platform copy
-  yet. For a closed pilot most can probably be attached again by the Reviewer who added them, which
-  limits the loss; automating a copy from inside the service is a follow-up.
+- **Off-platform copy.** Everything above lives on Render. `scripts/backup_database.py` and
+  `scripts/backup_full_texts.py` (README: "Off-platform backups") push a copy of each to an S3
+  bucket you control, run from inside the service (see "Operator tasks" below) since that's
+  where both the disk and a `pg_dump`-capable shell are. Nothing runs them on its own; pick a
+  cadence (weekly is the roadmap's suggestion) and run them yourself.
 - **Snapshot restore is in place.** An isolated restore, as roadmap #88 asks, is not something the
   docs describe for disks. The test below therefore runs in place, before real data exists.
 - **The two backups are not taken together.** Restoring the database alone leaves rows pointing at
@@ -204,7 +215,11 @@ waits on; closing #65 is not.
 
 - Container runs as root; drop privileges once the disk's ownership has been checked on a real
   service.
-- No off-platform copy of the Full Text files, and no automation of the database export.
+- `scripts/backup_full_texts.py` and `scripts/backup_database.py` are run by hand, not on a
+  schedule; nothing fails loudly if a week goes by and nobody runs them. A Render Cron Job (or
+  equivalent) is a reasonable follow-up if the manual cadence proves unreliable.
+- `pg_dump` isn't confirmed installed in the `asr-api` image alongside `psql` — check
+  `pg_dump --version` in the shell before relying on `backup_database.py`.
 - No alerting: check the dashboard, or add a health check notification, before the pilot starts.
 - Hobby has a 3-day database recovery window and one team seat.
 
