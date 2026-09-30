@@ -53,6 +53,7 @@ describe("ProjectShell", () => {
       email: "owner@example.com",
       created_at: "2026-01-01T00:00:00Z",
       ai_consent_at: "2026-01-01T00:00:00Z",
+      billing_enabled: false,
     });
     mockedApi.getReviewProject.mockResolvedValue(baseProject);
   });
@@ -123,6 +124,7 @@ describe("ProjectShell", () => {
       email: "co@example.com",
       created_at: "2026-01-01T00:00:00Z",
       ai_consent_at: "2026-01-01T00:00:00Z",
+      billing_enabled: false,
     });
 
     render(
@@ -152,7 +154,7 @@ describe("ProjectShell", () => {
 
   it("waits to show the rail until it knows whether the viewer is the Owner", async () => {
     mockedApi.getReviewProject.mockResolvedValue({ ...baseProject, review_mode: "dual" });
-    let resolveMe: (reviewer: api.Reviewer) => void = () => {};
+    let resolveMe: (reviewer: api.Me) => void = () => {};
     mockedApi.getMe.mockReturnValue(
       new Promise((resolve) => {
         resolveMe = resolve;
@@ -168,7 +170,7 @@ describe("ProjectShell", () => {
     expect(screen.queryByRole("navigation", { name: "Project" })).not.toBeInTheDocument();
 
     await act(async () => {
-      resolveMe({ id: "owner-1", email: "owner@example.com", created_at: "2026-01-01T00:00:00Z", ai_consent_at: "2026-01-01T00:00:00Z" });
+      resolveMe({ id: "owner-1", email: "owner@example.com", created_at: "2026-01-01T00:00:00Z", ai_consent_at: "2026-01-01T00:00:00Z", billing_enabled: false });
     });
 
     expect(screen.getByRole("link", { name: "Invitations" })).toBeInTheDocument();
@@ -194,6 +196,7 @@ describe("ProjectShell", () => {
       email: "owner@example.com",
       created_at: "2026-01-01T00:00:00Z",
       ai_consent_at: null,
+      billing_enabled: false,
     };
 
     it("is shown the notice instead of the project, so no page can send an AI request first", async () => {

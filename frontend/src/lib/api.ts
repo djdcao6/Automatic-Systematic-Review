@@ -9,6 +9,10 @@ export type Reviewer = {
   ai_consent_at: string | null;
 };
 
+// The current Reviewer, plus whether billing is on. Billing endpoints 404 while it is off
+// (#39), so callers read this instead of probing them.
+export type Me = Reviewer & { billing_enabled: boolean };
+
 export type ReviewerInput = {
   email: string;
   password: string;
@@ -417,7 +421,7 @@ export async function loginReviewer(payload: ReviewerInput): Promise<AuthToken> 
   );
 }
 
-export async function getMe(): Promise<Reviewer> {
+export async function getMe(): Promise<Me> {
   return request(`${API_URL}/me`, {}, "Failed to load current reviewer");
 }
 
@@ -479,14 +483,14 @@ export async function generateSearchTerms(reviewProjectId: string): Promise<Sear
   );
 }
 
-// Returns null when no Search Terms have been generated yet (backend 404),
-// rather than treating "none generated yet" as a load failure.
+// Null when no Search Terms have been generated yet. A missing project is a real
+// error (404), not "none generated".
 export async function getSearchTerms(reviewProjectId: string): Promise<SearchTerms | null> {
-  const response = await authorizedFetch(
-    `${API_URL}/review-projects/${reviewProjectId}/search-terms`
+  return request(
+    `${API_URL}/review-projects/${reviewProjectId}/search-terms`,
+    {},
+    "Failed to load search terms"
   );
-  if (response.status === 404) return null;
-  return (await ensureOk(response, "Failed to load search terms")).json();
 }
 
 export async function updateSearchTerms(

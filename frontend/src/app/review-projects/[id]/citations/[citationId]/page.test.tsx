@@ -125,6 +125,7 @@ describe("CitationScreeningPage", () => {
       email: "owner@example.com",
       created_at: "2026-01-01T00:00:00Z",
       ai_consent_at: "2026-01-01T00:00:00Z",
+      billing_enabled: false,
     });
     mockedApi.recordScreeningDecision.mockResolvedValue({
       decision: "include",
@@ -551,6 +552,7 @@ describe("CitationScreeningPage", () => {
       email: "co@example.com",
       created_at: "2026-01-01T00:00:00Z",
       ai_consent_at: "2026-01-01T00:00:00Z",
+      billing_enabled: false,
     });
     mockedApi.getReviewProject.mockResolvedValue(dualReviewProject);
     mockedApi.getCitation.mockResolvedValue({
@@ -586,6 +588,7 @@ describe("CitationScreeningPage", () => {
       email: "co@example.com",
       created_at: "2026-01-01T00:00:00Z",
       ai_consent_at: "2026-01-01T00:00:00Z",
+      billing_enabled: false,
     });
     mockedApi.getReviewProject.mockResolvedValue(dualReviewProject);
     mockedApi.getCitation.mockResolvedValue({

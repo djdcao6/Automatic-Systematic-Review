@@ -6,7 +6,7 @@ import Link from "next/link";
 
 import {
   createReviewProject,
-  getMySubscription,
+  getMe,
   listReviewProjects,
   ReviewProjectCapError,
   type MergeMode,
@@ -37,12 +37,12 @@ export default function Home() {
       .catch(() => setError({ message: "Failed to load review projects.", isCapError: false }));
   }, []);
 
-  // getMySubscription 404s (resolves to null) while `billing_enabled` is
-  // off, per #39's dark launch — the Account/Billing link stays hidden
-  // rather than pointing at a page with nothing to show.
+  // While billing is off (#39's dark launch) the Account/Billing link stays hidden
+  // rather than pointing at a page with nothing to show. /me says so directly, so
+  // the page never calls the billing endpoints, which 404 then.
   useEffect(() => {
-    getMySubscription()
-      .then((subscription) => setBillingEnabled(subscription !== null))
+    getMe()
+      .then((me) => setBillingEnabled(me.billing_enabled))
       .catch(() => setBillingEnabled(false));
   }, []);
 

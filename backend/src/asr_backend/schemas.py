@@ -69,6 +69,12 @@ class ReviewerRead(BaseModel):
     ai_consent_at: datetime | None
 
 
+class MeRead(ReviewerRead):
+    # Lets the web app hide billing UI without calling the billing endpoints, which 404
+    # while billing is off (#39). Says nothing about any Plan or Subscription.
+    billing_enabled: bool = False
+
+
 class ReviewerLogin(BaseModel):
     email: EmailStr
     password: str

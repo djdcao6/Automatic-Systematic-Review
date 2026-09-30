@@ -334,10 +334,19 @@ def test_get_search_terms_returns_persisted_terms_and_combined_query(
     assert body["combined_query"] == "(adults) AND (metformin) AND (placebo) AND (HbA1c)"
 
 
-def test_get_search_terms_before_generation_returns_404(authed_client):
+def test_get_search_terms_before_generation_returns_null(authed_client):
     project_id = create_project(authed_client)
 
     response = authed_client.get(f"/review-projects/{project_id}/search-terms")
+
+    assert response.status_code == 200
+    assert response.json() is None
+
+
+def test_get_search_terms_for_a_missing_project_is_still_404(authed_client):
+    response = authed_client.get(
+        "/review-projects/00000000-0000-0000-0000-000000000000/search-terms"
+    )
 
     assert response.status_code == 404
 

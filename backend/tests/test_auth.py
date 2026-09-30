@@ -110,6 +110,21 @@ def test_login_wrong_password_and_unknown_email_give_same_error(client):
     assert wrong_password.json()["detail"] == unknown_email.json()["detail"]
 
 
+def test_me_reports_whether_billing_is_enabled(client, monkeypatch):
+    """#108: lets the web app hide billing UI without calling /me/subscription (404 while off)."""
+    _register(client)
+    token = client.post(
+        "/login", json={"email": "reviewer@example.com", "password": "correcthorse"}
+    ).json()["access_token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    monkeypatch.setattr(settings, "billing_enabled", False)
+    assert client.get("/me", headers=headers).json()["billing_enabled"] is False
+
+    monkeypatch.setattr(settings, "billing_enabled", True)
+    assert client.get("/me", headers=headers).json()["billing_enabled"] is True
+
+
 def test_me_resolves_current_reviewer_from_token(client):
     _register(client)
     token = client.post(

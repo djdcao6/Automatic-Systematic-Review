@@ -16,16 +16,26 @@ vi.mock("@/lib/api", async (importOriginal) => {
     ...actual,
     listReviewProjects: vi.fn(),
     createReviewProject: vi.fn(),
-    getMySubscription: vi.fn(),
+    getMe: vi.fn(),
   };
 });
 
 const mockedApi = vi.mocked(api);
 
+function me(billingEnabled: boolean): api.Me {
+  return {
+    id: "reviewer-1",
+    email: "reviewer@example.com",
+    created_at: "2026-01-01T00:00:00Z",
+    ai_consent_at: "2026-01-01T00:00:00Z",
+    billing_enabled: billingEnabled,
+  };
+}
+
 describe("Home", () => {
   beforeEach(() => {
     mockedApi.listReviewProjects.mockResolvedValue([]);
-    mockedApi.getMySubscription.mockResolvedValue(null);
+    mockedApi.getMe.mockResolvedValue(me(false));
     mockedApi.createReviewProject.mockResolvedValue({
       id: "1",
       name: "New Review",
@@ -116,12 +126,12 @@ describe("Home", () => {
   it("hides the Account/Billing link while billing is disabled", async () => {
     render(<Home />);
 
-    await waitFor(() => expect(mockedApi.getMySubscription).toHaveBeenCalled());
+    await waitFor(() => expect(mockedApi.getMe).toHaveBeenCalled());
     expect(screen.queryByRole("link", { name: /account.*billing/i })).not.toBeInTheDocument();
   });
 
   it("shows the Account/Billing link once billing is enabled", async () => {
-    mockedApi.getMySubscription.mockResolvedValue({ plan: "free", status: null });
+    mockedApi.getMe.mockResolvedValue(me(true));
 
     render(<Home />);
 
@@ -132,7 +142,7 @@ describe("Home", () => {
   });
 
   it("shows the cap error message with a link to Account/Billing when blocked", async () => {
-    mockedApi.getMySubscription.mockResolvedValue({ plan: "free", status: null });
+    mockedApi.getMe.mockResolvedValue(me(true));
     mockedApi.createReviewProject.mockRejectedValue(
       new ReviewProjectCapError(
         "Free Plan is limited to 1 Review Project. Upgrade on the Account/Billing page to create more."
@@ -172,7 +182,7 @@ describe("Home", () => {
 
     render(<Home />);
 
-    await waitFor(() => expect(mockedApi.getMySubscription).toHaveBeenCalled());
+    await waitFor(() => expect(mockedApi.getMe).toHaveBeenCalled());
     await waitFor(() => expect(mockedApi.listReviewProjects).toHaveBeenCalled());
     fireEvent.change(screen.getByLabelText(/project name/i), {
       target: { value: "New Review" },
