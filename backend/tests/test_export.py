@@ -9,6 +9,7 @@ from conftest import auth_headers_for
 from asr_backend import export, models
 from asr_backend.ai_suggestion import SuggestionResult, get_ai_suggester
 from asr_backend.main import app
+from asr_backend.settings import settings
 
 
 class _FakeSuggester:
@@ -296,6 +297,19 @@ def test_export_filename_slugifies_project_name_and_appends_id_suffix(authed_cli
 
     disposition = response.headers["content-disposition"]
     assert f'filename="copd-metformin-review-{project_id[:8]}.csv"' in disposition
+
+
+def test_export_filename_header_is_readable_by_the_web_app_across_origins(authed_client):
+    """#107: without this the browser hides Content-Disposition and the download is 'citations.csv'."""
+    project_id = create_project(authed_client)
+
+    response = authed_client.get(
+        f"/review-projects/{project_id}/export",
+        headers={"Origin": settings.frontend_origin},
+    )
+
+    exposed = response.headers["access-control-expose-headers"].lower()
+    assert "content-disposition" in exposed
 
 
 def save_criteria(authed_client, project_id: str, **fields) -> None:
