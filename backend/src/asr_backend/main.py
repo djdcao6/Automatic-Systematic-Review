@@ -45,6 +45,9 @@ app.add_middleware(
     allow_origins=[settings.frontend_origin],
     allow_methods=["*"],
     allow_headers=["*"],
+    # The web app reads the export's filename from this header; a cross-origin page
+    # can't see it unless it is exposed (#107).
+    expose_headers=["Content-Disposition"],
 )
 
 
