@@ -22,15 +22,21 @@ export function CriteriaPanel() {
   const criteria = project.criteria;
   const readOnly = !isOwner || project.criteria_locked;
   const [population, setPopulation] = useState(criteria?.population ?? "");
-  const [intervention, setIntervention] = useState(criteria?.intervention ?? "");
+  const [intervention, setIntervention] = useState(
+    criteria?.intervention ?? "",
+  );
   const [comparison, setComparison] = useState(criteria?.comparison ?? "");
   const [outcome, setOutcome] = useState(criteria?.outcome ?? "");
-  const [exclusionRules, setExclusionRules] = useState(criteria?.exclusion_rules.join("\n") ?? "");
+  const [exclusionRules, setExclusionRules] = useState(
+    criteria?.exclusion_rules.join("\n") ?? "",
+  );
   const [notes, setNotes] = useState(criteria?.notes ?? "");
   const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setSaved(false);
 
     const payload: CriteriaInput = {
       population: blankOrValue(population),
@@ -46,6 +52,7 @@ export function CriteriaPanel() {
       setError(null);
       // The form re-seeds from the shared project when the Reviewer comes back.
       await refreshProject();
+      setSaved(true);
     } catch {
       setError("Failed to save criteria.");
     }
@@ -55,14 +62,21 @@ export function CriteriaPanel() {
     <section>
       <h2>Criteria</h2>
       {error && <p role="alert">{error}</p>}
+      {saved && <p role="status">Criteria saved.</p>}
       {!isOwner ? (
         <p role="status">Only the Owner can edit the Criteria.</p>
       ) : (
         project.criteria_locked && (
-          <p role="status">Criteria are locked once the first Screening Decision is recorded.</p>
+          <p role="status">
+            Criteria are locked once the first Screening Decision is recorded.
+          </p>
         )
       )}
-      <form onSubmit={handleSubmit} className="panel">
+      <form
+        onSubmit={handleSubmit}
+        onChange={() => setSaved(false)}
+        className="panel"
+      >
         <div className="field-grid">
           <div>
             <label htmlFor="population">Population</label>
