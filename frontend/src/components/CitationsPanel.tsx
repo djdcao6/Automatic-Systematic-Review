@@ -3,8 +3,36 @@
 import Link from "next/link";
 import { useState, type ChangeEvent } from "react";
 
-import { listCitations, uploadCitations, type CitationUploadResult } from "@/lib/api";
+import {
+  listCitations,
+  uploadCitations,
+  type CitationListItem,
+  type CitationUploadResult,
+} from "@/lib/api";
 import { useListResource } from "@/lib/useListResource";
+
+// Own decisions only (`my_screening_decision`), so in a Dual review this never depends on
+// the peer's progress (ADR 0006).
+function ScreeningEntry({
+  reviewProjectId,
+  citations,
+}: {
+  reviewProjectId: string;
+  citations: CitationListItem[];
+}) {
+  const next = citations.find((citation) => citation.my_screening_decision === null);
+  if (!next) {
+    return <p className="meta">You have recorded a decision on every Citation.</p>;
+  }
+  const started = citations.some((citation) => citation.my_screening_decision !== null);
+  return (
+    <p>
+      <Link href={`/review-projects/${reviewProjectId}/citations/${next.id}`}>
+        {started ? "Continue screening" : "Start screening"}
+      </Link>
+    </p>
+  );
+}
 
 export function CitationsPanel({
   reviewProjectId,
@@ -78,6 +106,9 @@ export function CitationsPanel({
             ))}
           </ul>
         </div>
+      )}
+      {loaded && citations.length > 0 && (
+        <ScreeningEntry reviewProjectId={reviewProjectId} citations={citations} />
       )}
       <label htmlFor="citation-file">Upload RIS or CSV file</label>
       <input id="citation-file" type="file" accept=".ris,.csv" onChange={handleFileChange} />

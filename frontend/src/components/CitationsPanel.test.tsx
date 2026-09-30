@@ -233,6 +233,48 @@ describe("CitationsPanel", () => {
     expect(screen.getAllByText("Not yet decided")).toHaveLength(1);
   });
 
+  // #106: resume at the next Citation the Reviewer hasn't decided.
+  it("links to the first Citation this Reviewer has not decided", async () => {
+    mockedApi.listCitations.mockResolvedValue([
+      { ...citation("1", "Done"), my_screening_decision: "include" },
+      citation("2", "Next Up"),
+      { ...citation("3", "Later Done"), my_screening_decision: "exclude" },
+      citation("4", "Last"),
+    ]);
+
+    render(<CitationsPanel reviewProjectId="7" />);
+
+    expect(await screen.findByRole("link", { name: "Continue screening" })).toHaveAttribute(
+      "href",
+      "/review-projects/7/citations/2"
+    );
+  });
+
+  it("offers to start screening when nothing is decided, and says when everything is", async () => {
+    mockedApi.listCitations.mockResolvedValueOnce([citation("1", "A"), citation("2", "B")]);
+    const { unmount } = render(<CitationsPanel reviewProjectId="7" />);
+    expect(await screen.findByRole("link", { name: "Start screening" })).toHaveAttribute(
+      "href",
+      "/review-projects/7/citations/1"
+    );
+    unmount();
+
+    mockedApi.listCitations.mockResolvedValueOnce([
+      { ...citation("1", "A"), my_screening_decision: "maybe" },
+    ]);
+    render(<CitationsPanel reviewProjectId="7" />);
+    expect(await screen.findByText(/decision on every citation/i)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /screening/i })).not.toBeInTheDocument();
+  });
+
+  it("shows no screening entry while there are no Citations", async () => {
+    mockedApi.listCitations.mockResolvedValue([]);
+    render(<CitationsPanel reviewProjectId="7" />);
+    await screen.findByText(/no citations yet/i);
+    expect(screen.queryByRole("link", { name: /screening/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/decision on every citation/i)).not.toBeInTheDocument();
+  });
+
   // #69: an unreadable year used to vanish without a word.
   it("names each row imported without a year because the year could not be read", async () => {
     mockedApi.listCitations.mockResolvedValue([]);
