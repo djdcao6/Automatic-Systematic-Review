@@ -202,6 +202,12 @@ class CitationRead(BaseModel):
     blocked_pending_co_reviewer: bool
 
 
+class CitationListItemRead(CitationRead):
+    # The requesting Reviewer's own Screening Decision only; a peer's is never
+    # included, so the list can't leak a blind Dual review (ADR 0006).
+    my_screening_decision: str | None = None
+
+
 class CitationUploadSkipped(BaseModel):
     row: int
     reason: str

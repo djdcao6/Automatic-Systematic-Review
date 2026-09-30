@@ -22,6 +22,7 @@ describe("CitationsPage", () => {
         source: [],
         needs_abstract: false,
         blocked_pending_co_reviewer: false,
+        my_screening_decision: null,
       },
     ]);
     renderWithProject(<CitationsPage />);

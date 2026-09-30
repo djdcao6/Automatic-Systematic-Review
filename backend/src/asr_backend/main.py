@@ -590,13 +590,20 @@ def upload_citations(
 
 @app.get(
     "/review-projects/{review_project_id}/citations",
-    response_model=list[schemas.CitationRead],
+    response_model=list[schemas.CitationListItemRead],
 )
 def list_citations(
     project: models.ReviewProject = Depends(get_review_project_or_404),
+    reviewer: models.Reviewer = Depends(auth.get_current_reviewer),
     db: Session = Depends(get_db),
-) -> list[models.Citation]:
-    return crud.list_citations(db, project.id)
+) -> list[schemas.CitationListItemRead]:
+    own_decisions = crud.own_screening_decisions(db, project.id, reviewer.id)
+    return [
+        schemas.CitationListItemRead.model_validate(citation).model_copy(
+            update={"my_screening_decision": own_decisions.get(citation.id)}
+        )
+        for citation in crud.list_citations(db, project.id)
+    ]
 
 
 def get_citation_or_404(

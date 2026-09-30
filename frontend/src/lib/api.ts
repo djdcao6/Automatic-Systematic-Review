@@ -106,6 +106,11 @@ export type Citation = {
   blocked_pending_co_reviewer: boolean;
 };
 
+// The list also carries the requesting Reviewer's own Screening Decision, never a peer's.
+export type CitationListItem = Citation & {
+  my_screening_decision: Decision | null;
+};
+
 export type CitationUploadResult = {
   created: number;
   skipped: { row: number; reason: string }[];
@@ -568,7 +573,7 @@ export async function archiveExtractionField(
   );
 }
 
-export async function listCitations(reviewProjectId: string): Promise<Citation[]> {
+export async function listCitations(reviewProjectId: string): Promise<CitationListItem[]> {
   return request(
     `${API_URL}/review-projects/${reviewProjectId}/citations`,
     {},

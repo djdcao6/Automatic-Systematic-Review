@@ -1,10 +1,4 @@
-import {
-  act,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { ProjectShell } from "@/components/ProjectShell";
@@ -35,16 +29,12 @@ describe("CriteriaPage", () => {
       },
     });
 
-    expect(
-      screen.getByDisplayValue("Adults with diabetes"),
-    ).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Adults with diabetes")).toBeInTheDocument();
     expect(screen.getByDisplayValue("Metformin")).toBeInTheDocument();
     expect(screen.getByDisplayValue("Placebo")).toBeInTheDocument();
     expect(screen.getByDisplayValue("HbA1c")).toBeInTheDocument();
     expect(screen.getByDisplayValue("Non-English")).toBeInTheDocument();
-    expect(
-      screen.getByDisplayValue("Exclude conference abstracts."),
-    ).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Exclude conference abstracts.")).toBeInTheDocument();
   });
 
   it("renders blank fields when no criteria exists yet", () => {
@@ -102,15 +92,11 @@ describe("CriteriaPage", () => {
       },
     });
 
-    expect(screen.getByRole("status")).toHaveTextContent(
-      /criteria are locked/i,
-    );
+    expect(screen.getByRole("status")).toHaveTextContent(/criteria are locked/i);
     expect(screen.getByLabelText(/population/i)).toBeDisabled();
     expect(screen.getByLabelText(/exclusion rules/i)).toBeDisabled();
     expect(screen.getByLabelText(/notes/i)).toBeDisabled();
-    expect(
-      screen.getByRole("button", { name: /save criteria/i }),
-    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: /save criteria/i })).toBeDisabled();
   });
 
   it("shows the Criteria read-only to the Co-Reviewer and says only the Owner edits them", () => {
@@ -129,23 +115,17 @@ describe("CriteriaPage", () => {
       },
     });
 
-    expect(screen.getByRole("status")).toHaveTextContent(
-      /only the owner can edit the criteria/i,
-    );
+    expect(screen.getByRole("status")).toHaveTextContent(/only the owner can edit the criteria/i);
     expect(screen.getByDisplayValue("Adults with diabetes")).toBeDisabled();
     expect(screen.getByLabelText(/exclusion rules/i)).toBeDisabled();
-    expect(
-      screen.getByRole("button", { name: /save criteria/i }),
-    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: /save criteria/i })).toBeDisabled();
   });
 
   it("does not show the locked notice while the Criteria can still be edited", () => {
     renderWithProject(<CriteriaPage />);
 
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /save criteria/i }),
-    ).toBeEnabled();
+    expect(screen.getByRole("button", { name: /save criteria/i })).toBeEnabled();
   });
 
   it("tells the Reviewer when saving fails", async () => {
@@ -154,9 +134,7 @@ describe("CriteriaPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /save criteria/i }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Failed to save criteria.",
-    );
+    expect(await screen.findByRole("alert")).toHaveTextContent("Failed to save criteria.");
     expect(screen.queryByText("Criteria saved.")).not.toBeInTheDocument();
   });
 
