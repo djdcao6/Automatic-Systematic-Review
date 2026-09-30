@@ -109,6 +109,7 @@ export type Citation = {
 export type CitationUploadResult = {
   created: number;
   skipped: { row: number; reason: string }[];
+  unreadable_years: { row: number; value: string }[];
 };
 
 export type Decision = "include" | "exclude" | "maybe";

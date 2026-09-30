@@ -581,6 +581,10 @@ def upload_citations(
             schemas.CitationUploadSkipped(row=row, reason=reason)
             for row, reason in parsed.skipped
         ],
+        unreadable_years=[
+            schemas.CitationUploadUnreadableYear(row=row, value=value)
+            for row, value in parsed.unreadable_years
+        ],
     )
 
 
