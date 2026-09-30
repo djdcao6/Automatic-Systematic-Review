@@ -95,11 +95,13 @@ def login(
     return schemas.Token(access_token=access_token)
 
 
-@app.get("/me", response_model=schemas.ReviewerRead)
+@app.get("/me", response_model=schemas.MeRead)
 def get_me(
     reviewer: models.Reviewer = Depends(auth.get_current_reviewer),
-) -> models.Reviewer:
-    return reviewer
+) -> schemas.MeRead:
+    return schemas.MeRead.model_validate(reviewer).model_copy(
+        update={"billing_enabled": settings.billing_enabled}
+    )
 
 
 @app.post("/me/ai-consent", response_model=schemas.ReviewerRead)
@@ -461,16 +463,16 @@ async def generate_search_terms(
 
 @app.get(
     "/review-projects/{review_project_id}/search-terms",
-    response_model=schemas.SearchTermsRead,
+    response_model=schemas.SearchTermsRead | None,
 )
 def get_search_terms(
     project: models.ReviewProject = Depends(get_review_project_or_404),
     db: Session = Depends(get_db),
-) -> schemas.SearchTermsRead:
+) -> schemas.SearchTermsRead | None:
+    # `null` (not a 404) before any have been generated: a 404 here would be
+    # indistinguishable from a missing project and logs an error for a normal state.
     record = crud.get_search_terms(db, project.id)
-    if record is None:
-        raise HTTPException(status_code=404, detail="Search terms not found")
-    return search_terms.to_read_schema(record)
+    return search_terms.to_read_schema(record) if record is not None else None
 
 
 @app.put(

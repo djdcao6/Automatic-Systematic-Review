@@ -15,6 +15,7 @@ import {
   ExtractionFieldNameTakenError,
   getMySubscription,
   getReviewProject,
+  getSearchTerms,
   listReviewProjects,
   loginReviewer,
   registerReviewer,
@@ -315,6 +316,25 @@ describe("api authorization handling", () => {
     await expect(dismissPossibleDuplicate("proj-1", "dup-1")).rejects.toThrow(
       "Possible duplicate already resolved"
     );
+  });
+
+  it("returns null from getSearchTerms when none have been generated (200 null)", async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      new Response("null", { status: 200, headers: { "Content-Type": "application/json" } })
+    );
+
+    await expect(getSearchTerms("proj-1")).resolves.toBeNull();
+  });
+
+  it("treats a 404 from getSearchTerms as an error, not as 'none generated'", async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ detail: "Review project not found" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+
+    await expect(getSearchTerms("proj-1")).rejects.toThrow();
   });
 
   it("still returns null for a 404 on getMySubscription rather than throwing", async () => {
