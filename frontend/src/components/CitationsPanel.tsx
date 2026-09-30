@@ -80,7 +80,7 @@ export function CitationsPanel({
 
   return (
     <section>
-      <h2>Citations</h2>
+      <h1 className="section-title">Citations</h1>
       {error && <p role="alert">{error}</p>}
       {skipped.length > 0 && (
         <div role="status">

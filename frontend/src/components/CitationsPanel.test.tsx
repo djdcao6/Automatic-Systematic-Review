@@ -233,6 +233,13 @@ describe("CitationsPanel", () => {
     expect(screen.getAllByText("Not yet decided")).toHaveLength(1);
   });
 
+  it("titles the section with an h1", async () => {
+    mockedApi.listCitations.mockResolvedValue([]);
+    render(<CitationsPanel reviewProjectId="1" />);
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Citations" })).toBeInTheDocument();
+  });
+
   // #106: resume at the next Citation the Reviewer hasn't decided.
   it("links to the first Citation this Reviewer has not decided", async () => {
     mockedApi.listCitations.mockResolvedValue([
@@ -246,7 +253,7 @@ describe("CitationsPanel", () => {
 
     expect(await screen.findByRole("link", { name: "Continue screening" })).toHaveAttribute(
       "href",
-      "/review-projects/7/citations/2"
+      "/review-projects/7/citations/2",
     );
   });
 
@@ -255,7 +262,7 @@ describe("CitationsPanel", () => {
     const { unmount } = render(<CitationsPanel reviewProjectId="7" />);
     expect(await screen.findByRole("link", { name: "Start screening" })).toHaveAttribute(
       "href",
-      "/review-projects/7/citations/1"
+      "/review-projects/7/citations/1",
     );
     unmount();
 

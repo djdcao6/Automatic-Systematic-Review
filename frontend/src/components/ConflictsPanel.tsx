@@ -162,7 +162,7 @@ export function ConflictsPanel({
 
   return (
     <section>
-      <h2>Conflicts</h2>
+      <h1 className="section-title">Conflicts</h1>
       {error && (
         <>
           <p role="alert">{error}</p>

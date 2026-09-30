@@ -100,7 +100,7 @@ export function InvitationsPanel({
 
   return (
     <section>
-      <h2>Co-Reviewer</h2>
+      <h1 className="section-title">Co-Reviewer</h1>
       {error && <p role="alert">{error}</p>}
       {hasCoReviewer ? (
         <>

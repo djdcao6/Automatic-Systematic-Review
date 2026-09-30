@@ -141,7 +141,7 @@ export function SearchTermsPanel({ reviewProjectId }: { reviewProjectId: string 
 
   return (
     <section>
-      <h2>Search Terms</h2>
+      <h1 className="section-title">Search Terms</h1>
       {error && <p role="alert">{error}</p>}
       <button type="button" disabled={isSaving} onClick={handleGenerate}>
         {searchTerms ? "Regenerate" : "Suggest search terms"}

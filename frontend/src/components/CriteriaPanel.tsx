@@ -56,7 +56,7 @@ export function CriteriaPanel() {
 
   return (
     <section>
-      <h2>Criteria</h2>
+      <h1 className="section-title">Criteria</h1>
       {error && <p role="alert">{error}</p>}
       {saved && <p role="status">Criteria saved.</p>}
       {!isOwner ? (
