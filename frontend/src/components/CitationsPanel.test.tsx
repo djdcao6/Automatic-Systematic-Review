@@ -1,4 +1,10 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as api from "@/lib/api";
@@ -33,7 +39,11 @@ function citation(id: string, title: string): Citation {
 
 describe("CitationsPanel", () => {
   beforeEach(() => {
-    mockedApi.uploadCitations.mockResolvedValue({ created: 1, skipped: [] });
+    mockedApi.uploadCitations.mockResolvedValue({
+      created: 1,
+      skipped: [],
+      unreadable_years: [],
+    });
   });
 
   it("lists citations and flags ones missing an abstract", async () => {
@@ -84,30 +94,34 @@ describe("CitationsPanel", () => {
     render(<CitationsPanel reviewProjectId="1" />);
 
     expect(await screen.findByText("Awaiting Replacement")).toBeInTheDocument();
-    expect(screen.getByText(/awaiting a replacement co-reviewer/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/awaiting a replacement co-reviewer/i),
+    ).toBeInTheDocument();
   });
 
   it("uploads a file and refreshes the list", async () => {
-    mockedApi.listCitations
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([
-        {
-          id: "1",
-          title: "New Citation",
-          abstract: "Abstract",
-          authors: [],
-          year: 2022,
-          source: [],
-          needs_abstract: false,
-          blocked_pending_co_reviewer: false,
-        },
-      ]);
+    mockedApi.listCitations.mockResolvedValueOnce([]).mockResolvedValueOnce([
+      {
+        id: "1",
+        title: "New Citation",
+        abstract: "Abstract",
+        authors: [],
+        year: 2022,
+        source: [],
+        needs_abstract: false,
+        blocked_pending_co_reviewer: false,
+      },
+    ]);
 
     render(<CitationsPanel reviewProjectId="1" />);
 
-    await waitFor(() => expect(mockedApi.listCitations).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(mockedApi.listCitations).toHaveBeenCalledTimes(1),
+    );
 
-    const file = new File(["title\nA\n"], "citations.csv", { type: "text/csv" });
+    const file = new File(["title\nA\n"], "citations.csv", {
+      type: "text/csv",
+    });
     fireEvent.change(screen.getByLabelText(/upload ris or csv file/i), {
       target: { files: [file] },
     });
@@ -151,11 +165,20 @@ describe("CitationsPanel", () => {
     ]);
     const onCitationsChanged = vi.fn();
 
-    render(<CitationsPanel reviewProjectId="1" onCitationsChanged={onCitationsChanged} />);
+    render(
+      <CitationsPanel
+        reviewProjectId="1"
+        onCitationsChanged={onCitationsChanged}
+      />,
+    );
 
-    await waitFor(() => expect(mockedApi.listCitations).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(mockedApi.listCitations).toHaveBeenCalledTimes(1),
+    );
 
-    const file = new File(["title\nA\n"], "citations.csv", { type: "text/csv" });
+    const file = new File(["title\nA\n"], "citations.csv", {
+      type: "text/csv",
+    });
     fireEvent.change(screen.getByLabelText(/upload ris or csv file/i), {
       target: { files: [file] },
     });
@@ -175,10 +198,13 @@ describe("CitationsPanel", () => {
         { row: 1, reason: "missing title" },
         { row: 4, reason: "unreadable year" },
       ],
+      unreadable_years: [],
     });
 
     render(<CitationsPanel reviewProjectId="1" />);
-    await waitFor(() => expect(mockedApi.listCitations).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(mockedApi.listCitations).toHaveBeenCalledTimes(1),
+    );
 
     const file = new File(["title\n"], "citations.csv", { type: "text/csv" });
     fireEvent.change(screen.getByLabelText(/upload ris or csv file/i), {
@@ -190,14 +216,55 @@ describe("CitationsPanel", () => {
     expect(screen.getByText("Row 4: unreadable year")).toBeInTheDocument();
   });
 
+  // #69: an unreadable year used to vanish without a word.
+  it("names each row imported without a year because the year could not be read", async () => {
+    mockedApi.listCitations.mockResolvedValue([]);
+    mockedApi.uploadCitations
+      .mockResolvedValueOnce({
+        created: 2,
+        skipped: [],
+        unreadable_years: [
+          { row: 2, value: "n.d." },
+          { row: 5, value: "in press" },
+        ],
+      })
+      .mockResolvedValueOnce({ created: 1, skipped: [], unreadable_years: [] });
+
+    render(<CitationsPanel reviewProjectId="1" />);
+    await waitFor(() =>
+      expect(mockedApi.listCitations).toHaveBeenCalledTimes(1),
+    );
+
+    const input = screen.getByLabelText(/upload ris or csv file/i);
+    const file = new File(["title\n"], "citations.csv", { type: "text/csv" });
+
+    fireEvent.change(input, { target: { files: [file] } });
+    expect(
+      await screen.findByText(/2 rows were imported without a year/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Row 2: “n.d.”")).toBeInTheDocument();
+    expect(screen.getByText("Row 5: “in press”")).toBeInTheDocument();
+
+    fireEvent.change(input, { target: { files: [file] } });
+    await waitFor(() =>
+      expect(screen.queryByText(/without a year/i)).not.toBeInTheDocument(),
+    );
+  });
+
   it("uses the singular for one skipped row and shows nothing when none were skipped", async () => {
     mockedApi.listCitations.mockResolvedValue([]);
     mockedApi.uploadCitations
-      .mockResolvedValueOnce({ created: 0, skipped: [{ row: 2, reason: "missing title" }] })
-      .mockResolvedValueOnce({ created: 1, skipped: [] });
+      .mockResolvedValueOnce({
+        created: 0,
+        skipped: [{ row: 2, reason: "missing title" }],
+        unreadable_years: [],
+      })
+      .mockResolvedValueOnce({ created: 1, skipped: [], unreadable_years: [] });
 
     render(<CitationsPanel reviewProjectId="1" />);
-    await waitFor(() => expect(mockedApi.listCitations).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(mockedApi.listCitations).toHaveBeenCalledTimes(1),
+    );
 
     const input = screen.getByLabelText(/upload ris or csv file/i);
     const file = new File(["title\n"], "citations.csv", { type: "text/csv" });
@@ -206,18 +273,26 @@ describe("CitationsPanel", () => {
     expect(await screen.findByText(/1 row skipped/i)).toBeInTheDocument();
 
     fireEvent.change(input, { target: { files: [file] } });
-    await waitFor(() => expect(screen.queryByText(/row skipped/i)).not.toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.queryByText(/row skipped/i)).not.toBeInTheDocument(),
+    );
     expect(screen.queryByText(/missing title/i)).not.toBeInTheDocument();
   });
 
   it("drops a previous upload's skipped rows when the next upload is rejected", async () => {
     mockedApi.listCitations.mockResolvedValue([]);
     mockedApi.uploadCitations
-      .mockResolvedValueOnce({ created: 0, skipped: [{ row: 1, reason: "missing title" }] })
+      .mockResolvedValueOnce({
+        created: 0,
+        skipped: [{ row: 1, reason: "missing title" }],
+        unreadable_years: [],
+      })
       .mockRejectedValueOnce(new Error("File must be .ris or .csv"));
 
     render(<CitationsPanel reviewProjectId="1" />);
-    await waitFor(() => expect(mockedApi.listCitations).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(mockedApi.listCitations).toHaveBeenCalledTimes(1),
+    );
 
     const input = screen.getByLabelText(/upload ris or csv file/i);
     const file = new File(["title\n"], "citations.csv", { type: "text/csv" });
@@ -226,7 +301,9 @@ describe("CitationsPanel", () => {
     expect(await screen.findByText("Row 1: missing title")).toBeInTheDocument();
 
     fireEvent.change(input, { target: { files: [file] } });
-    expect(await screen.findByRole("alert")).toHaveTextContent("File must be .ris or .csv");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "File must be .ris or .csv",
+    );
     expect(screen.queryByText("Row 1: missing title")).not.toBeInTheDocument();
   });
 
@@ -236,23 +313,33 @@ describe("CitationsPanel", () => {
   // Report: .gstack/qa-reports/qa-report-localhost-2026-09-19.md
   it("shows the backend's reason when an upload is rejected", async () => {
     mockedApi.listCitations.mockResolvedValue([]);
-    mockedApi.uploadCitations.mockRejectedValue(new Error("File must be .ris or .csv"));
+    mockedApi.uploadCitations.mockRejectedValue(
+      new Error("File must be .ris or .csv"),
+    );
 
     render(<CitationsPanel reviewProjectId="1" />);
-    await waitFor(() => expect(mockedApi.listCitations).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(mockedApi.listCitations).toHaveBeenCalledTimes(1),
+    );
 
-    const file = new File(["not a citation file"], "notes.txt", { type: "text/plain" });
+    const file = new File(["not a citation file"], "notes.txt", {
+      type: "text/plain",
+    });
     fireEvent.change(screen.getByLabelText(/upload ris or csv file/i), {
       target: { files: [file] },
     });
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("File must be .ris or .csv");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "File must be .ris or .csv",
+    );
   });
 
   it("ignores a stale response after reviewProjectId changes before it resolves", async () => {
     const first = deferred<Citation[]>();
     const second = deferred<Citation[]>();
-    mockedApi.listCitations.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    mockedApi.listCitations
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
 
     const { rerender } = render(<CitationsPanel reviewProjectId="1" />);
     rerender(<CitationsPanel reviewProjectId="2" />);
@@ -274,7 +361,9 @@ describe("CitationsPanel", () => {
       render(<CitationsPanel reviewProjectId="1" />);
 
       expect(
-        await screen.findByText("No citations yet. Upload a RIS or CSV file above.")
+        await screen.findByText(
+          "No citations yet. Upload a RIS or CSV file above.",
+        ),
       ).toBeInTheDocument();
       expect(screen.queryAllByRole("listitem")).toHaveLength(0);
     });
@@ -295,7 +384,9 @@ describe("CitationsPanel", () => {
 
       render(<CitationsPanel reviewProjectId="1" />);
 
-      expect(await screen.findByText(/failed to load citations/i)).toBeInTheDocument();
+      expect(
+        await screen.findByText(/failed to load citations/i),
+      ).toBeInTheDocument();
       expect(screen.queryByText(/no citations yet/i)).not.toBeInTheDocument();
     });
 

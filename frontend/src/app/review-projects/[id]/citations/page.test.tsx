@@ -35,7 +35,7 @@ describe("CitationsPage", () => {
 
   it("refreshes the project after citations are uploaded", async () => {
     mockedApi.listCitations.mockResolvedValue([]);
-    mockedApi.uploadCitations.mockResolvedValue({ created: 1, skipped: [] });
+    mockedApi.uploadCitations.mockResolvedValue({ created: 1, skipped: [], unreadable_years: [] });
     const { refreshProject } = renderWithProject(<CitationsPage />);
     await screen.findByText(/no citations yet/i);
 

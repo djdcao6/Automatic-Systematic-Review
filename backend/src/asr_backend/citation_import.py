@@ -21,6 +21,8 @@ class ParsedCitation:
 class ImportResult:
     citations: list[ParsedCitation] = field(default_factory=list)
     skipped: list[tuple[int, str]] = field(default_factory=list)
+    # (row, raw value) for rows imported with no year because the value was unreadable.
+    unreadable_years: list[tuple[int, str]] = field(default_factory=list)
 
 
 class UnsupportedFileType(Exception):
@@ -54,6 +56,14 @@ def _parse_year(value: str | None) -> int | None:
     return int(digits[:4]) if len(digits) >= 4 else None
 
 
+def _year_or_warn(result: ImportResult, index: int, value: str | None) -> int | None:
+    year = _parse_year(value)
+    raw = _clean(value)
+    if year is None and raw is not None:
+        result.unreadable_years.append((index, raw))
+    return year
+
+
 def parse_ris(content: str) -> ImportResult:
     result = ImportResult()
     entries = rispy.loads(content)
@@ -69,7 +79,7 @@ def parse_ris(content: str) -> ImportResult:
                 title=title,
                 abstract=_clean(entry.get("abstract")),
                 authors=list(entry.get("authors") or []),
-                year=_parse_year(entry.get("year")),
+                year=_year_or_warn(result, index, entry.get("year")),
                 source=_clean_as_list(entry.get("name_of_database")),
                 doi=_clean(entry.get("doi")),
             )
@@ -101,7 +111,7 @@ def parse_csv(content: str) -> ImportResult:
                 title=title,
                 abstract=_clean(get(row, "abstract")),
                 authors=authors,
-                year=_parse_year(get(row, "year")),
+                year=_year_or_warn(result, index, get(row, "year")),
                 source=_clean_as_list(get(row, "source")),
                 doi=_clean(get(row, "doi")),
             )

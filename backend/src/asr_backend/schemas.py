@@ -207,9 +207,15 @@ class CitationUploadSkipped(BaseModel):
     reason: str
 
 
+class CitationUploadUnreadableYear(BaseModel):
+    row: int
+    value: str
+
+
 class CitationUploadResult(BaseModel):
     created: int
     skipped: list[CitationUploadSkipped]
+    unreadable_years: list[CitationUploadUnreadableYear]
 
 
 class SuggestionRead(BaseModel):

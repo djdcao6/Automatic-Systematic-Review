@@ -50,7 +50,7 @@ def test_upload_csv_citations(authed_client):
     )
 
     assert response.status_code == 201
-    assert response.json() == {"created": 1, "skipped": []}
+    assert response.json() == {"created": 1, "skipped": [], "unreadable_years": []}
 
     citations = authed_client.get(f"/review-projects/{project_id}/citations").json()
     assert len(citations) == 1
@@ -98,6 +98,40 @@ def test_upload_csv_skips_row_missing_title(authed_client):
     assert body["skipped"] == [{"row": 1, "reason": "missing title"}]
 
 
+def test_upload_csv_imports_a_row_with_an_unreadable_year_and_reports_it(authed_client):
+    project_id = create_project(authed_client)
+
+    response = upload_csv(
+        authed_client,
+        project_id,
+        CSV_HEADER
+        + "Good Study,Abstract,Jane Doe,2020,PubMed\n"
+        + "Odd Year,Abstract,Jane Doe,n.d.,PubMed\n"
+        + "No Year,Abstract,Jane Doe,,PubMed\n",
+    )
+
+    body = response.json()
+    assert body["created"] == 3
+    assert body["skipped"] == []
+    assert body["unreadable_years"] == [{"row": 2, "value": "n.d."}]
+    citations = authed_client.get(f"/review-projects/{project_id}/citations").json()
+    assert [c["year"] for c in citations] == [2020, None, None]
+
+
+def test_upload_ris_reports_an_unreadable_year(authed_client):
+    project_id = create_project(authed_client)
+
+    response = upload_ris(
+        authed_client,
+        project_id,
+        "TY  - JOUR\nTI  - RIS Odd Year\nPY  - in press\nER  - \n",
+    )
+
+    body = response.json()
+    assert body["created"] == 1
+    assert body["unreadable_years"] == [{"row": 1, "value": "in press"}]
+
+
 def test_uploading_again_appends_citations(authed_client):
     project_id = create_project(authed_client)
 
@@ -133,7 +167,7 @@ def test_upload_ris_citations(authed_client):
     response = upload_ris(authed_client, project_id, RIS_SAMPLE)
 
     assert response.status_code == 201
-    assert response.json() == {"created": 1, "skipped": []}
+    assert response.json() == {"created": 1, "skipped": [], "unreadable_years": []}
 
     citations = authed_client.get(f"/review-projects/{project_id}/citations").json()
     assert citations[0]["title"] == "RIS Study"
