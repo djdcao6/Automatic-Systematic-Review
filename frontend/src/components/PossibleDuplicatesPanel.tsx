@@ -31,7 +31,10 @@ function fieldLabel(field: ConflictField): string {
   }
 }
 
-function valueLabel(field: ConflictField, citation: PossibleDuplicateCitation): string {
+function valueLabel(
+  field: ConflictField,
+  citation: PossibleDuplicateCitation,
+): string {
   if (field.field === "screening_decision") {
     return citation.screening_decision?.decision ?? "—";
   }
@@ -42,9 +45,26 @@ function valueLabel(field: ConflictField, citation: PossibleDuplicateCitation): 
     return citation.full_text?.original_filename ?? "—";
   }
   const value = citation.extraction_values.find(
-    (candidate) => candidate.extraction_field_id === field.extraction_field_id
+    (candidate) => candidate.extraction_field_id === field.extraction_field_id,
   );
   return value?.value ?? "—";
+}
+
+function citationDetails(citation: PossibleDuplicateCitation): string {
+  const [firstAuthor] = citation.authors;
+  const authors = firstAuthor
+    ? citation.authors.length > 1
+      ? `${firstAuthor} et al.`
+      : firstAuthor
+    : null;
+  const details = [
+    authors,
+    citation.year,
+    citation.source.join(", ") || null,
+  ].filter((part) => part !== null && part !== "");
+  return details.length > 0
+    ? details.join(" · ")
+    : "No authors, year or source";
 }
 
 function PossibleDuplicateItem({
@@ -58,8 +78,11 @@ function PossibleDuplicateItem({
 }) {
   const [choices, setChoices] = useState<Record<string, ConflictWinner>>(() =>
     Object.fromEntries(
-      possibleDuplicate.conflicting_fields.map((field) => [conflictKey(field), "survivor" as const])
-    )
+      possibleDuplicate.conflicting_fields.map((field) => [
+        conflictKey(field),
+        "survivor" as const,
+      ]),
+    ),
   );
   const [error, setError] = useState<string | null>(null);
 
@@ -68,16 +91,19 @@ function PossibleDuplicateItem({
   }
 
   async function handleResolve() {
-    const payload: ConflictResolutionChoiceInput[] = possibleDuplicate.conflicting_fields.map(
-      (field) => ({
+    const payload: ConflictResolutionChoiceInput[] =
+      possibleDuplicate.conflicting_fields.map((field) => ({
         field: field.field,
         extraction_field_id: field.extraction_field_id,
         winner: choices[conflictKey(field)],
-      })
-    );
+      }));
 
     try {
-      await resolvePossibleDuplicate(reviewProjectId, possibleDuplicate.id, payload);
+      await resolvePossibleDuplicate(
+        reviewProjectId,
+        possibleDuplicate.id,
+        payload,
+      );
       setError(null);
       onChanged();
     } catch {
@@ -98,13 +124,29 @@ function PossibleDuplicateItem({
   return (
     <li>
       <h3>{possibleDuplicate.survivor.title}</h3>
+      <p className="meta">
+        Citation A is kept and Citation B is merged into it. For each field
+        below, choose which Citation&apos;s value to keep.
+      </p>
       {error && <p role="alert">{error}</p>}
       <table>
         <thead>
           <tr>
             <th>Field</th>
-            <th>Citation A</th>
-            <th>Citation B</th>
+            <th>
+              Citation A
+              <span className="meta">
+                {" "}
+                {citationDetails(possibleDuplicate.survivor)}
+              </span>
+            </th>
+            <th>
+              Citation B
+              <span className="meta">
+                {" "}
+                {citationDetails(possibleDuplicate.loser)}
+              </span>
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -119,6 +161,7 @@ function PossibleDuplicateItem({
                     <input
                       type="radio"
                       name={groupName}
+                      aria-label={`${fieldLabel(field)}, Citation A: ${valueLabel(field, possibleDuplicate.survivor)}`}
                       checked={choices[key] === "survivor"}
                       onChange={() => setChoice(field, "survivor")}
                     />
@@ -130,6 +173,7 @@ function PossibleDuplicateItem({
                     <input
                       type="radio"
                       name={groupName}
+                      aria-label={`${fieldLabel(field)}, Citation B: ${valueLabel(field, possibleDuplicate.loser)}`}
                       checked={choices[key] === "loser"}
                       onChange={() => setChoice(field, "loser")}
                     />
@@ -165,7 +209,7 @@ export function PossibleDuplicatesPanel({
   } = useListResource(
     () => listPossibleDuplicates(reviewProjectId),
     [reviewProjectId],
-    "Failed to load possible duplicates."
+    "Failed to load possible duplicates.",
   );
 
   async function handleItemChanged() {

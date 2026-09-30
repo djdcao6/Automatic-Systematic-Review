@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as api from "@/lib/api";
@@ -44,7 +50,11 @@ const samplePossibleDuplicate = {
   survivor,
   loser,
   conflicting_fields: [
-    { field: "screening_decision" as const, extraction_field_id: null, extraction_field_name: null },
+    {
+      field: "screening_decision" as const,
+      extraction_field_id: null,
+      extraction_field_name: null,
+    },
   ],
   created_at: "2026-01-02T00:00:00Z",
 };
@@ -57,18 +67,61 @@ describe("PossibleDuplicatesPanel", () => {
   it("shows a message when there are no outstanding possible duplicates", async () => {
     render(<PossibleDuplicatesPanel reviewProjectId="1" />);
 
-    expect(await screen.findByText(/no outstanding possible duplicates/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/no outstanding possible duplicates/i),
+    ).toBeInTheDocument();
   });
 
   it("lists a possible duplicate's conflicting fields side by side", async () => {
-    mockedApi.listPossibleDuplicates.mockResolvedValue([samplePossibleDuplicate]);
+    mockedApi.listPossibleDuplicates.mockResolvedValue([
+      samplePossibleDuplicate,
+    ]);
 
     render(<PossibleDuplicatesPanel reviewProjectId="1" />);
 
-    expect(await screen.findByText("Effects of Aspirin on Recovery")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Effects of Aspirin on Recovery"),
+    ).toBeInTheDocument();
     expect(screen.getByText("Screening Decision")).toBeInTheDocument();
     expect(screen.getByText("include")).toBeInTheDocument();
     expect(screen.getByText("exclude")).toBeInTheDocument();
+  });
+
+  // #72: the two sides were hard to tell apart.
+  it("labels the two Citations A and B, says which is kept, and tells them apart", async () => {
+    mockedApi.listPossibleDuplicates.mockResolvedValue([
+      {
+        ...samplePossibleDuplicate,
+        loser: {
+          ...loser,
+          authors: ["Jones", "Lee"],
+          year: 2021,
+          source: ["Embase"],
+        },
+      },
+    ]);
+
+    render(<PossibleDuplicatesPanel reviewProjectId="1" />);
+
+    expect(
+      await screen.findByText(/Citation A is kept and Citation B is merged/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("columnheader", { name: /Citation A/ }),
+    ).toHaveTextContent("Smith · 2020 · PubMed");
+    expect(
+      screen.getByRole("columnheader", { name: /Citation B/ }),
+    ).toHaveTextContent("Jones et al. · 2021 · Embase");
+    expect(
+      screen.getByRole("radio", {
+        name: "Screening Decision, Citation A: include",
+      }),
+    ).toBeChecked();
+    expect(
+      screen.getByRole("radio", {
+        name: "Screening Decision, Citation B: exclude",
+      }),
+    ).not.toBeChecked();
   });
 
   it("resolves a possible duplicate with the reviewer's chosen side", async () => {
@@ -94,12 +147,22 @@ describe("PossibleDuplicatesPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: /resolve/i }));
 
     await waitFor(() =>
-      expect(mockedApi.resolvePossibleDuplicate).toHaveBeenCalledWith("1", "pd-1", [
-        { field: "screening_decision", extraction_field_id: null, winner: "loser" },
-      ])
+      expect(mockedApi.resolvePossibleDuplicate).toHaveBeenCalledWith(
+        "1",
+        "pd-1",
+        [
+          {
+            field: "screening_decision",
+            extraction_field_id: null,
+            winner: "loser",
+          },
+        ],
+      ),
     );
     await waitFor(() =>
-      expect(screen.getByText(/no outstanding possible duplicates/i)).toBeInTheDocument()
+      expect(
+        screen.getByText(/no outstanding possible duplicates/i),
+      ).toBeInTheDocument(),
     );
   });
 
@@ -114,32 +177,45 @@ describe("PossibleDuplicatesPanel", () => {
     fireEvent.click(await screen.findByRole("button", { name: /dismiss/i }));
 
     await waitFor(() =>
-      expect(mockedApi.dismissPossibleDuplicate).toHaveBeenCalledWith("1", "pd-1")
+      expect(mockedApi.dismissPossibleDuplicate).toHaveBeenCalledWith(
+        "1",
+        "pd-1",
+      ),
     );
     await waitFor(() =>
-      expect(screen.getByText(/no outstanding possible duplicates/i)).toBeInTheDocument()
+      expect(
+        screen.getByText(/no outstanding possible duplicates/i),
+      ).toBeInTheDocument(),
     );
   });
 
   it("shows an error when resolving fails", async () => {
-    mockedApi.listPossibleDuplicates.mockResolvedValue([samplePossibleDuplicate]);
+    mockedApi.listPossibleDuplicates.mockResolvedValue([
+      samplePossibleDuplicate,
+    ]);
     mockedApi.resolvePossibleDuplicate.mockRejectedValue(new Error("boom"));
 
     render(<PossibleDuplicatesPanel reviewProjectId="1" />);
 
     fireEvent.click(await screen.findByRole("button", { name: /resolve/i }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(/failed to resolve/i);
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /failed to resolve/i,
+    );
   });
 
   it("shows an error when dismissing fails", async () => {
-    mockedApi.listPossibleDuplicates.mockResolvedValue([samplePossibleDuplicate]);
+    mockedApi.listPossibleDuplicates.mockResolvedValue([
+      samplePossibleDuplicate,
+    ]);
     mockedApi.dismissPossibleDuplicate.mockRejectedValue(new Error("boom"));
 
     render(<PossibleDuplicatesPanel reviewProjectId="1" />);
 
     fireEvent.click(await screen.findByRole("button", { name: /dismiss/i }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(/failed to dismiss/i);
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /failed to dismiss/i,
+    );
   });
 });
