@@ -31,10 +31,7 @@ function fieldLabel(field: ConflictField): string {
   }
 }
 
-function valueLabel(
-  field: ConflictField,
-  citation: PossibleDuplicateCitation,
-): string {
+function valueLabel(field: ConflictField, citation: PossibleDuplicateCitation): string {
   if (field.field === "screening_decision") {
     return citation.screening_decision?.decision ?? "—";
   }
@@ -57,14 +54,10 @@ function citationDetails(citation: PossibleDuplicateCitation): string {
       ? `${firstAuthor} et al.`
       : firstAuthor
     : null;
-  const details = [
-    authors,
-    citation.year,
-    citation.source.join(", ") || null,
-  ].filter((part) => part !== null && part !== "");
-  return details.length > 0
-    ? details.join(" · ")
-    : "No authors, year or source";
+  const details = [authors, citation.year, citation.source.join(", ") || null].filter(
+    (part) => part !== null && part !== "",
+  );
+  return details.length > 0 ? details.join(" · ") : "No authors, year or source";
 }
 
 function PossibleDuplicateItem({
@@ -91,19 +84,16 @@ function PossibleDuplicateItem({
   }
 
   async function handleResolve() {
-    const payload: ConflictResolutionChoiceInput[] =
-      possibleDuplicate.conflicting_fields.map((field) => ({
+    const payload: ConflictResolutionChoiceInput[] = possibleDuplicate.conflicting_fields.map(
+      (field) => ({
         field: field.field,
         extraction_field_id: field.extraction_field_id,
         winner: choices[conflictKey(field)],
-      }));
+      }),
+    );
 
     try {
-      await resolvePossibleDuplicate(
-        reviewProjectId,
-        possibleDuplicate.id,
-        payload,
-      );
+      await resolvePossibleDuplicate(reviewProjectId, possibleDuplicate.id, payload);
       setError(null);
       onChanged();
     } catch {
@@ -125,8 +115,8 @@ function PossibleDuplicateItem({
     <li>
       <h3>{possibleDuplicate.survivor.title}</h3>
       <p className="meta">
-        Citation A is kept and Citation B is merged into it. For each field
-        below, choose which Citation&apos;s value to keep.
+        Citation A is kept and Citation B is merged into it. For each field below, choose which
+        Citation&apos;s value to keep.
       </p>
       {error && <p role="alert">{error}</p>}
       <table>
@@ -134,18 +124,10 @@ function PossibleDuplicateItem({
           <tr>
             <th>Field</th>
             <th>
-              Citation A
-              <span className="meta">
-                {" "}
-                {citationDetails(possibleDuplicate.survivor)}
-              </span>
+              Citation A<span className="meta"> {citationDetails(possibleDuplicate.survivor)}</span>
             </th>
             <th>
-              Citation B
-              <span className="meta">
-                {" "}
-                {citationDetails(possibleDuplicate.loser)}
-              </span>
+              Citation B<span className="meta"> {citationDetails(possibleDuplicate.loser)}</span>
             </th>
           </tr>
         </thead>

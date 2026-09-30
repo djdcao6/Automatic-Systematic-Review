@@ -22,14 +22,10 @@ export function CriteriaPanel() {
   const criteria = project.criteria;
   const readOnly = !isOwner || project.criteria_locked;
   const [population, setPopulation] = useState(criteria?.population ?? "");
-  const [intervention, setIntervention] = useState(
-    criteria?.intervention ?? "",
-  );
+  const [intervention, setIntervention] = useState(criteria?.intervention ?? "");
   const [comparison, setComparison] = useState(criteria?.comparison ?? "");
   const [outcome, setOutcome] = useState(criteria?.outcome ?? "");
-  const [exclusionRules, setExclusionRules] = useState(
-    criteria?.exclusion_rules.join("\n") ?? "",
-  );
+  const [exclusionRules, setExclusionRules] = useState(criteria?.exclusion_rules.join("\n") ?? "");
   const [notes, setNotes] = useState(criteria?.notes ?? "");
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -67,16 +63,10 @@ export function CriteriaPanel() {
         <p role="status">Only the Owner can edit the Criteria.</p>
       ) : (
         project.criteria_locked && (
-          <p role="status">
-            Criteria are locked once the first Screening Decision is recorded.
-          </p>
+          <p role="status">Criteria are locked once the first Screening Decision is recorded.</p>
         )
       )}
-      <form
-        onSubmit={handleSubmit}
-        onChange={() => setSaved(false)}
-        className="panel"
-      >
+      <form onSubmit={handleSubmit} onChange={() => setSaved(false)} className="panel">
         <div className="field-grid">
           <div>
             <label htmlFor="population">Population</label>

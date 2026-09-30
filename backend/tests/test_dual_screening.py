@@ -259,6 +259,34 @@ def test_owner_and_co_reviewer_record_independent_decisions(client, dual_setup):
     assert owner_view["screening_decision"]["reason"] == "Owner's take"
 
 
+def _list_citations(client, project_id, headers):
+    return client.get(f"/review-projects/{project_id}/citations", headers=headers).json()
+
+
+def test_citation_list_shows_only_the_requesting_reviewers_own_decision(client, dual_setup):
+    """#71: the list carries each Reviewer's own state and never the peer's (ADR 0006)."""
+    d = dual_setup
+    assert _list_citations(client, d["project_id"], d["owner_headers"])[0][
+        "my_screening_decision"
+    ] is None
+
+    _record_decision(client, d["project_id"], d["citation_id"], d["owner_headers"], "include")
+
+    owner_list = _list_citations(client, d["project_id"], d["owner_headers"])
+    co_reviewer_list = _list_citations(client, d["project_id"], d["co_reviewer_headers"])
+    assert owner_list[0]["my_screening_decision"] == "include"
+    assert co_reviewer_list[0]["my_screening_decision"] is None
+
+    _record_decision(client, d["project_id"], d["citation_id"], d["co_reviewer_headers"], "exclude")
+
+    assert _list_citations(client, d["project_id"], d["owner_headers"])[0][
+        "my_screening_decision"
+    ] == "include"
+    assert _list_citations(client, d["project_id"], d["co_reviewer_headers"])[0][
+        "my_screening_decision"
+    ] == "exclude"
+
+
 def test_editing_own_decision_does_not_affect_peer_decision(client, dual_setup):
     d = dual_setup
     _record_decision(client, d["project_id"], d["citation_id"], d["owner_headers"], "include")

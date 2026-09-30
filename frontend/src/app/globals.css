@@ -613,6 +613,31 @@
     color: var(--text-muted);
     font-size: 0.875rem;
   }
+  /* The Reviewer's own decision in a list row: same glyphs and colors as the stamp. */
+  .rows > li > .decision-mark {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    color: var(--include);
+    font-weight: 500;
+    text-transform: capitalize;
+  }
+  .decision-mark::before {
+    content: "\2713";
+    font-weight: 600;
+  }
+  .decision-mark[data-decision="exclude"] {
+    color: var(--exclude);
+  }
+  .decision-mark[data-decision="exclude"]::before {
+    content: "\2715";
+  }
+  .decision-mark[data-decision="maybe"] {
+    color: var(--maybe);
+  }
+  .decision-mark[data-decision="maybe"]::before {
+    content: "\223C";
+  }
   input[type="file"] + .rows {
     margin-top: 1.5rem;
   }

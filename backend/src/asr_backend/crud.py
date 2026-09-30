@@ -311,6 +311,22 @@ def list_citations(db: Session, review_project_id: uuid.UUID) -> list[models.Cit
     )
 
 
+def own_screening_decisions(
+    db: Session, review_project_id: uuid.UUID, reviewer_id: uuid.UUID
+) -> dict[uuid.UUID, str]:
+    """One Reviewer's decision per Citation in the project, in a single query."""
+    rows = (
+        db.query(models.ScreeningDecision.citation_id, models.ScreeningDecision.decision)
+        .join(models.Citation, models.Citation.id == models.ScreeningDecision.citation_id)
+        .filter(
+            models.Citation.review_project_id == review_project_id,
+            models.ScreeningDecision.reviewer_id == reviewer_id,
+        )
+        .all()
+    )
+    return {citation_id: decision for citation_id, decision in rows}
+
+
 @dataclass(frozen=True)
 class CitationPlace:
     position: int | None
