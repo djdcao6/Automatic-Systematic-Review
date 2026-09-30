@@ -201,7 +201,7 @@ export function PossibleDuplicatesPanel({
 
   return (
     <section>
-      <h2>Possible Duplicates</h2>
+      <h1 className="section-title">Possible Duplicates</h1>
       {error && <p role="alert">{error}</p>}
       {possibleDuplicates.length === 0 ? (
         <p>No outstanding Possible Duplicates.</p>

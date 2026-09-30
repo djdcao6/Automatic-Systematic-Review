@@ -124,7 +124,7 @@ export function ExtractionFieldsPanel({ reviewProjectId }: { reviewProjectId: st
 
   return (
     <section>
-      <h2>Extraction Fields</h2>
+      <h1 className="section-title">Extraction Fields</h1>
       {error && <p role="alert">{error}</p>}
 
       {loaded && fields.length === 0 && (

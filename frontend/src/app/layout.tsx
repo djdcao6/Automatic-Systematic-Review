@@ -4,6 +4,7 @@ import Link from "next/link";
 import "./globals.css";
 
 import { LogoutButton } from "@/components/LogoutButton";
+import { SkipLink } from "@/components/SkipLink";
 
 // Reading and display voice. The optical-size axis lets titles and abstracts
 // share one family: the browser picks the cut from the rendered size.
@@ -28,7 +29,11 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Automatic Systematic Review",
+  // Routes add their own name through `layout.tsx` metadata; this is the fallback and suffix.
+  title: {
+    default: "Automatic Systematic Review",
+    template: "%s · Automatic Systematic Review",
+  },
   description:
     "Screen citations against your criteria, extract data from full texts, and keep your decisions separate from the AI's suggestions.",
 };
@@ -40,6 +45,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${sourceSerif.variable} ${plexSans.variable} ${plexMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
+        <SkipLink />
         <div className="topbar">
           <div className="topbar-inner">
             <Link href="/" className="brand">

@@ -37,6 +37,13 @@ describe("CriteriaPage", () => {
     expect(screen.getByDisplayValue("Exclude conference abstracts.")).toBeInTheDocument();
   });
 
+  // #108: section pages had no h1; their panel title was an h2.
+  it("titles the page with an h1", () => {
+    renderWithProject(<CriteriaPage />);
+
+    expect(screen.getByRole("heading", { level: 1, name: "Criteria" })).toBeInTheDocument();
+  });
+
   it("renders blank fields when no criteria exists yet", () => {
     renderWithProject(<CriteriaPage />);
 
