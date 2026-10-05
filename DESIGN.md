@@ -146,7 +146,7 @@ Named rules:
 
 ## Typography
 
-The type comes from the world of peer-reviewed journals and clinical data. Faces were verified on Google Fonts on 2026-09-19 and load through `next/font/google`, which self-hosts them with `display: swap` and no runtime request to Google.
+The type comes from the world of peer-reviewed journals and clinical data. Faces were verified on Google Fonts on 2026-09-19. They are served from the app itself, with `display: swap` and no request to Google at build or run time: the files come from the Fontsource npm packages (`@fontsource-variable/source-serif-4`, `@fontsource/ibm-plex-sans`, `@fontsource/ibm-plex-mono`), imported in `frontend/src/app/layout.tsx`.
 - **Source Serif 4** is the reading and display voice, using the variable optical-size axis. Display and titles use the high optical sizes and reading text uses the low ones. It is used for abstracts, criteria text, project titles, page headings and the large PRISMA numerals. A serif holds up over hours of reading.
 - **IBM Plex Sans** is the UI voice for labels, tables, forms and buttons, with tabular figures on. It is on the overused-as-display list, and is used here only as body and UI on Operate surfaces, where its legibility at small sizes is the point.
 - **IBM Plex Mono** carries DOIs, PMIDs, citation IDs, keycaps and extraction values.
@@ -224,3 +224,4 @@ What never changes: decisions always carry a glyph, AI output is always dashed, 
 | 2026-09-19 | The Full-Text Decision has no default, and saving without a choice asks for one | Same stray-click risk as screening, and a Save with Maybe pre-selected records a real decision. Supersedes the last sentence of the row above ("The full-text decision form still defaults to Maybe..."). Built in #51. |
 | 2026-09-19 | Extraction Values start empty, with the AI value beside each field and a Use action | Per-field Save must only record what the Reviewer typed or explicitly accepted. Use copies the AI value into the input; Save still records it. Built in #51. |
 | 2026-09-19 | The Full-Text Suggestion loads after the page, on its own request | The page must not wait on a model call that reads the whole PDF, and a late arrival fills nothing. A suggestion asked for before a PDF was replaced is dropped. Built in #51. |
+| 2026-10-04 | Fonts load from Fontsource npm packages instead of `next/font/google` | `next/font/google` downloads the faces during every build, and a Google Fonts failure broke a CI build (PR #115). Same faces, weights, script subsets and fallback metrics, so nothing should look different. The serif's family name is now "Source Serif 4 Variable"; the PNG export reads families from the page, so it follows. |
