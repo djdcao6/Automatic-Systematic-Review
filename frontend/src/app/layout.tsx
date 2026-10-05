@@ -1,32 +1,24 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Mono, IBM_Plex_Sans, Source_Serif_4 } from "next/font/google";
 import Link from "next/link";
+
+// Fonts are npm packages so a build never downloads from Google Fonts, whose
+// outages failed CI builds. Each file declares every script subset (Latin
+// extended, Greek, Cyrillic, Vietnamese) behind unicode-range, so a Greek
+// letter or a Czech author name loads its subset instead of falling back.
+// Reading and display voice. The optical-size axis lets titles and abstracts
+// share one family: the browser picks the cut from the rendered size.
+import "@fontsource-variable/source-serif-4/opsz.css";
+// UI voice: labels, tables, forms, buttons.
+import "@fontsource/ibm-plex-sans/400.css";
+import "@fontsource/ibm-plex-sans/500.css";
+import "@fontsource/ibm-plex-sans/600.css";
+// Identifiers: DOIs, IDs, queries, keycaps.
+import "@fontsource/ibm-plex-mono/400.css";
+import "@fontsource/ibm-plex-mono/500.css";
 import "./globals.css";
 
 import { LogoutButton } from "@/components/LogoutButton";
 import { SkipLink } from "@/components/SkipLink";
-
-// Reading and display voice. The optical-size axis lets titles and abstracts
-// share one family: the browser picks the cut from the rendered size.
-const sourceSerif = Source_Serif_4({
-  variable: "--font-source-serif",
-  subsets: ["latin"],
-  axes: ["opsz"],
-});
-
-// UI voice: labels, tables, forms, buttons.
-const plexSans = IBM_Plex_Sans({
-  variable: "--font-plex-sans",
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
-});
-
-// Identifiers: DOIs, IDs, queries, keycaps.
-const plexMono = IBM_Plex_Mono({
-  variable: "--font-plex-mono",
-  subsets: ["latin"],
-  weight: ["400", "500"],
-});
 
 export const metadata: Metadata = {
   // Routes add their own name through `layout.tsx` metadata; this is the fallback and suffix.
@@ -40,10 +32,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html
-      lang="en"
-      className={`${sourceSerif.variable} ${plexSans.variable} ${plexMono.variable} h-full antialiased`}
-    >
+    <html lang="en" className="h-full antialiased">
       <body className="min-h-full flex flex-col">
         <SkipLink />
         <div className="topbar">

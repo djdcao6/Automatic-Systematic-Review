@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { metadata as root } from "./layout";
 import { metadata as account } from "./account/layout";
@@ -13,12 +13,6 @@ import { metadata as extractionFields } from "./review-projects/[id]/extraction-
 import { metadata as flowDiagram } from "./review-projects/[id]/flow-diagram/layout";
 import { metadata as projectInvitations } from "./review-projects/[id]/invitations/layout";
 import { metadata as searchTerms } from "./review-projects/[id]/search-terms/layout";
-
-// The root layout loads its fonts at import time, which only works inside Next's build.
-vi.mock("next/font/google", () => {
-  const font = () => ({ variable: "font" });
-  return { Source_Serif_4: font, IBM_Plex_Sans: font, IBM_Plex_Mono: font };
-});
 
 // #108: only the root layout had a title, so every tab and history entry read the same.
 describe("route titles", () => {
