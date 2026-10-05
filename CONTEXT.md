@@ -36,6 +36,10 @@ _Avoid_: Unsure, Undecided, Verdict
 A proposed Screening Decision plus a reason, generated once on demand when a Reviewer first opens a Citation and persisted from then on — not regenerated on later views. Always advisory, and stored separately from the Reviewer's final Screening Decision — even when they match — so AI accuracy can be reviewed later. Never pre-selects the Screening Decision or fills in its reason, and is generated after the Citation is shown, so the Reviewer never waits on it. In a Dual Review Project, withheld from both the Owner and Co-Reviewer until each has independently recorded their own Screening Decision, so neither's judgment is AI-anchored.
 _Avoid_: AI decision, Auto-screening
 
+**False Exclusion**:
+An AI Suggestion or Full-Text Suggestion that proposes Exclude for a Citation that an independently adjudicated reference includes. The AI error a review can least afford, because an excluded Citation is rarely looked at again.
+_Avoid_: Missed study, False negative
+
 **Conflict**:
 Held when a Dual Review Project's Owner and Co-Reviewer record different Screening Decisions for the same Citation. Sits in a dedicated queue until the Owner resolves it — either by picking one of the two recorded decisions or entering a different decision reached through discussion — which becomes the Citation's final Screening Decision. Both original decisions remain on record afterward.
 _Avoid_: Disagreement, Discrepancy
